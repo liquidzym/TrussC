@@ -6114,16 +6114,24 @@ _SOKOL_PRIVATE void _sapp_ios_mtl_discard_state(void) {
 }
 
 _SOKOL_PRIVATE bool _sapp_ios_mtl_update_framebuffer_dimensions(CGRect screen_rect) {
-    _sapp.framebuffer_width = _sapp_roundf_gzero(screen_rect.size.width * _sapp.dpi_scale);
-    _sapp.framebuffer_height = _sapp_roundf_gzero(screen_rect.size.height * _sapp.dpi_scale);
+    // Modified by tettou771 for TrussC: use actual drawable dimensions for framebuffer size
+    // to avoid chicken-egg mismatch between sapp_width()/sapp_height() and Metal render pass dimensions.
+    // (see macOS comment in _sapp_macos_frame about not calling update_dimensions from drawRect)
+    int desired_fb_width = _sapp_roundf_gzero(screen_rect.size.width * _sapp.dpi_scale);
+    int desired_fb_height = _sapp_roundf_gzero(screen_rect.size.height * _sapp.dpi_scale);
     const CGSize fb_size = _sapp.ios.view.drawableSize;
     int cur_fb_width = _sapp_roundf_gzero(fb_size.width);
     int cur_fb_height = _sapp_roundf_gzero(fb_size.height);
-    bool dim_changed = (_sapp.framebuffer_width != cur_fb_width) || (_sapp.framebuffer_height != cur_fb_height);
+    bool dim_changed = (desired_fb_width != cur_fb_width) || (desired_fb_height != cur_fb_height);
     if (dim_changed) {
-        const CGSize drawable_size = { (CGFloat) _sapp.framebuffer_width, (CGFloat) _sapp.framebuffer_height };
+        const CGSize drawable_size = { (CGFloat) desired_fb_width, (CGFloat) desired_fb_height };
         _sapp.ios.view.drawableSize = drawable_size;
     }
+    // Always read back actual drawable dimensions to ensure framebuffer_width/height
+    // matches the Metal drawable (prevents scissor rect exceeding render pass bounds)
+    const CGSize actual_size = _sapp.ios.view.drawableSize;
+    _sapp.framebuffer_width = _sapp_roundf_gzero(actual_size.width);
+    _sapp.framebuffer_height = _sapp_roundf_gzero(actual_size.height);
     return dim_changed;
 }
 #endif
@@ -6251,13 +6259,20 @@ _SOKOL_PRIVATE void _sapp_ios_touch_event(sapp_event_type type, NSSet<UITouch *>
 }
 
 _SOKOL_PRIVATE void _sapp_ios_update_dimensions(void) {
-    CGRect screen_rect = UIScreen.mainScreen.bounds;
-    _sapp.window_width = _sapp_roundf_gzero(screen_rect.size.width);
-    _sapp.window_height = _sapp_roundf_gzero(screen_rect.size.height);
+    // Modified by tettou771 for TrussC: use view bounds instead of UIScreen.mainScreen.bounds
+    // (consistent with macOS which uses [view bounds], avoids potential timing issues
+    // with screen bounds not matching the view's actual layout)
+    CGRect view_rect = _sapp.ios.view.bounds;
+    if (view_rect.size.width < 1.0 || view_rect.size.height < 1.0) {
+        // View not laid out yet, fall back to screen bounds
+        view_rect = UIScreen.mainScreen.bounds;
+    }
+    _sapp.window_width = _sapp_roundf_gzero(view_rect.size.width);
+    _sapp.window_height = _sapp_roundf_gzero(view_rect.size.height);
     #if defined(SOKOL_METAL)
-        bool dim_changed = _sapp_ios_mtl_update_framebuffer_dimensions(screen_rect);
+        bool dim_changed = _sapp_ios_mtl_update_framebuffer_dimensions(view_rect);
     #else
-        bool dim_changed = _sapp_ios_gles3_update_framebuffer_dimensions(screen_rect);
+        bool dim_changed = _sapp_ios_gles3_update_framebuffer_dimensions(view_rect);
     #endif
     if (dim_changed && !_sapp.first_frame) {
         _sapp_ios_app_event(SAPP_EVENTTYPE_RESIZED);
