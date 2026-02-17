@@ -2117,6 +2117,105 @@ namespace internal {
                 }
                 break;
             }
+            // Touch events (iOS) - also map first touch to mouse events
+            case SAPP_EVENTTYPE_TOUCHES_BEGAN: {
+                for (int i = 0; i < ev->num_touches; i++) {
+                    if (ev->touches[i].changed) {
+                        TouchEventArgs args;
+                        args.id = ev->touches[i].identifier;
+                        args.x = ev->touches[i].pos_x * scale;
+                        args.y = ev->touches[i].pos_y * scale;
+                        events().touchBegan.notify(args);
+                    }
+                }
+                // Map first touch to mouse press
+                if (ev->num_touches > 0) {
+                    mouseX = ev->touches[0].pos_x * scale;
+                    mouseY = ev->touches[0].pos_y * scale;
+                    mouseButton = 0;
+                    mousePressed = true;
+                    currentMouseButton = 0;
+
+                    MouseEventArgs margs;
+                    margs.x = mouseX;
+                    margs.y = mouseY;
+                    margs.button = 0;
+                    events().mousePressed.notify(margs);
+                    if (appMousePressedFunc) appMousePressedFunc((int)mouseX, (int)mouseY, 0);
+                }
+                break;
+            }
+            case SAPP_EVENTTYPE_TOUCHES_MOVED: {
+                for (int i = 0; i < ev->num_touches; i++) {
+                    if (ev->touches[i].changed) {
+                        TouchEventArgs args;
+                        args.id = ev->touches[i].identifier;
+                        args.x = ev->touches[i].pos_x * scale;
+                        args.y = ev->touches[i].pos_y * scale;
+                        events().touchMoved.notify(args);
+                    }
+                }
+                // Map first touch to mouse drag
+                if (ev->num_touches > 0) {
+                    float prevX = mouseX;
+                    float prevY = mouseY;
+                    mouseX = ev->touches[0].pos_x * scale;
+                    mouseY = ev->touches[0].pos_y * scale;
+
+                    MouseDragEventArgs dargs;
+                    dargs.x = mouseX;
+                    dargs.y = mouseY;
+                    dargs.deltaX = mouseX - prevX;
+                    dargs.deltaY = mouseY - prevY;
+                    dargs.button = 0;
+                    events().mouseDragged.notify(dargs);
+                    if (appMouseDraggedFunc) appMouseDraggedFunc((int)mouseX, (int)mouseY, 0);
+                }
+                break;
+            }
+            case SAPP_EVENTTYPE_TOUCHES_ENDED: {
+                for (int i = 0; i < ev->num_touches; i++) {
+                    if (ev->touches[i].changed) {
+                        TouchEventArgs args;
+                        args.id = ev->touches[i].identifier;
+                        args.x = ev->touches[i].pos_x * scale;
+                        args.y = ev->touches[i].pos_y * scale;
+                        events().touchEnded.notify(args);
+                    }
+                }
+                // Map first touch to mouse release
+                if (ev->num_touches > 0) {
+                    mouseX = ev->touches[0].pos_x * scale;
+                    mouseY = ev->touches[0].pos_y * scale;
+                    mouseButton = -1;
+                    mousePressed = false;
+                    currentMouseButton = -1;
+
+                    MouseEventArgs margs;
+                    margs.x = mouseX;
+                    margs.y = mouseY;
+                    margs.button = 0;
+                    events().mouseReleased.notify(margs);
+                    if (appMouseReleasedFunc) appMouseReleasedFunc((int)mouseX, (int)mouseY, 0);
+                }
+                break;
+            }
+            case SAPP_EVENTTYPE_TOUCHES_CANCELLED: {
+                for (int i = 0; i < ev->num_touches; i++) {
+                    if (ev->touches[i].changed) {
+                        TouchEventArgs args;
+                        args.id = ev->touches[i].identifier;
+                        args.x = ev->touches[i].pos_x * scale;
+                        args.y = ev->touches[i].pos_y * scale;
+                        events().touchCancelled.notify(args);
+                    }
+                }
+                // Reset mouse state on cancel
+                mouseButton = -1;
+                mousePressed = false;
+                currentMouseButton = -1;
+                break;
+            }
             default:
                 break;
         }

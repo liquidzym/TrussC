@@ -43,10 +43,11 @@ public:
     // Console input (commands from stdin)
     Event<ConsoleEventArgs> console;
 
-    // For future use
-    // Event<TouchEventArgs> touchBegan;
-    // Event<TouchEventArgs> touchMoved;
-    // Event<TouchEventArgs> touchEnded;
+    // Touch (iOS)
+    Event<TouchEventArgs> touchBegan;
+    Event<TouchEventArgs> touchMoved;
+    Event<TouchEventArgs> touchEnded;
+    Event<TouchEventArgs> touchCancelled;
 };
 
 // ---------------------------------------------------------------------------

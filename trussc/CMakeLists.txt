@@ -27,9 +27,15 @@ if(EMSCRIPTEN)
     set(TC_GRAPHICS_BACKEND "WGPU")  # WebGPU
     message(STATUS "[TrussC] Platform: Emscripten (WebGPU)")
 elseif(APPLE)
-    set(TC_PLATFORM_MACOS TRUE)
-    set(TC_GRAPHICS_BACKEND "METAL")
-    message(STATUS "[TrussC] Platform: macOS (Metal)")
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(TC_PLATFORM_IOS TRUE)
+        set(TC_GRAPHICS_BACKEND "METAL")
+        message(STATUS "[TrussC] Platform: iOS (Metal)")
+    else()
+        set(TC_PLATFORM_MACOS TRUE)
+        set(TC_GRAPHICS_BACKEND "METAL")
+        message(STATUS "[TrussC] Platform: macOS (Metal)")
+    endif()
 elseif(WIN32)
     set(TC_PLATFORM_WINDOWS TRUE)
     set(TC_GRAPHICS_BACKEND "D3D11")
@@ -65,6 +71,8 @@ file(GLOB TC_SOUND_SOURCES    ${CMAKE_CURRENT_SOURCE_DIR}/include/tc/sound/*.cpp
 # プラットフォーム固有ソースファイル
 if(TC_PLATFORM_EMSCRIPTEN)
     file(GLOB TC_PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/web/*.cpp)
+elseif(TC_PLATFORM_IOS)
+    file(GLOB TC_PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/ios/*.mm)
 elseif(TC_PLATFORM_MACOS)
     file(GLOB TC_PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/mac/*.mm)
 elseif(TC_PLATFORM_WINDOWS)
@@ -93,6 +101,12 @@ add_library(TrussC STATIC ${TC_ALL_SOURCES})
 
 add_library(tc::TrussC ALIAS TrussC)
 
+# iOS: sound sources include ObjC headers (AVFoundation) via miniaudio,
+# so they must be compiled as Objective-C++
+if(TC_PLATFORM_IOS AND TC_SOUND_SOURCES)
+    set_source_files_properties(${TC_SOUND_SOURCES} PROPERTIES LANGUAGE OBJCXX)
+endif()
+
 # インクルードパス
 target_include_directories(TrussC PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -107,6 +121,22 @@ if(TC_PLATFORM_EMSCRIPTEN)
     # WebGPU port for headers (emdawnwebgpu provides webgpu/webgpu.h)
     target_compile_options(TrussC PUBLIC --use-port=emdawnwebgpu)
     # Emscripten リンクオプションはアプリ側で設定（trussc_app.cmake）
+
+elseif(TC_PLATFORM_IOS)
+    target_compile_definitions(TrussC PUBLIC SOKOL_METAL)
+    target_link_libraries(TrussC PUBLIC
+        "-framework Foundation"
+        "-framework UIKit"
+        "-framework Metal"
+        "-framework MetalKit"
+        "-framework QuartzCore"
+        "-framework CoreGraphics"
+        "-framework AudioToolbox"
+        "-framework AVFoundation"
+        "-framework CoreMedia"
+        "-framework CoreVideo"
+    )
+    target_compile_options(TrussC PRIVATE -fobjc-arc)
 
 elseif(TC_PLATFORM_MACOS)
     target_compile_definitions(TrussC PUBLIC SOKOL_METAL)
@@ -202,7 +232,7 @@ function(trussc_setup_icon TARGET_NAME)
     set(ICON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/icon")
     set(DEFAULT_DIR "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/resources")
 
-    if(APPLE)
+    if(APPLE AND NOT TC_PLATFORM_IOS)
         _trussc_setup_icon_macos(${TARGET_NAME} "${ICON_DIR}" "${DEFAULT_DIR}")
     elseif(WIN32)
         _trussc_setup_icon_windows(${TARGET_NAME} "${ICON_DIR}" "${DEFAULT_DIR}")
@@ -456,7 +486,7 @@ if(TC_SHADER_SOURCES)
     set(_TC_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/tc/gpu/shaders")
     file(MAKE_DIRECTORY "${_TC_SHADER_OUTPUT_DIR}")
 
-    set(_TC_SOKOL_SLANG "metal_macos:hlsl5:glsl300es:wgsl")
+    set(_TC_SOKOL_SLANG "metal_macos:metal_ios:hlsl5:glsl300es:wgsl")
 
     set(_TC_SHADER_OUTPUTS "")
     foreach(_shader_src ${TC_SHADER_SOURCES})

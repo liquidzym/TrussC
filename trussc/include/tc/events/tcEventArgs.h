@@ -84,7 +84,7 @@ struct DragDropEventArgs {
 // Touch event arguments (for future use)
 // ---------------------------------------------------------------------------
 struct TouchEventArgs {
-    int id = 0;               // Touch ID
+    uintptr_t id = 0;         // Touch ID
     float x = 0.0f;
     float y = 0.0f;
     float pressure = 1.0f;
