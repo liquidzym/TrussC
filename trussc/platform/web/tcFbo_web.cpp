@@ -14,6 +14,11 @@ bool Fbo::readPixelsPlatform(unsigned char* pixels) const {
     return false;
 }
 
+bool Fbo::readPixelsFloatPlatform(float* pixels) const {
+    logWarning("Fbo") << "readPixelsFloat is not supported on WebGPU (Emscripten)";
+    return false;
+}
+
 } // namespace trussc
 
 #endif

@@ -26,45 +26,54 @@ extern "C" {
 
 namespace trussc {
 
-bool Fbo::readPixelsPlatform(unsigned char* pixels) const {
-    if (!allocated_ || !pixels) return false;
+// Map sokol pixel format to Metal pixel format
+static MTLPixelFormat toMTLPixelFormat(sg_pixel_format fmt) {
+    switch (fmt) {
+        case SG_PIXELFORMAT_RGBA8:    return MTLPixelFormatRGBA8Unorm;
+        case SG_PIXELFORMAT_RGBA16F:  return MTLPixelFormatRGBA16Float;
+        case SG_PIXELFORMAT_RGBA32F:  return MTLPixelFormatRGBA32Float;
+        case SG_PIXELFORMAT_R8:       return MTLPixelFormatR8Unorm;
+        case SG_PIXELFORMAT_R16F:     return MTLPixelFormatR16Float;
+        case SG_PIXELFORMAT_R32F:     return MTLPixelFormatR32Float;
+        case SG_PIXELFORMAT_RG8:      return MTLPixelFormatRG8Unorm;
+        case SG_PIXELFORMAT_RG16F:    return MTLPixelFormatRG16Float;
+        case SG_PIXELFORMAT_RG32F:    return MTLPixelFormatRG32Float;
+        default:                      return MTLPixelFormatRGBA8Unorm;
+    }
+}
 
-    // Get sokol's command queue and create a SEPARATE command buffer.
-    // We commit sokol's command buffer first (to flush the FBO render pass),
-    // then enqueue our blit on a fresh command buffer.
+// Internal helper: blit GPU texture to CPU-readable staging and copy bytes
+static bool readPixelsInternal(sg_image srcImage, int width, int height,
+                               MTLPixelFormat mtlFormat, size_t bytesPerRow,
+                               void* dstBuffer) {
     id<MTLCommandQueue> cmdQueue = (__bridge id<MTLCommandQueue>)sg_mtl_command_queue();
     if (!cmdQueue) {
-        logError() << "[FBO] Failed to get Metal command queue";
+        tc::logError() << "[FBO] Failed to get Metal command queue";
         return false;
     }
 
-    // Get source texture (FBO color attachment)
-    sg_mtl_image_info info = sg_mtl_query_image_info(colorTexture_.getImage());
+    sg_mtl_image_info info = sg_mtl_query_image_info(srcImage);
     id<MTLTexture> srcTexture = (__bridge id<MTLTexture>)info.tex[info.active_slot];
     if (!srcTexture) {
-        logError() << "[FBO] Failed to get source MTLTexture";
+        tc::logError() << "[FBO] Failed to get source MTLTexture";
         return false;
     }
 
-    // Force sokol to commit its current command buffer.
-    // This submits all pending GPU work (including the FBO render pass).
-    // sokol will create a new command buffer on the next sg_begin_pass().
+    // Force sokol to commit its current command buffer
     sg_commit();
 
-    // Now create a new command buffer for the blit (on the same queue,
-    // so it executes AFTER sokol's just-committed render commands).
     id<MTLDevice> device = cmdQueue.device;
 
-    MTLTextureDescriptor* desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
-                                                                                    width:width_
-                                                                                   height:height_
+    MTLTextureDescriptor* desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:mtlFormat
+                                                                                    width:width
+                                                                                   height:height
                                                                                 mipmapped:NO];
     desc.storageMode = MTLStorageModeShared;
     desc.usage = MTLTextureUsageShaderRead;
 
     id<MTLTexture> dstTexture = [device newTextureWithDescriptor:desc];
     if (!dstTexture) {
-        logError() << "[FBO] Failed to create staging texture";
+        tc::logError() << "[FBO] Failed to create staging texture";
         return false;
     }
 
@@ -75,7 +84,7 @@ bool Fbo::readPixelsPlatform(unsigned char* pixels) const {
                      sourceSlice:0
                      sourceLevel:0
                     sourceOrigin:MTLOriginMake(0, 0, 0)
-                      sourceSize:MTLSizeMake(width_, height_, 1)
+                      sourceSize:MTLSizeMake(width, height, 1)
                        toTexture:dstTexture
                 destinationSlice:0
                 destinationLevel:0
@@ -85,16 +94,90 @@ bool Fbo::readPixelsPlatform(unsigned char* pixels) const {
     [cmdBuffer commit];
     [cmdBuffer waitUntilCompleted];
 
-    // Read pixels from the shared staging texture
-    MTLRegion region = MTLRegionMake2D(0, 0, width_, height_);
-    NSUInteger bytesPerRow = width_ * 4;  // RGBA8
-
-    [dstTexture getBytes:pixels
+    MTLRegion region = MTLRegionMake2D(0, 0, width, height);
+    [dstTexture getBytes:dstBuffer
              bytesPerRow:bytesPerRow
               fromRegion:region
              mipmapLevel:0];
 
     return true;
+}
+
+bool Fbo::readPixelsPlatform(unsigned char* pixels) const {
+    if (!allocated_ || !pixels) return false;
+
+    size_t bytesPerRow = width_ * 4;  // RGBA8
+    return readPixelsInternal(colorTexture_.getImage(), width_, height_,
+                              MTLPixelFormatRGBA8Unorm, bytesPerRow, pixels);
+}
+
+bool Fbo::readPixelsFloatPlatform(float* pixels) const {
+    if (!allocated_ || !pixels) return false;
+
+    sg_pixel_format sgFmt = colorTexture_.getPixelFormat();
+    // Determine actual format (NONE means legacy RGBA8)
+    if (sgFmt == SG_PIXELFORMAT_NONE) sgFmt = SG_PIXELFORMAT_RGBA8;
+
+    MTLPixelFormat mtlFmt = toMTLPixelFormat(sgFmt);
+
+    // For non-float formats, read as U8 then convert
+    if (sgFmt == SG_PIXELFORMAT_RGBA8 || sgFmt == SG_PIXELFORMAT_R8 || sgFmt == SG_PIXELFORMAT_RG8) {
+        int ch = channelCount(format_);
+        std::vector<unsigned char> tmp(width_ * height_ * ch);
+        size_t bytesPerRow = width_ * ch;
+        bool ok = readPixelsInternal(colorTexture_.getImage(), width_, height_,
+                                     mtlFmt, bytesPerRow, tmp.data());
+        if (!ok) return false;
+        // Convert U8 to float
+        int total = width_ * height_ * ch;
+        for (int i = 0; i < total; i++) {
+            pixels[i] = (float)tmp[i] / 255.0f;
+        }
+        return true;
+    }
+
+    // Float formats: read directly
+    int bpp = bytesPerPixel(format_);
+    size_t bytesPerRow = width_ * bpp;
+
+    // For 16F formats we need to read raw half-floats and convert to float
+    if (sgFmt == SG_PIXELFORMAT_R16F || sgFmt == SG_PIXELFORMAT_RG16F || sgFmt == SG_PIXELFORMAT_RGBA16F) {
+        int ch = channelCount(format_);
+        std::vector<uint16_t> tmp(width_ * height_ * ch);
+        bool ok = readPixelsInternal(colorTexture_.getImage(), width_, height_,
+                                     mtlFmt, bytesPerRow, tmp.data());
+        if (!ok) return false;
+        // Convert half-float to float (IEEE 754 binary16)
+        int total = width_ * height_ * ch;
+        for (int i = 0; i < total; i++) {
+            uint16_t h = tmp[i];
+            uint32_t sign = (h & 0x8000) << 16;
+            uint32_t exp = (h >> 10) & 0x1F;
+            uint32_t mantissa = h & 0x3FF;
+            uint32_t f;
+            if (exp == 0) {
+                if (mantissa == 0) {
+                    f = sign;
+                } else {
+                    // Denormalized
+                    exp = 1;
+                    while (!(mantissa & 0x400)) { mantissa <<= 1; exp--; }
+                    mantissa &= 0x3FF;
+                    f = sign | ((exp + 127 - 15) << 23) | (mantissa << 13);
+                }
+            } else if (exp == 31) {
+                f = sign | 0x7F800000 | (mantissa << 13);
+            } else {
+                f = sign | ((exp + 127 - 15) << 23) | (mantissa << 13);
+            }
+            memcpy(&pixels[i], &f, sizeof(float));
+        }
+        return true;
+    }
+
+    // 32F formats: direct read
+    return readPixelsInternal(colorTexture_.getImage(), width_, height_,
+                              mtlFmt, bytesPerRow, pixels);
 }
 
 } // namespace trussc
