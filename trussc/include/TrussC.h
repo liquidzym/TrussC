@@ -1086,6 +1086,10 @@ inline void drawLine(float x1, float y1, float x2, float y2) {
     getDefaultContext().drawLine(x1, y1, x2, y2);
 }
 
+inline void drawLine(float x1, float y1, float z1, float x2, float y2, float z2) {
+    getDefaultContext().drawLine(x1, y1, z1, x2, y2, z2);
+}
+
 // Triangle
 inline void drawTriangle(Vec3 p1, Vec3 p2, Vec3 p3) {
     getDefaultContext().drawTriangle(p1, p2, p3);

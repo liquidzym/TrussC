@@ -432,6 +432,10 @@ public:
         drawLine(Vec3(x1, y1, 0), Vec3(x2, y2, 0));
     }
 
+    void drawLine(float x1, float y1, float z1, float x2, float y2, float z2) {
+        drawLine(Vec3(x1, y1, z1), Vec3(x2, y2, z2));
+    }
+
     // Main implementation (Vec3)
     void drawTriangle(Vec3 p1, Vec3 p2, Vec3 p3) {
         auto& writer = internal::getActiveWriter();

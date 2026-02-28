@@ -166,8 +166,8 @@ categories:
         signatures:
           - params: "float h, float s, float b"
             params_simple: "h, s, b"
-        description: "Set color from HSB (H: 0-TAU)"
-        description_ja: "HSBで色を設定 (H: 0-TAU)"
+        description: "Set color from HSB (H: 0-1)"
+        description_ja: "HSBで色を設定 (H: 0-1)"
         sketch: true
         snippet: "setColorHSB(${1:0.0}, ${2:1.0}, ${3:1.0})"
 
@@ -283,10 +283,12 @@ categories:
         signatures:
           - params: "float x1, float y1, float x2, float y2"
             params_simple: "x1, y1, x2, y2"
+          - params: "float x1, float y1, float z1, float x2, float y2, float z2"
+            params_simple: "x1, y1, z1, x2, y2, z2"
           - params: "Vec3 p1, Vec3 p2"
             params_simple: "p1, p2"
-        description: "Draw line"
-        description_ja: "線を描画"
+        description: "Draw line (2D or 3D)"
+        description_ja: "線を描画（2Dまたは3D）"
         of_equivalent: "ofDrawLine"
         sketch: true
         snippet: "drawLine(${1:x1}, ${2:y1}, ${3:x2}, ${4:y2})"
@@ -413,6 +415,26 @@ categories:
         description_ja: "ストローク描画を終了"
         sketch: true
         snippet: "endStroke()"
+
+      - name: beginLines
+        return: "void"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Begin batch line drawing. Add vertex pairs with vertex(), then call endLines(). Each pair of vertices draws one independent line segment. Use setColor() between vertices for per-line colors."
+        description_ja: "バッチ線描画を開始。vertex()で頂点ペアを追加し、endLines()で描画。2頂点で1本の独立した線分。setColor()で頂点ごとに色を変更可能"
+        sketch: true
+        snippet: "beginLines()"
+
+      - name: endLines
+        return: "void"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "End batch line drawing and render all accumulated line segments"
+        description_ja: "バッチ線描画を終了し、蓄積された全線分を描画"
+        sketch: true
+        snippet: "endLines()"
 
       - name: drawStroke
         return: "void"
@@ -5269,8 +5291,8 @@ types:
         signatures:
           - params: "float h, float s, float b"
           - params: "float h, float s, float b, float a"
-        description: "Create from HSB (H: 0-TAU)"
-        description_ja: "HSBから作成 (H: 0-TAU)"
+        description: "Create from HSB (H: 0-1)"
+        description_ja: "HSBから作成 (H: 0-1)"
         snippet: "Color_fromHSB(${1:h}, ${2:s}, ${3:b})"
       - name: Color_fromBytes
         return: Color
