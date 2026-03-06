@@ -936,8 +936,8 @@ inline float clamp(float value, float min, float max) {
     return std::max(min, std::min(max, value));
 }
 
-// Map
-inline float map(float value, float inMin, float inMax, float outMin, float outMax) {
+// Remap value from one range to another
+inline float remap(float value, float inMin, float inMax, float outMin, float outMax) {
     return outMin + (outMax - outMin) * ((value - inMin) / (inMax - inMin));
 }
 

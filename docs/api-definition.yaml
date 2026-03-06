@@ -1531,16 +1531,16 @@ categories:
         sketch: true
         snippet: "clamp(${1:v}, ${2:min}, ${3:max})"
 
-      - name: map
+      - name: remap
         return: "float"
         signatures:
           - params: "float v, float inMin, float inMax, float outMin, float outMax"
             params_simple: "v, inMin, inMax, outMin, outMax"
-        description: "Map value between ranges"
-        description_ja: "値を範囲間でマッピング"
+        description: "Remap value from one range to another"
+        description_ja: "値を範囲間でリマッピング"
         of_equivalent: "ofMap"
         sketch: true
-        snippet: "map(${1:v}, ${2:inMin}, ${3:inMax}, ${4:outMin}, ${5:outMax})"
+        snippet: "remap(${1:v}, ${2:inMin}, ${3:inMax}, ${4:outMin}, ${5:outMax})"
 
   # ==========================================================================
   # Math - Trigonometry
