@@ -289,14 +289,16 @@ function(_trussc_apply_macos_icon_folder TARGET_NAME ICON_FOLDER OUT_SUCCESS)
         return()
     endif()
 
-    # Verify actool actually works (may not function with CLI tools only)
+    # Verify full Xcode is installed (actool needs SDK, not just CLI tools)
     execute_process(
-        COMMAND ${ACTOOL_EXECUTABLE} --version
-        RESULT_VARIABLE ACTOOL_TEST
-        OUTPUT_QUIET ERROR_QUIET
+        COMMAND xcode-select -p
+        OUTPUT_VARIABLE XCODE_DEV_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE XCODE_SELECT_RESULT
+        ERROR_QUIET
     )
-    if(NOT ACTOOL_TEST EQUAL 0)
-        message(STATUS "[${TARGET_NAME}] actool found but not functional - skipping .icon folder")
+    if(NOT XCODE_SELECT_RESULT EQUAL 0 OR NOT XCODE_DEV_DIR MATCHES "Xcode.*\\.app")
+        message(STATUS "[${TARGET_NAME}] Full Xcode not found - skipping .icon folder")
         return()
     endif()
 
