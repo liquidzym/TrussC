@@ -60,7 +60,8 @@ jobs:
             libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-plugins-good \
             gstreamer1.0-plugins-bad \
-            pkg-config
+            pkg-config \
+            libcurl4-openssl-dev
 
       # Windows: Setup MSVC environment (provides cl.exe, ninja, etc. in PATH)
       - name: Setup MSVC (Windows)
