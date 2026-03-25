@@ -216,7 +216,10 @@ int main(int argc, char* argv[]) {
                 cerr << "Error: Project path '" << targetPath << "' does not exist." << endl;
                 return 1;
             }
-            
+
+            // Derive project name from folder name
+            settings.projectName = fs::canonical(targetPath).filename().string();
+
             // Parse existing addons.make
             parseAddonsMake(targetPath, availableAddons, settings.addonSelected);
             settings.addons = availableAddons; // Pass all available, selection is in addonSelected
