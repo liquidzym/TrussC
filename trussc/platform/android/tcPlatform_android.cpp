@@ -8,6 +8,7 @@
 
 #include <android/log.h>
 #include <android/native_activity.h>
+#include <jni.h>
 #include "sokol_app.h"
 
 // GLES3 for screen capture
@@ -16,8 +17,58 @@
 namespace trussc {
 namespace platform {
 
+static bool immersiveMode_ = false;
+
 float getDisplayScaleFactor() {
     return sapp_dpi_scale();
+}
+
+// ---------------------------------------------------------------------------
+// Immersive mode (Sticky Immersive via JNI)
+// ---------------------------------------------------------------------------
+void setImmersiveMode(bool enabled) {
+    immersiveMode_ = enabled;
+    auto* activity = (ANativeActivity*)sapp_android_get_native_activity();
+    if (!activity) return;
+
+    JNIEnv* env = nullptr;
+    activity->vm->AttachCurrentThread(&env, nullptr);
+    if (!env) return;
+
+    // Get the window's DecorView
+    jclass activityClass = env->GetObjectClass(activity->clazz);
+    jmethodID getWindow = env->GetMethodID(activityClass, "getWindow", "()Landroid/view/Window;");
+    jobject window = env->CallObjectMethod(activity->clazz, getWindow);
+
+    jclass windowClass = env->GetObjectClass(window);
+    jmethodID getDecorView = env->GetMethodID(windowClass, "getDecorView", "()Landroid/view/View;");
+    jobject decorView = env->CallObjectMethod(window, getDecorView);
+
+    jclass viewClass = env->GetObjectClass(decorView);
+    jmethodID setSystemUiVisibility = env->GetMethodID(viewClass, "setSystemUiVisibility", "(I)V");
+
+    if (enabled) {
+        // SYSTEM_UI_FLAG_IMMERSIVE_STICKY | SYSTEM_UI_FLAG_FULLSCREEN |
+        // SYSTEM_UI_FLAG_HIDE_NAVIGATION | SYSTEM_UI_FLAG_LAYOUT_STABLE |
+        // SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        const int flags = 0x00001000 | 0x00000004 | 0x00000002 |
+                          0x00000100 | 0x00000200 | 0x00000400;
+        env->CallVoidMethod(decorView, setSystemUiVisibility, flags);
+    } else {
+        env->CallVoidMethod(decorView, setSystemUiVisibility, 0);
+    }
+
+    env->DeleteLocalRef(viewClass);
+    env->DeleteLocalRef(decorView);
+    env->DeleteLocalRef(windowClass);
+    env->DeleteLocalRef(window);
+    env->DeleteLocalRef(activityClass);
+
+    activity->vm->DetachCurrentThread();
+}
+
+bool getImmersiveMode() {
+    return immersiveMode_;
 }
 
 void setWindowSize(int width, int height) {
