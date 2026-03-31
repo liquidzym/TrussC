@@ -266,6 +266,11 @@ namespace internal {
     // Touch-as-mouse mapping (default: ON)
     inline bool touchAsMouse = true;
 
+    // Touch event listeners (must persist to keep subscriptions alive)
+    inline EventListener touchPressedListener;
+    inline EventListener touchMovedListener;
+    inline EventListener touchReleasedListener;
+
     // Keyboard state
     inline std::unordered_set<int> keysPressed;
 
@@ -2227,7 +2232,8 @@ namespace internal {
                 // Build TouchEventArgs from sokol touchpoints
                 TouchEventArgs touchArgs;
                 touchArgs.numTouches = ev->num_touches;
-                if (touchArgs.numTouches > 8) touchArgs.numTouches = 8;
+                if (touchArgs.numTouches > TouchEventArgs::MAX_TOUCHES)
+                    touchArgs.numTouches = TouchEventArgs::MAX_TOUCHES;
                 for (int i = 0; i < touchArgs.numTouches; i++) {
                     touchArgs.touches[i].id = (int)ev->touches[i].identifier;
                     touchArgs.touches[i].x = ev->touches[i].pos_x * scale;
@@ -2399,13 +2405,13 @@ sapp_desc buildAppDescriptor(const WindowSettings& settings = WindowSettings()) 
     };
 
     // Touch events — delivered via events() system, forwarded to App virtual methods
-    events().touchPressed.listen([](TouchEventArgs& args) {
+    internal::touchPressedListener = events().touchPressed.listen([](TouchEventArgs& args) {
         if (app) app->touchPressed(args);
     });
-    events().touchMoved.listen([](TouchEventArgs& args) {
+    internal::touchMovedListener = events().touchMoved.listen([](TouchEventArgs& args) {
         if (app) app->touchMoved(args);
     });
-    events().touchReleased.listen([](TouchEventArgs& args) {
+    internal::touchReleasedListener = events().touchReleased.listen([](TouchEventArgs& args) {
         if (app) app->touchReleased(args);
     });
 

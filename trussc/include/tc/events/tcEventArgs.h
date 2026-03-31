@@ -95,7 +95,8 @@ struct TouchPoint {
 // Touch event arguments (multi-touch)
 // ---------------------------------------------------------------------------
 struct TouchEventArgs {
-    TouchPoint touches[8];    // Up to 8 simultaneous touches
+    static constexpr int MAX_TOUCHES = 8;  // Matches SAPP_MAX_TOUCHPOINTS
+    TouchPoint touches[MAX_TOUCHES];
     int numTouches = 0;
 
     // Convenience: first touch
