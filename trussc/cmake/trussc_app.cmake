@@ -202,7 +202,9 @@ macro(trussc_app)
         set(_TC_LIB_DIR "${_TC_APK_STAGING}/lib/arm64-v8a")
 
         # Generate AndroidManifest.xml from template
-        set(TC_APP_PACKAGE "com.trussc.${PROJECT_NAME}")
+        # Android package name segments must start with a letter
+        string(REGEX REPLACE "^([^a-zA-Z])" "app\\1" _TC_SAFE_NAME "${PROJECT_NAME}")
+        set(TC_APP_PACKAGE "com.trussc.${_TC_SAFE_NAME}")
         set(TC_APP_LIB_NAME "${PROJECT_NAME}")
         set(_TC_MANIFEST_TEMPLATE "${TRUSSC_DIR}/resources/android/AndroidManifest.xml.in")
         set(_TC_MANIFEST_OUT "${CMAKE_CURRENT_BINARY_DIR}/AndroidManifest.xml")
