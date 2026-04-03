@@ -18,6 +18,7 @@
 #include "sokol/sokol_gfx.h"
 #include "sokol/sokol_glue.h"
 #include "sokol/util/sokol_gl_tc.h"
+#include "sokol/util/sokol_memtrack.h"
 
 // Dear ImGui + sokol_imgui
 #include "imgui/imgui.h"
@@ -1604,6 +1605,16 @@ inline double getFrameRate() {
     double avgDt = sum / count;
     return avgDt > 0.0 ? 1.0 / avgDt : 0.0;
 }
+
+// ---------------------------------------------------------------------------
+// Sokol memory tracking
+// ---------------------------------------------------------------------------
+
+// Get total bytes allocated by sokol libraries
+inline int getSokolMemoryBytes() { return smemtrack_info().num_bytes; }
+
+// Get number of active allocations in sokol libraries
+inline int getSokolMemoryAllocs() { return smemtrack_info().num_allocs; }
 
 // ---------------------------------------------------------------------------
 // Mouse state (global / window coordinates)
