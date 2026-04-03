@@ -489,6 +489,10 @@ ThermalState getThermalState() { return ThermalState::Nominal; }
 #endif
 float getThermalTemperature() { return -1.0f; }  // No NDK API for temperature value
 
+void bringWindowToFront() {
+    // no-op: Android apps are always foreground when running
+}
+
 } // namespace platform
 } // namespace trussc
 

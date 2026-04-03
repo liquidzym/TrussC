@@ -2005,6 +2005,9 @@ namespace internal {
         }
         #endif
 
+        // Bring window to front on startup
+        platform::bringWindowToFront();
+
         if (appSetupFunc) appSetupFunc();
 
         // Set initial app size (must be after appSetupFunc creates the app)

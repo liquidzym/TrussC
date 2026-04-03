@@ -35,6 +35,11 @@ struct Location {
 
 namespace platform {
 
+// Bring the application window to front and give it focus
+// Desktop: activates and raises the window
+// Mobile/Web: no-op (always foreground)
+void bringWindowToFront();
+
 // Get DPI scale of main display (available before window creation)
 // macOS: 1.0 (normal) or 2.0 (Retina)
 // Other: 1.0

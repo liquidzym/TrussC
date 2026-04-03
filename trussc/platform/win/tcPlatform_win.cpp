@@ -28,6 +28,13 @@
 namespace trussc {
 namespace platform {
 
+void bringWindowToFront() {
+    HWND hwnd = (HWND)sapp_win32_get_hwnd();
+    if (hwnd) {
+        SetForegroundWindow(hwnd);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // getDisplayScaleFactor - DPIスケールを取得
 // ---------------------------------------------------------------------------

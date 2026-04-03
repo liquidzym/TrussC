@@ -22,6 +22,14 @@
 namespace trussc {
 namespace platform {
 
+void bringWindowToFront() {
+    NSWindow* window = (__bridge NSWindow*)sapp_macos_get_window();
+    if (window) {
+        [NSApp activateIgnoringOtherApps:YES];
+        [window makeKeyAndOrderFront:nil];
+    }
+}
+
 float getDisplayScaleFactor() {
     CGDirectDisplayID displayId = CGMainDisplayID();
     CGDisplayModeRef mode = CGDisplayCopyDisplayMode(displayId);

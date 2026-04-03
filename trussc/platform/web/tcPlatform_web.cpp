@@ -64,6 +64,10 @@ float getCompassHeading() { return 0.0f; }
 bool isProximityClose() { return false; }
 Location getLocation() { return Location(); }
 
+void bringWindowToFront() {
+    // no-op: web apps have no window management
+}
+
 } // namespace platform
 } // namespace trussc
 

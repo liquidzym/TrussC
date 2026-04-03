@@ -357,6 +357,10 @@ void setImmersiveMode(bool enabled) {
 }
 bool getImmersiveMode() { return _sapp_ios_immersive_mode; }
 
+void bringWindowToFront() {
+    // no-op: iOS apps are always foreground when running
+}
+
 } // namespace platform
 } // namespace trussc
 

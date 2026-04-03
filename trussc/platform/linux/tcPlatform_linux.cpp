@@ -18,6 +18,18 @@
 namespace trussc {
 namespace platform {
 
+void bringWindowToFront() {
+    Display* display = XOpenDisplay(nullptr);
+    if (!display) return;
+    Window window = (Window)(uintptr_t)sapp_x11_get_window();
+    if (window) {
+        XRaiseWindow(display, window);
+        XSetInputFocus(display, window, RevertToParent, CurrentTime);
+        XFlush(display);
+    }
+    XCloseDisplay(display);
+}
+
 float getDisplayScaleFactor() {
     // TODO: Implement proper DPI detection using X11/XRandR
     // For now, return 1.0 (no scaling)
