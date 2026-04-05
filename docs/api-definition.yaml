@@ -46,6 +46,26 @@ categories:
         sketch: true
         snippet: "void draw() {\n\t$0\n}"
 
+      - name: cleanup
+        return: "void"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Called once before exit (optional user callback for cleanup)"
+        description_ja: "終了前に一度呼ばれる（オプショナルなクリーンアップコールバック）"
+        sketch: false
+        snippet: "void cleanup() {\n\t$0\n}"
+
+      - name: runApp
+        return: "int"
+        signatures:
+          - params: "const WindowSettings& settings = WindowSettings()"
+            params_simple: "settings"
+        description: "Start the application main loop. Called from main()"
+        description_ja: "アプリケーションのメインループを開始。main()から呼ぶ"
+        sketch: false
+        snippet: "runApp(${1:settings})"
+
   # ==========================================================================
   # Events
   # ==========================================================================
@@ -460,6 +480,27 @@ categories:
         sketch: true
         snippet: "drawBitmapString(${1:\"text\"}, ${2:x}, ${3:y})"
 
+      - name: drawBitmapStringHighlight
+        return: "void"
+        signatures:
+          - params: "const string& text, float x, float y, const Color& background = Color(0,0,0), const Color& foreground = Color(1,1,1)"
+            params_simple: "text, x, y, background, foreground"
+        description: "Draw text with background highlight"
+        description_ja: "背景ハイライト付きでテキストを描画"
+        of_equivalent: "ofDrawBitmapStringHighlight"
+        sketch: false
+        snippet: "drawBitmapStringHighlight(${1:\"text\"}, ${2:x}, ${3:y})"
+
+      - name: getBitmapStringBounds
+        return: "void"
+        signatures:
+          - params: "const string& text, float& width, float& height"
+            params_simple: "text, width, height"
+        description: "Get bitmap string bounding box size"
+        description_ja: "ビットマップ文字列のバウンディングボックスサイズを取得"
+        sketch: false
+        snippet: "getBitmapStringBounds(${1:\"text\"}, ${2:w}, ${3:h})"
+
       - name: setTextAlign
         return: "void"
         signatures:
@@ -735,6 +776,115 @@ categories:
         description_ja: "現在の塗りつぶし色を取得"
         sketch: true
         snippet: "getColor()"
+
+      # --- Scissor ---
+
+      - name: setScissor
+        return: "void"
+        signatures:
+          - params: "float x, float y, float w, float h"
+            params_simple: "x, y, w, h"
+        description: "Set scissor clipping rectangle. Also available via RectNode::setClipping(true)"
+        description_ja: "シザー（クリッピング）矩形を設定。RectNode::setClipping(true)でも使用可"
+        sketch: false
+        snippet: "setScissor(${1:x}, ${2:y}, ${3:w}, ${4:h})"
+
+      - name: resetScissor
+        return: "void"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Reset (disable) scissor clipping"
+        description_ja: "シザー（クリッピング）を解除"
+        sketch: false
+        snippet: "resetScissor()"
+
+      - name: pushScissor
+        return: "void"
+        signatures:
+          - params: "float x, float y, float w, float h"
+            params_simple: "x, y, w, h"
+        description: "Push scissor clipping rectangle onto stack"
+        description_ja: "シザー矩形をスタックにプッシュ"
+        sketch: false
+        snippet: "pushScissor(${1:x}, ${2:y}, ${3:w}, ${4:h})"
+
+      - name: popScissor
+        return: "void"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Pop scissor clipping rectangle from stack"
+        description_ja: "シザー矩形をスタックからポップ"
+        sketch: false
+        snippet: "popScissor()"
+
+      # --- Blend Mode ---
+
+      - name: setBlendMode
+        return: "void"
+        signatures:
+          - params: "BlendMode mode"
+            params_simple: "mode"
+        description: "Set blend mode. BlendMode::Alpha (default), Add, Multiply, Screen, Subtract, Disabled"
+        description_ja: "ブレンドモードを設定。BlendMode::Alpha（デフォルト）, Add, Multiply, Screen, Subtract, Disabled"
+        of_equivalent: "ofEnableBlendMode"
+        sketch: false
+        snippet: "setBlendMode(${1:BlendMode::Add})"
+
+      - name: getBlendMode
+        return: "BlendMode"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get current blend mode"
+        description_ja: "現在のブレンドモードを取得"
+        sketch: false
+        snippet: "getBlendMode()"
+
+      - name: resetBlendMode
+        return: "void"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Reset blend mode to Alpha (default)"
+        description_ja: "ブレンドモードをAlpha（デフォルト）にリセット"
+        sketch: false
+        snippet: "resetBlendMode()"
+
+      # --- Style Stack ---
+
+      - name: pushStyle
+        return: "void"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Push current style (color, fill, stroke, blend) onto stack"
+        description_ja: "現在のスタイル（色、塗り、ストローク、ブレンド）をスタックにプッシュ"
+        of_equivalent: "ofPushStyle"
+        sketch: false
+        snippet: "pushStyle()"
+
+      - name: popStyle
+        return: "void"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Pop style from stack, restoring previous state"
+        description_ja: "スタイルをスタックからポップし、前の状態を復元"
+        of_equivalent: "ofPopStyle"
+        sketch: false
+        snippet: "popStyle()"
+
+      - name: resetStyle
+        return: "void"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Reset all style settings to defaults"
+        description_ja: "全スタイル設定をデフォルトにリセット"
+        sketch: false
+        snippet: "resetStyle()"
 
   # ==========================================================================
   # Transform
@@ -1090,6 +1240,76 @@ categories:
         sketch: true
         snippet: "getGlobalMousePos()"
 
+      - name: getGlobalMouseX
+        return: "float"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get global mouse X (screen coordinates, not window-relative)"
+        description_ja: "グローバルマウスX座標（スクリーン座標、ウィンドウ相対ではない）"
+        sketch: false
+        snippet: "getGlobalMouseX()"
+
+      - name: getGlobalMouseY
+        return: "float"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get global mouse Y (screen coordinates, not window-relative)"
+        description_ja: "グローバルマウスY座標（スクリーン座標、ウィンドウ相対ではない）"
+        sketch: false
+        snippet: "getGlobalMouseY()"
+
+      - name: getGlobalPMouseX
+        return: "float"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get previous frame global mouse X"
+        description_ja: "前フレームのグローバルマウスX座標"
+        sketch: false
+        snippet: "getGlobalPMouseX()"
+
+      - name: getGlobalPMouseY
+        return: "float"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get previous frame global mouse Y"
+        description_ja: "前フレームのグローバルマウスY座標"
+        sketch: false
+        snippet: "getGlobalPMouseY()"
+
+      - name: getMouseButton
+        return: "int"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get currently pressed mouse button"
+        description_ja: "現在押されているマウスボタンを取得"
+        sketch: false
+        snippet: "getMouseButton()"
+
+      - name: setTouchAsMouse
+        return: "void"
+        signatures:
+          - params: "bool enabled"
+            params_simple: "enabled"
+        description: "Enable/disable touch events firing as mouse events (for Android/iOS)"
+        description_ja: "タッチイベントをマウスイベントとして発火させるか設定（Android/iOS用）"
+        sketch: false
+        snippet: "setTouchAsMouse(${1:true})"
+
+      - name: getTouchAsMouse
+        return: "bool"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get touchAsMouse state"
+        description_ja: "touchAsMouseの状態を取得"
+        sketch: false
+        snippet: "getTouchAsMouse()"
+
       - name: isMousePressed
         return: "bool"
         signatures:
@@ -1207,6 +1427,16 @@ categories:
         sketch: true
         snippet: "getFrameRate()"
 
+      - name: getFps
+        return: "float"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get current FPS (alias for getFrameRate)"
+        description_ja: "現在のFPSを取得（getFrameRateのエイリアス）"
+        sketch: false
+        snippet: "getFps()"
+
       - name: getFrameCount
         return: "uint64_t"
         signatures:
@@ -1251,6 +1481,46 @@ categories:
         description_ja: "sokol_glのバッファを解放（次の描画時に自動再確保）"
         sketch: true
         snippet: "releaseSglBuffers()"
+
+      - name: getMemoryUsage
+        return: "size_t"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get process memory usage in bytes (platform-specific)"
+        description_ja: "プロセスのメモリ使用量をバイトで取得（プラットフォーム固有）"
+        sketch: false
+        snippet: "getMemoryUsage()"
+
+      - name: getFboCount
+        return: "size_t"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get number of active FBO objects"
+        description_ja: "アクティブなFBOオブジェクト数を取得"
+        sketch: false
+        snippet: "getFboCount()"
+
+      - name: getTextureCount
+        return: "size_t"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get number of active Texture objects"
+        description_ja: "アクティブなTextureオブジェクト数を取得"
+        sketch: false
+        snippet: "getTextureCount()"
+
+      - name: getNodeCount
+        return: "size_t"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get number of active Node objects in scene graph"
+        description_ja: "シーングラフ内のアクティブなNodeオブジェクト数を取得"
+        sketch: false
+        snippet: "getNodeCount()"
 
   # ==========================================================================
   # Time - Elapsed
@@ -1945,6 +2215,108 @@ categories:
         sketch: true
         snippet: "getClipboardString()"
 
+      - name: getDpiScale
+        return: "float"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get display DPI scale factor (e.g. 2.0 for Retina)"
+        description_ja: "ディスプレイのDPIスケール係数を取得（Retinaなら2.0等）"
+        sketch: false
+        snippet: "getDpiScale()"
+
+      - name: getFramebufferWidth
+        return: "int"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get framebuffer width in pixels (window width * DPI scale)"
+        description_ja: "フレームバッファ幅をピクセルで取得（ウィンドウ幅 × DPIスケール）"
+        sketch: false
+        snippet: "getFramebufferWidth()"
+
+      - name: getFramebufferHeight
+        return: "int"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get framebuffer height in pixels (window height * DPI scale)"
+        description_ja: "フレームバッファ高さをピクセルで取得（ウィンドウ高さ × DPIスケール）"
+        sketch: false
+        snippet: "getFramebufferHeight()"
+
+      - name: getAspectRatio
+        return: "float"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get window aspect ratio (width / height)"
+        description_ja: "ウィンドウのアスペクト比を取得（幅 / 高さ）"
+        sketch: false
+        snippet: "getAspectRatio()"
+
+      - name: setOrientation
+        return: "void"
+        signatures:
+          - params: "Orientation mask"
+            params_simple: "mask"
+        description: "Set allowed screen orientations (mobile). Values: Orientation::Portrait, Landscape, All"
+        description_ja: "画面の向きを設定（モバイル用）。Orientation::Portrait, Landscape, All"
+        sketch: false
+        snippet: "setOrientation(${1:Orientation::All})"
+
+      - name: setIndependentFps
+        return: "void"
+        signatures:
+          - params: "float updateFps, float drawFps"
+            params_simple: "updateFps, drawFps"
+        description: "Set independent update and draw frame rates"
+        description_ja: "updateとdrawのフレームレートを個別に設定"
+        sketch: false
+        snippet: "setIndependentFps(${1:60}, ${2:30})"
+
+      - name: grabScreen
+        return: "bool"
+        signatures:
+          - params: "Pixels& outPixels"
+            params_simple: "outPixels"
+        description: "Capture current screen to Pixels"
+        description_ja: "現在の画面をPixelsにキャプチャ"
+        sketch: false
+        snippet: "grabScreen(${1:pixels})"
+
+      - name: isFullscreen
+        return: "bool"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Check if window is fullscreen"
+        description_ja: "フルスクリーンかどうか確認"
+        of_equivalent: "ofGetWindowMode"
+        sketch: true
+        snippet: "isFullscreen()"
+
+      - name: setFullscreen
+        return: "void"
+        signatures:
+          - params: "bool fullscreen"
+            params_simple: "fullscreen"
+        description: "Set fullscreen mode"
+        description_ja: "フルスクリーンを設定"
+        of_equivalent: "ofSetFullscreen"
+        sketch: true
+        snippet: "setFullscreen(${1:true})"
+
+      - name: redraw
+        return: "void"
+        signatures:
+          - params: "int count = 1"
+            params_simple: "count"
+        description: "Request extra redraws (useful for event-driven rendering)"
+        description_ja: "追加の再描画を要求（イベント駆動レンダリング用）"
+        sketch: false
+        snippet: "redraw()"
+
   # ==========================================================================
   # Utility
   # ==========================================================================
@@ -2062,6 +2434,16 @@ categories:
         of_equivalent: "ofToUpper"
         sketch: true
         snippet: "toUpper(${1:str})"
+
+      - name: intersectRect
+        return: "void"
+        signatures:
+          - params: "float x1, float y1, float w1, float h1, float x2, float y2, float w2, float h2, float& ox, float& oy, float& ow, float& oh"
+            params_simple: "x1, y1, w1, h1, x2, y2, w2, h2, ox, oy, ow, oh"
+        description: "Compute intersection of two rectangles"
+        description_ja: "2つの矩形の交差部分を計算"
+        sketch: false
+        snippet: "intersectRect(${1:x1}, ${2:y1}, ${3:w1}, ${4:h1}, ${5:x2}, ${6:y2}, ${7:w2}, ${8:h2}, ${9:ox}, ${10:oy}, ${11:ow}, ${12:oh})"
 
   # ==========================================================================
   # File
@@ -3670,6 +4052,26 @@ categories:
         description_ja: "遠クリップ面を設定"
         sketch: true
         snippet: "setFarClip(${1:10000})"
+
+      - name: getNearClip
+        return: "float"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get near clipping plane distance"
+        description_ja: "近クリップ面の距離を取得"
+        sketch: false
+        snippet: "getNearClip()"
+
+      - name: getFarClip
+        return: "float"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get far clipping plane distance"
+        description_ja: "遠クリップ面の距離を取得"
+        sketch: false
+        snippet: "getFarClip()"
 
       - name: enableMouseInput
         return: "void"
