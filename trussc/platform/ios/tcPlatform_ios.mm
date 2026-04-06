@@ -97,6 +97,16 @@ float getDisplayScaleFactor() {
     return (float)[UIScreen mainScreen].scale;
 }
 
+IVec2 getWindowPosition() {
+    logWarning("Platform") << "getWindowPosition() is not supported on iOS";
+    return IVec2(-1, -1);
+}
+
+void setWindowPosition(int x, int y) {
+    logWarning("Platform") << "setWindowPosition() is not supported on iOS";
+    (void)x; (void)y;
+}
+
 void setWindowSizeLogical(int width, int height) {
     // no-op on iOS (window size is fixed to screen size)
     (void)width;

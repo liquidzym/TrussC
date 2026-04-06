@@ -45,6 +45,16 @@ bool getImmersiveMode() {
     return immersiveMode_;
 }
 
+IVec2 getWindowPosition() {
+    logWarning("Platform") << "getWindowPosition() is not supported on Android";
+    return IVec2(-1, -1);
+}
+
+void setWindowPosition(int x, int y) {
+    logWarning("Platform") << "setWindowPosition() is not supported on Android";
+    (void)x; (void)y;
+}
+
 void setWindowSizeLogical(int width, int height) {
     // Android apps are fullscreen — window size is determined by the device
     (void)width;
