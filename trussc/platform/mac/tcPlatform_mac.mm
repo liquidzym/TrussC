@@ -53,6 +53,33 @@ float getDisplayScaleFactor() {
 void setImmersiveMode(bool enabled) { (void)enabled; }
 bool getImmersiveMode() { return false; }
 
+IVec2 getWindowPosition() {
+    NSWindow* window = (__bridge NSWindow*)sapp_macos_get_window();
+    if (!window) return IVec2(-1, -1);
+
+    NSRect frame = [window frame];
+    // macOS coordinate system is bottom-left origin; convert to top-left
+    NSScreen* screen = [window screen] ? [window screen] : [NSScreen mainScreen];
+    float screenHeight = (float)screen.frame.size.height;
+    int x = (int)frame.origin.x;
+    int y = (int)(screenHeight - frame.origin.y - frame.size.height);
+    return IVec2(x, y);
+}
+
+void setWindowPosition(int x, int y) {
+    NSWindow* window = (__bridge NSWindow*)sapp_macos_get_window();
+    if (!window) return;
+
+    // Convert top-left origin to macOS bottom-left origin
+    NSScreen* screen = [window screen] ? [window screen] : [NSScreen mainScreen];
+    float screenHeight = (float)screen.frame.size.height;
+    NSRect frame = [window frame];
+    NSPoint origin;
+    origin.x = x;
+    origin.y = screenHeight - y - frame.size.height;
+    [window setFrameOrigin:origin];
+}
+
 void setWindowSizeLogical(int width, int height) {
     // メインウィンドウを取得
     NSWindow* window = [[NSApplication sharedApplication] mainWindow];

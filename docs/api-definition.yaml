@@ -2185,6 +2185,26 @@ categories:
         sketch: true
         snippet: "setWindowSize(${1:800}, ${2:600})"
 
+      - name: getWindowPosition
+        return: "IVec2"
+        signatures:
+          - params: ""
+            params_simple: ""
+        description: "Get window position in screen coordinates (top-left origin). macOS/Windows only; other platforms return (-1, -1)"
+        description_ja: "スクリーン座標でのウィンドウ位置を取得（左上原点）。macOS/Windowsのみ対応、他は(-1, -1)を返す"
+        sketch: false
+        snippet: "getWindowPosition()"
+
+      - name: setWindowPosition
+        return: "void"
+        signatures:
+          - params: "int x, int y"
+            params_simple: "x, y"
+        description: "Set window position in screen coordinates (top-left origin). macOS/Windows only; no-op on other platforms"
+        description_ja: "スクリーン座標でウィンドウ位置を設定（左上原点）。macOS/Windowsのみ対応、他はno-op"
+        sketch: false
+        snippet: "setWindowPosition(${1:100}, ${2:100})"
+
       - name: toggleFullscreen
         return: "void"
         signatures:
@@ -5893,6 +5913,76 @@ types:
           - params: ""
         description: "Get XY components as Vec2"
         description_ja: "XY成分をVec2として取得"
+        snippet: "xy()"
+
+  - name: IVec2
+    description: "2D integer vector (x, y)"
+    description_ja: "2D整数ベクトル (x, y)"
+    of_type_category: "math-vector"
+    sketch: true
+    constructor:
+      signatures:
+        - params: ""
+        - params: "int x, int y"
+        - params: "int v"
+      snippet: "IVec2(${1:x}, ${2:y})"
+    properties:
+      - name: x
+        type: int
+        description: "X component"
+        description_ja: "X成分"
+      - name: y
+        type: int
+        description: "Y component"
+        description_ja: "Y成分"
+    methods:
+      - name: toVec2
+        return: Vec2
+        signatures:
+          - params: ""
+        description: "Convert to Vec2 (float)"
+        description_ja: "Vec2（float）に変換"
+        snippet: "toVec2()"
+
+  - name: IVec3
+    description: "3D integer vector (x, y, z)"
+    description_ja: "3D整数ベクトル (x, y, z)"
+    of_type_category: "math-vector"
+    sketch: true
+    constructor:
+      signatures:
+        - params: ""
+        - params: "int x, int y, int z"
+        - params: "int v"
+        - params: "IVec2 v, int z"
+      snippet: "IVec3(${1:x}, ${2:y}, ${3:z})"
+    properties:
+      - name: x
+        type: int
+        description: "X component"
+        description_ja: "X成分"
+      - name: y
+        type: int
+        description: "Y component"
+        description_ja: "Y成分"
+      - name: z
+        type: int
+        description: "Z component"
+        description_ja: "Z成分"
+    methods:
+      - name: toVec3
+        return: Vec3
+        signatures:
+          - params: ""
+        description: "Convert to Vec3 (float)"
+        description_ja: "Vec3（float）に変換"
+        snippet: "toVec3()"
+      - name: xy
+        return: IVec2
+        signatures:
+          - params: ""
+        description: "Get XY components as IVec2"
+        description_ja: "XY成分をIVec2として取得"
         snippet: "xy()"
 
   - name: Color

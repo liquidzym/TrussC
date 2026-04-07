@@ -62,6 +62,16 @@ float getDisplayScaleFactor() {
 void setImmersiveMode(bool enabled) { (void)enabled; }
 bool getImmersiveMode() { return false; }
 
+IVec2 getWindowPosition() {
+    logWarning("Platform") << "getWindowPosition() not yet implemented on Linux";
+    return IVec2(-1, -1);
+}
+
+void setWindowPosition(int x, int y) {
+    logWarning("Platform") << "setWindowPosition() not yet implemented on Linux";
+    (void)x; (void)y;
+}
+
 void setWindowSizeLogical(int width, int height) {
     // TODO: Implement using X11
     // sokol_app handles window creation, so we need to access the X11 window
