@@ -41,6 +41,8 @@ sudo apt install cmake
 
 ### Linux Dependencies
 
+> **Headless Linux (no desktop)?** See [GET_STARTED_CONSOLE_MODE.md](GET_STARTED_CONSOLE_MODE.md) for Raspberry Pi Lite, Orange Pi, and other console-only setups.
+
 Linux requires additional development packages. A helper script is provided to check and install them:
 
 ```bash
