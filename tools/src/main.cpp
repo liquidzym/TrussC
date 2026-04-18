@@ -1523,7 +1523,7 @@ static void printInfoHelp() {
          << "  trusscli info                    Full human-readable overview\n"
          << "  trusscli info addons             Just the addon list\n"
          << "  trusscli info --json             Full info as JSON\n"
-         << "  trusscli info addons --format=plain   Grep-friendly addon list\n";
+         << "  trusscli info addons --format plain   Grep-friendly addon list\n";
 }
 
 // Parse the CMakePresets.json of a project and return the list of configure
@@ -1606,7 +1606,7 @@ static int cmdInfo(const vector<string>& args) {
             }
         }
         else if (!a.empty() && a[0] == '-') {
-            // Accept --format=json style
+            // Accept --format json style
             const string prefix = "--format=";
             if (a.rfind(prefix, 0) == 0) {
                 string v = a.substr(prefix.size());
