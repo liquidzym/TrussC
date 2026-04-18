@@ -8,9 +8,11 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <iomanip>
 #ifndef _WIN32
 #include <spawn.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #else
 #include <process.h>
 #endif
@@ -2104,8 +2106,40 @@ static int cmdBuild(const vector<string>& args) {
 
     string cmake = findCMake();
 
-    // cmake --build --preset <target> --parallel [--config Release] [--clean-first]
-    vector<string> cmd = {cmake, "--build", "--preset", targetPreset, "--parallel"};
+    // Determine parallel job count. On Linux, limit based on available RAM
+    // (~1.5 GB per compile job) to prevent OOM on memory-constrained SBCs.
+    string parallelArg = "--parallel";
+#ifdef __linux__
+    {
+        ifstream meminfo("/proc/meminfo");
+        string line;
+        long availKB = 0;
+        while (getline(meminfo, line)) {
+            if (line.rfind("MemAvailable:", 0) == 0) {
+                sscanf(line.c_str(), "MemAvailable: %ld", &availKB);
+                break;
+            }
+        }
+        if (availKB > 0) {
+            const long kbPerJob = 1572864; // 1.5 GiB
+            int jobs = max(1, (int)(availKB / kbPerJob));
+            // Cap at CPU count + 2
+            long cpus = sysconf(_SC_NPROCESSORS_ONLN);
+            if (cpus > 0 && jobs > (int)cpus + 2) jobs = (int)cpus + 2;
+            // Only show message if RAM is the limiting factor
+            if (availKB < kbPerJob * (cpus > 0 ? cpus : 4)) {
+                float availGB = availKB / 1048576.0f;
+                cout << "  * Parallel jobs limited to " << jobs
+                     << " (" << fixed << setprecision(1) << availGB
+                     << " GB RAM available, ~1.5 GB per job)\n";
+            }
+            parallelArg = "--parallel=" + to_string(jobs);
+        }
+    }
+#endif
+
+    // cmake --build --preset <target> --parallel[=N] [--config Release] [--clean-first]
+    vector<string> cmd = {cmake, "--build", "--preset", targetPreset, parallelArg};
     if (release) { cmd.push_back("--config"); cmd.push_back("Release"); }
     if (clean) cmd.push_back("--clean-first");
 
