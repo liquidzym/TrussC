@@ -15,29 +15,27 @@ Headless apps work out of the box. GUI apps need a display session — see [Sect
 
 ---
 
-## 1. Build Dependencies
+## 1. Build trusscli
 
-Install the minimum build dependencies using the included script:
+Build the TrussC CLI tool. This also installs build dependencies automatically (`install_dependencies_linux.sh` is called internally):
 
 ```bash
-cd TrussC
-chmod +x tools/install_dependencies_linux.sh
-./tools/install_dependencies_linux.sh
+cd TrussC/tools
+chmod +x build_linux.sh
+./build_linux.sh
 ```
 
-This installs compilers, CMake, and the development libraries needed to build TrussC. It does **not** install any display server packages — those are only needed if you want to run GUI apps.
+At the end, the script asks whether to create a `/usr/local/bin/trusscli` symlink — answer `y` so `trusscli` is available from anywhere.
+
+This installs compilers, CMake, and the development libraries needed to build TrussC. It does **not** install any display server packages — those are only needed if you want to run GUI apps (see [Section 3](#3-running-gui-apps-with---session)).
 
 ---
 
 ## 2. Building and Running Headless Apps
 
-Headless apps (no window, no graphics) work without any display server:
+Headless apps run without any display server — no window, no GPU context. The `draw()` callback is **never called**; only `setup()` and `update()` run.
 
 ```bash
-# Build trusscli
-cd tools
-./build_linux.sh
-
 # Build a headless example
 trusscli build -p examples/windowing/noWindowModeExample
 
@@ -45,10 +43,39 @@ trusscli build -p examples/windowing/noWindowModeExample
 ./examples/windowing/noWindowModeExample/bin/noWindowModeExample
 ```
 
-Use cases:
+### How headless mode works
+
+In headless mode (`runHeadlessApp<>()`), `update()` is called at a fixed rate (default **60 Hz**). There is no window, no GPU context, and `draw()` is not invoked.
+
+```cpp
+// main.cpp — headless entry point
+#include "tcApp.h"
+
+int main() {
+    return tc::runHeadlessApp<tcApp>(
+        tc::HeadlessSettings().setFps(60)   // default: 60 Hz
+    );
+}
+```
+
+You can adjust the update rate:
+
+```cpp
+// Lower rate for a network server that doesn't need 60 Hz
+tc::HeadlessSettings().setFps(10)    // 10 Hz — saves CPU
+
+// Event-driven: update only when explicitly triggered
+tc::HeadlessSettings().setFps(tc::EVENT_DRIVEN)
+```
+
+With `EVENT_DRIVEN` (0 Hz), `update()` is not called automatically — use timers, network callbacks, or `redraw()` to trigger processing manually.
+
+### Use cases
+
 - **MCP server mode** (`TRUSSC_MCP=1`) — AI-driven automation without a screen
 - **Network tools** — OSC receivers, TCP/UDP servers
 - **Batch processing** — image/video processing, audio generation
+- **Sensor data collection** — read sensors on an SBC, log to file or send over network
 
 ---
 
