@@ -251,10 +251,16 @@ struct Host {
         }
 
         // Guest library path
+        // Ninja: buildDir直下に出力。VS generator: Release/等のサブディレクトリ。
 #ifdef __APPLE__
         guestLibPath = buildDir + "/libguest.dylib";
 #elif defined(_WIN32)
-        guestLibPath = buildDir + "/Release/guest.dll";
+        // Ninja (CMakePresets.json) ではサブディレクトリなし
+        if (fs::exists(buildDir + "/guest.dll")) {
+            guestLibPath = buildDir + "/guest.dll";
+        } else {
+            guestLibPath = buildDir + "/Release/guest.dll";
+        }
 #else
         guestLibPath = buildDir + "/libguest.so";
 #endif

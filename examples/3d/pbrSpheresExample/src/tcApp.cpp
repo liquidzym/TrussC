@@ -1,5 +1,7 @@
 #include "tcApp.h"
 
+TC_HOT_RELOAD(tcApp);
+
 /*
  * pbrSpheresExample - PBR Material Parameter Grid
  *
