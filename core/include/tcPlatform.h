@@ -73,6 +73,17 @@ void setImmersiveMode(bool enabled);
 bool getImmersiveMode();
 
 // ---------------------------------------------------------------------------
+// Keep screen on (prevent display sleep / auto-lock)
+// Android: AWINDOW_FLAG_KEEP_SCREEN_ON
+// iOS: UIApplication.idleTimerDisabled
+// macOS: IOPMAssertion (kIOPMAssertionTypeNoDisplaySleep)
+// Windows: SetThreadExecutionState(ES_DISPLAY_REQUIRED | ES_CONTINUOUS)
+// Linux / Web: no-op
+// ---------------------------------------------------------------------------
+void setKeepScreenOn(bool enabled);
+bool getKeepScreenOn();
+
+// ---------------------------------------------------------------------------
 // Screenshot functionality
 // ---------------------------------------------------------------------------
 
