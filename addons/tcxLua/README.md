@@ -10,12 +10,15 @@
 
 - trussc (TrussC.h directly defined functions)
 - cmath (common use ones only), tcMath
-- tcPrimitives.h
-- Vec2, Vec3, Vec4, Mat4, Quaternion
+- tcPrimitives.h, tcLog.h
+- Vec2, Vec3, Vec4, Mat4, Quaternion, Rect
 - Color, colors (constants)
 - Mesh, Shader
 - Fbo, Texture, Image, Pixels
 - EasyCam, Light, Material
+- Font, Path
+- Json, Xml
+- `Tween<T>` (as TweenFloat, TweenVec2, TweenVec3, TweenColor)
 
 ## Known Issues
 
