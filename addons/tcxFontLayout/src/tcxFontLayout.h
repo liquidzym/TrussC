@@ -9,7 +9,9 @@
 // Capabilities:
 //   - LTR / RTL / TTB (vertical) / BTT text direction
 //   - Box layout with word-wrap & character-wrap
-//   - Per-glyph callback (colour, position, skip) for kinetic typography
+//   - Per-glyph callback (colour, position, transform, skip)
+//   - Per-glyph independent scale + rotation (GlyphTransform)
+//   - Glyph outline extraction (Bezier contours for custom rendering)
 //   - Multi-font fallback by Unicode range
 //   - Font metrics (ascender, descender, cap-height, x-height)
 //   - Per-character colour arrays
@@ -55,21 +57,26 @@ inline bool operator&(Align a, Align b) {
 // ShapedGlyph — one shaped glyph from HarfBuzz
 // =============================================================================
 struct ShapedGlyph {
-    uint32_t codepoint  = 0;   // Unicode codepoint
-    uint32_t glyphIndex = 0;   // font-internal glyph index
-    float    xOffset    = 0;   // horizontal draw offset (px)
-    float    yOffset    = 0;   // vertical draw offset (px)
-    float    xAdvance   = 0;   // horizontal advance (px)
-    float    yAdvance   = 0;   // vertical advance (px, for TTB)
-    int      cluster    = 0;   // byte offset in original UTF-8
-    int      fontIdx    = 0;   // 0=primary, 1+=fallback index+1
+    uint32_t codepoint  = 0;    // Unicode codepoint
+    uint32_t glyphIndex = 0;    // font-internal glyph index
+    float    xOffset    = 0;    // horizontal draw offset (px)
+    float    yOffset    = 0;    // vertical draw offset (px)
+    float    xAdvance   = 0;    // horizontal advance (px)
+    float    yAdvance   = 0;    // vertical advance (px, for TTB)
+    int      cluster    = 0;    // byte offset in original UTF-8
+    int      fontIdx    = 0;    // 0=primary, 1+=fallback index+1
+
+    // Per-glyph transform (applied by drawGlyphs via pushMatrix)
+    float    scaleX     = 1.0f; // horizontal scale
+    float    scaleY     = 1.0f; // vertical scale
+    float    rotation   = 0.0f; // rotation in radians
 };
 
 // =============================================================================
 // GlyphCallback — per-glyph hook for creative typography.
-// Modify any field (position, codepoint, etc.) before drawing.
+// Modify position / colour / scale / rotation / codepoint before drawing.
 // Return false to skip this glyph.
-//   g     — mutable glyph (you can change xOffset, yOffset, etc.)
+//   g     — mutable glyph reference
 //   index — global character index (0, 1, 2... across all text)
 //   total — total glyph count in current segment
 // =============================================================================
@@ -79,8 +86,28 @@ using GlyphCallback = std::function<bool(ShapedGlyph& g, int index, int total)>;
 // Cubic Bezier curve for path text
 // =============================================================================
 struct BezierCurve {
-    Vec2 p0, c0, c1, p1;  // start, control0, control1, end
+    Vec2 p0, c0, c1, p1;
 };
+
+// =============================================================================
+// Glyph outline — a single contour (closed path of Bezier segments)
+// =============================================================================
+enum class OutlineSegmentType : uint8_t {
+    Move  = 0,   // start new contour at (x, y)
+    Line  = 1,   // straight line to (x, y)
+    Curve = 2,   // quadratic Bezier to (x, y) with control (cx, cy)
+    Cubic = 3,   // cubic Bezier to (x, y) with controls (c0x, c0y), (c1x, c1y)
+};
+
+struct OutlinePoint {
+    float x, y;
+    float cx, cy;      // control point (quadratic) or first control (cubic)
+    float c1x, c1y;    // second control point (cubic only)
+    OutlineSegmentType type;
+};
+
+// One contour = one closed loop.  Last point connects back to first.
+using GlyphContour = std::vector<OutlinePoint>;
 
 // =============================================================================
 // FontLayout
@@ -95,19 +122,13 @@ public:
 
     // ---- Font loading ----
 
-    /// Load primary font.  Required before any draw/shape call.
     bool load(const std::string& fontPath, int fontSize);
 
-    /// Add a fallback font for [rangeStart, rangeEnd] Unicode range.
-    /// sizeRate: relative to primary font size (1.0 = same size).
-    /// Characters in the range NOT covered by the primary font will
-    /// be shaped + rendered with this fallback.
     bool addFallbackFont(const std::string& fontPath,
                          float sizeRate = 1.0f,
                          uint32_t rangeStart = 0x0000,
                          uint32_t rangeEnd   = 0xFFFF);
 
-    /// True if a font is loaded and ready for drawing.
     bool isLoaded() const { return hbFont_ != nullptr && font_.isLoaded(); }
 
     // ---- Configuration ----
@@ -119,69 +140,48 @@ public:
     void setLetterSpacing(float px);
     void setLineSpacing(float multiplier);
 
-    // ---- Font metrics (logical pixels) ----
+    // ---- Font metrics ----
 
-    float getAscender()  const;   // distance baseline→top of tallest glyph
-    float getDescender() const;   // distance baseline→bottom (negative)
-    float getLineHeight() const;  // ascender - descender + line-gap × spacing
-    float getCapHeight()  const;  // height of flat capital letters (approx)
-    float getXHeight()    const;  // height of lowercase x (approx)
+    float getAscender()  const;
+    float getDescender() const;
+    float getLineHeight() const;
+    float getCapHeight()  const;
+    float getXHeight()    const;
     int   getFontSize()   const { return fontSize_; }
 
-    // ---- Shaping (low-level) ----
+    // ---- Shaping ----
 
-    /// Shape UTF-8 text with current direction/settings.
-    /// Returns glyph positions and indices.  Does not draw.
     std::vector<ShapedGlyph> shape(const std::string& text);
 
-    // ---- Drawing (high-level) ----
+    // ---- Drawing ----
 
-    /// Draw at a point.  \\n = new line (LTR) or new column (TTB).
     void draw(const std::string& text, float x, float y);
-
-    /// Draw with per-glyph callback for creative animation.
     void draw(const std::string& text, float x, float y, GlyphCallback cb);
-
-    /// Draw with per-character colours (repeats last colour if array
-    /// is shorter than glyph count).
     void draw(const std::string& text, float x, float y,
               const std::vector<Color>& colors);
-
-    /// Draw within a bounding box.  Word-wrap if setWordWrap(true).
     void drawInBox(const std::string& text,
                    float x, float y, float boxW, float boxH);
-
-    /// Draw text along a cubic Bezier curve.
-    /// Characters follow the tangent (automatically rotated).
-    /// Requires perspective projection (TrussC default).
     void drawOnPath(const std::string& text, const BezierCurve& curve);
 
     // ---- Measurement ----
 
-    /// Measure text extent (width, height) without drawing.
     Vec2 measure(const std::string& text);
 
-    // ---- File loading (static) ----
+    // ---- Glyph outline ----
 
-    /// Load + clean a .txt file:
-    ///   • strips UTF-8 BOM
-    ///   • normalizes line endings (CRLF→LF, CR→LF)
-    ///   • filters control characters (except \\n, \\t)
-    ///   • trims trailing whitespace per line
-    ///   • collapses >2 consecutive blank lines
+    /// Extract the vector outline of a single Unicode character.
+    /// Returns contours as cubic Bezier segments (Y-up, font units).
+    /// To convert to pixel coordinates: multiply by fontSize / upem.
+    /// To convert to screen (Y-down): flip Y sign.
+    std::vector<GlyphContour> getGlyphOutline(uint32_t codepoint);
+
+    // ---- File loading ----
+
     static std::string loadTxt(const std::string& path);
-
-    /// Load + clean a .md (Markdown) file:
-    ///   • applies all loadTxt() cleaning
-    ///   • removes headings (#), bold/italic (** __ * _)
-    ///   • removes code fences + inline code
-    ///   • removes images ![alt](url), converts [text](url)→text
-    ///   • removes blockquotes (>), horiz rules (---), list markers (- *)
-    ///   • preserves paragraph structure
     static std::string loadMarkdown(const std::string& path);
 
 private:
-    // HarfBuzz objects (primary font)
+    // HarfBuzz
     hb_buffer_t* hbBuf_  = nullptr;
     hb_blob_t*   hbBlob_ = nullptr;
     hb_face_t*   hbFace_ = nullptr;
@@ -196,13 +196,14 @@ private:
         float       sizeRate   = 1.0f;
         uint32_t    rangeStart = 0;
         uint32_t    rangeEnd   = 0xFFFF;
-        Font        tcFont;        // TrussC render font
+        Font        tcFont;
     };
     std::vector<FallbackFont> fallbacks_;
 
-    // Primary font data + TrussC render font
+    // Primary font
     std::vector<uint8_t> fontData_;
     Font font_;
+    void* stbFontInfo_ = nullptr;  // stbtt_fontinfo*, initialized at load
 
     // Settings
     TextDirection direction_      = TextDirection::LTR;
@@ -220,6 +221,7 @@ private:
                     GlyphCallback cb = nullptr,
                     const std::vector<Color>* colors = nullptr);
     Font& fontForGlyph(const ShapedGlyph& g);
+    void initStbFont();
     static Vec2 bezierPoint(const BezierCurve& c, float t);
     static Vec2 bezierTangent(const BezierCurve& c, float t);
 };
