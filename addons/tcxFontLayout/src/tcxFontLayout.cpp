@@ -195,18 +195,24 @@ std::vector<ShapedGlyph> FontLayout::shape(const std::string& text,
         auto it = byteOffsetToCP.find(cluster);
         g.codepoint  = (it != byteOffsetToCP.end()) ? it->second : 0x25A1;
         g.glyphIndex = info[i].codepoint;
-        // HarfBuzz output is 26.6 fixed-point device pixels → /64 = float px
+        // HarfBuzz output is 26.6 fixed-point device pixels → /64 = float px.
+        // y values may be negative (HB uses Y-up, we use Y-down screen coords).
         g.xOffset  = pos[i].x_offset / 64.0f;
         g.yOffset  = pos[i].y_offset / 64.0f;
         g.xAdvance = pos[i].x_advance / 64.0f;
         g.yAdvance = pos[i].y_advance / 64.0f;
         g.cluster  = info[i].cluster;
 
-        // TTB/BTT: font lacks vmtx → HarfBuzz puts advance in xAdvance.
-        // Manually rotate: yAdvance = xAdvance, xAdvance = 0.
+        // TTB/BTT: HarfBuzz may use negative y_advance (Y-up coordinate
+        // system).  Take absolute value for screen coords (Y-down).
+        // If yAdvance is effectively zero, rotate xAdvance → yAdvance.
         if (direction_ == TextDirection::TTB ||
             direction_ == TextDirection::BTT) {
-            g.yAdvance = g.xAdvance;
+            if (fabs(g.yAdvance) < 0.01f) {
+                g.yAdvance = g.xAdvance;  // rotate from x if no native vertical
+            } else {
+                g.yAdvance = fabs(g.yAdvance);  // use native vertical advance
+            }
             g.xAdvance = 0;
         }
 
