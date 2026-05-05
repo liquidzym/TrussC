@@ -72,6 +72,9 @@ static std::string cpToUTF8(uint32_t cp) {
 // =============================================================================
 FontLayout::FontLayout() {
     hbBuf_ = hb_buffer_create();
+    if (!hbBuf_) {
+        logError("tcxFontLayout") << "Failed to create HarfBuzz buffer";
+    }
 }
 
 FontLayout::~FontLayout() {
@@ -440,12 +443,9 @@ Vec2 FontLayout::measure(const std::string& text) {
         lineAdv += (isVert ? g.yAdvance : g.xAdvance) + letterSpacing_;
     }
     if (isVert) {
-        // For vertical: width = line width, height = max column advance
-        w = std::max(w, lineAdv);
-        h += lineH;
-        // Swap: w=column_advance, h=total_column_height
-        std::swap(w, h);  // TTB: width ≈ font size, height = text length
-        w = fontSize_ * 1.15f;  // one column wide
+        // TTB: width = one column, height = sum of glyph advances
+        w = fontSize_ * 1.15f;
+        h = std::max(h, lineAdv) + lineH;
     } else {
         w = std::max(w, lineAdv);
         h += lineH;
