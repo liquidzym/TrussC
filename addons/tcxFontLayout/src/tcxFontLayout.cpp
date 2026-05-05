@@ -310,74 +310,97 @@ void FontLayout::drawInBox(const std::string& text,
                            float x, float y, float boxW, float boxH) {
     if (!font_.isLoaded() || text.empty()) return;
 
-    auto glyphs = shape(text, font_);
-    if (glyphs.empty()) return;
+    // Split on \n first
+    std::vector<std::string> paragraphs;
+    size_t start = 0;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\n') {
+            paragraphs.push_back(text.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+    if (start < text.size() || paragraphs.empty())
+        paragraphs.push_back(text.substr(start));
 
-    float lineH    = font_.getLineHeight() * lineSpacingMul_;
-    float cursorX  = x;
-    float cursorY  = y;
-    float lineW    = 0;
-    int   lineIdx  = 0;
+    float lineH = font_.getLineHeight() * lineSpacingMul_;
+    bool isVert = (direction_ == TextDirection::TTB || direction_ == TextDirection::BTT);
+    float boxLimit = isVert ? boxH : boxW;
 
-    // Collect glyphs into lines (simple character-wrap)
-    std::vector<std::vector<ShapedGlyph>> lines;
-    std::vector<ShapedGlyph> currentLine;
+    float cursorX = x, cursorY = y;
 
-    for (auto& g : glyphs) {
-        float adv = (direction_ == TextDirection::TTB ||
-                     direction_ == TextDirection::BTT)
-                        ? g.yAdvance : g.xAdvance;
+    for (auto& para : paragraphs) {
+        if (para.empty()) { cursorY += lineH; continue; }
 
-        if (g.codepoint == '\n') {
+        // Shape the paragraph
+        auto glyphs = shape(para, font_);
+
+        // Break into lines constrained by boxLimit
+        std::vector<std::vector<ShapedGlyph>> lines;
+        std::vector<ShapedGlyph> currentLine;
+        float lineAdv = 0;
+        size_t lastSpace = (size_t)-1;  // for word-wrap
+        float  lastSpaceAdv = 0;
+
+        for (size_t gi = 0; gi < glyphs.size(); ++gi) {
+            auto& g = glyphs[gi];
+            float adv = isVert ? g.yAdvance : g.xAdvance;
+
+            // Check if overflow — word-wrap or character-wrap
+            if (boxLimit > 0 && lineAdv + adv > boxLimit && !currentLine.empty()) {
+                if (wordWrap_ && lastSpace != (size_t)-1) {
+                    // Roll back to last space
+                    size_t rollback = currentLine.size() - (gi - lastSpace);
+                    // Actually, simpler approach for word-wrap:
+                    // break the line BEFORE the overflowing word
+                    lines.push_back({});
+                    for (size_t k = 0; k <= lastSpace; ++k)
+                        lines.back().push_back(currentLine[k]);
+                    currentLine.erase(currentLine.begin(),
+                                      currentLine.begin() + lastSpace + 1);
+                    lineAdv = 0;
+                    for (auto& lg : currentLine)
+                        lineAdv += (isVert ? lg.yAdvance : lg.xAdvance);
+                    lastSpace = (size_t)-1;
+                } else {
+                    lines.push_back(std::move(currentLine));
+                    currentLine.clear();
+                    lineAdv = 0;
+                }
+            }
+
+            // Track spaces for word-wrap
+            if (g.codepoint == ' ') {
+                lastSpace = currentLine.size();
+                lastSpaceAdv = lineAdv;
+            }
+
+            currentLine.push_back(g);
+            lineAdv += adv;
+        }
+        if (!currentLine.empty()) {
             lines.push_back(std::move(currentLine));
-            currentLine.clear();
-            lineW = 0;
-            continue;
         }
 
-        if (boxW > 0 && lineW + adv > boxW && !currentLine.empty()) {
-            lines.push_back(std::move(currentLine));
-            currentLine.clear();
-            lineW = 0;
+        // Draw each line
+        for (auto& line : lines) {
+            // Horizontal alignment within box
+            float lineWidth = 0;
+            for (auto& g : line) lineWidth += g.xAdvance;
+            float lx = cursorX;
+            if (align_ & Align::Center)  lx += (boxW - lineWidth) / 2.0f;
+            if (align_ & Align::Right)   lx += boxW - lineWidth;
+
+            float gx = lx, gy = cursorY;
+            for (auto& g : line) {
+                if (g.codepoint == 0) continue;
+                font_.drawString(cpToUTF8(g.codepoint),
+                                 gx + g.xOffset, gy + g.yOffset,
+                                 Direction::Left, Direction::Top);
+                gx += g.xAdvance + letterSpacing_;
+                gy += g.yAdvance;
+            }
+            cursorY += lineH;
         }
-
-        currentLine.push_back(g);
-        lineW += adv;
-    }
-    if (!currentLine.empty()) {
-        lines.push_back(std::move(currentLine));
-    }
-
-    // Vertical alignment offset
-    float totalH = lines.size() * lineH;
-    if (align_ & Align::Middle) {
-        cursorY += (boxH - totalH) / 2.0f;
-    } else if (align_ & Align::Bottom) {
-        cursorY += boxH - totalH;
-    }
-
-    // Draw each line
-    for (auto& line : lines) {
-        // Horizontal alignment
-        float lineWidth = 0;
-        for (auto& g : line) lineWidth += g.xAdvance;
-
-        float lx = cursorX;
-        if (align_ & Align::Center) {
-            lx += (boxW - lineWidth) / 2.0f;
-        } else if (align_ & Align::Right) {
-            lx += boxW - lineWidth;
-        }
-
-        float gx = lx;
-        for (auto& g : line) {
-            if (g.codepoint == 0 || g.codepoint == '\n') continue;
-            font_.drawString(cpToUTF8(g.codepoint),
-                             gx + g.xOffset, cursorY + g.yOffset,
-                             Direction::Left, Direction::Top);
-            gx += g.xAdvance + letterSpacing_;
-        }
-        cursorY += lineH;
     }
 }
 

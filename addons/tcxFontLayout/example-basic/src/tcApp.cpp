@@ -1,18 +1,9 @@
 #include "tcApp.h"
 
 void tcApp::setup() {
-    setWindowTitle("tcxFontLayout — 中文竖排");
+    setWindowTitle("tcxFontLayout — 中文竖排 + 中英混排");
 
-    // Relative path — TrussC convention: data files in bin/data/
     loaded_ = layout_.load("bin/data/HY.ttf", 48);
-
-    if (loaded_) {
-        // Vertical layout: top→bottom within each column, columns right→left
-        layout_.setDirection(TextDirection::TTB);
-        layout_.setLineDirection(LineDirection::TTB_RTL);
-        layout_.setAlign(Align::Center | Align::Middle);
-        layout_.setLineSpacing(1.3f);
-    }
 }
 
 void tcApp::draw() {
@@ -26,26 +17,41 @@ void tcApp::draw() {
 
     float cx = getWindowWidth() / 2.0f;
     float cy = getWindowHeight() / 2.0f;
+    float w  = (float)getWindowWidth();
+    float h  = (float)getWindowHeight();
 
+    // ===== 1. 竖排中文 — TTB + RTL =====
     setColor(0.05f, 0.04f, 0.03f);
+    layout_.setDirection(TextDirection::TTB);
+    layout_.setLineDirection(LineDirection::TTB_RTL);
+    layout_.setAlign(Align::Center | Align::Middle);
 
-    // 春晓 — each line = one vertical column, \\n = next column
     string poem =
         "春眠不觉晓\n"
         "处处闻啼鸟\n"
         "夜来风雨声\n"
         "花落知多少";
-
     layout_.draw(poem, cx, cy);
 
-    // Attribution
-    setColor(0, 0, 0, 0.4f);
-    layout_.setDirection(TextDirection::LTR);  // horizontal for author
-    layout_.setAlign(Align::Right | Align::Bottom);
-    layout_.draw("— 孟浩然", (float)getWindowWidth() - 40, (float)getWindowHeight() - 50);
+    // ===== 2. 横排英文 — LTR with word-wrap box =====
+    setColor(0.1f, 0.15f, 0.3f);
+    layout_.setDirection(TextDirection::LTR);
+    layout_.setAlign(Align::Left | Align::Top);
+    layout_.setWordWrap(true);
+
+    string english = "The spring morning sleeps\nunaware of the dawn.";
+    layout_.drawInBox(english, 30, h - 100, 260, 80);
+
+    // ===== 3. 中英混排 — LTR horizontal =====
+    setColor(0.08f, 0.06f, 0.04f);
+    layout_.setDirection(TextDirection::LTR);
+    layout_.setAlign(Align::Left | Align::Top);
+    layout_.setWordWrap(false);
+
+    layout_.draw("春晓 Spring Morning  — 孟浩然 Meng Haoran", 30, 30);
 
     // Hint
     setColor(0, 0, 0, 0.15f);
-    drawBitmapString("tcxFontLayout — TTB + RTL vertical  |  春晓  孟浩然",
-                     24, (float)getWindowHeight() - 32);
+    drawBitmapString("TTB竖排 / LTR中英混排 / LTR英文word-wrap",
+                     24, h - 32);
 }
