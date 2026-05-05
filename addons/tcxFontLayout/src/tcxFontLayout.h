@@ -202,6 +202,7 @@ private:
     // Internal helpers
     void drawGlyphs(const std::vector<ShapedGlyph>& glyphs,
                     float originX, float originY,
+                    int& globalIndex,
                     GlyphCallback cb = nullptr,
                     const std::vector<Color>* colors = nullptr);
     hb_font_t* findFallbackFont(uint32_t codepoint) const;

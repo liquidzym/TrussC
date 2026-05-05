@@ -301,6 +301,7 @@ std::vector<ShapedGlyph> FontLayout::shape(const std::string& text,
 // =============================================================================
 void FontLayout::drawGlyphs(const std::vector<ShapedGlyph>& glyphs,
                              float originX, float originY,
+                             int& globalIndex,
                              GlyphCallback cb,
                              const std::vector<Color>* colors) {
     float gx = originX, gy = originY;
@@ -308,25 +309,24 @@ void FontLayout::drawGlyphs(const std::vector<ShapedGlyph>& glyphs,
 
     for (int i = 0; i < total; ++i) {
         ShapedGlyph g = glyphs[i];
-        if (g.codepoint == 0) { gx += g.xAdvance; gy += g.yAdvance; continue; }
+        if (g.codepoint == 0) { gx += g.xAdvance; gy += g.yAdvance; ++globalIndex; continue; }
 
-        // Callback
-        if (cb && !cb(g, i, total)) {
-            gx += g.xAdvance; gy += g.yAdvance;
+        if (cb && !cb(g, globalIndex, total)) {
+            gx += g.xAdvance; gy += g.yAdvance; ++globalIndex;
             continue;
         }
 
-        // Per-character colour
-        if (colors && i < (int)colors->size())
-            setColor((*colors)[i]);
+        if (colors && globalIndex < (int)colors->size())
+            setColor((*colors)[globalIndex]);
         else if (colors)
-            setColor(colors->back());  // last colour repeats
+            setColor(colors->back());
 
         font_.drawString(cpToUTF8(g.codepoint),
                          gx + g.xOffset, gy + g.yOffset,
                          Direction::Left, Direction::Top);
         gx += g.xAdvance + letterSpacing_;
         gy += g.yAdvance;
+        ++globalIndex;
     }
 }
 
@@ -367,15 +367,16 @@ void FontLayout::draw(const std::string& text, float x, float y,
     if (align_ & Align::Middle)  sy -= totalH / 2.0f;
     if (align_ & Align::Bottom)  sy -= totalH;
 
-    float cx = rtl ? sx + totalW - colAdvance : sx;
-    float cy = sy;
+    float cx2 = rtl ? sx + totalW - colAdvance : sx;
+    float cy2 = sy;
+    int globalIdx = 0;
 
     for (auto& p : pieces) {
         auto gs = shape(p, font_);
         if (gs.empty()) continue;
-        drawGlyphs(gs, cx, cy, cb);
-        if (isVert) { cx += (rtl ? -colAdvance : colAdvance); cy = sy; }
-        else        { cy += rowAdvance; cx = sx; }
+        drawGlyphs(gs, cx2, cy2, globalIdx, cb);
+        if (isVert) { cx2 += (rtl ? -colAdvance : colAdvance); cy2 = sy; }
+        else        { cy2 += rowAdvance; cx2 = sx; }
     }
 }
 
@@ -443,7 +444,8 @@ void FontLayout::drawInBox(const std::string& text,
             float lx = cursorX;
             if (align_ & Align::Center) lx += (boxW - lw) / 2.0f;
             if (align_ & Align::Right)  lx += boxW - lw;
-            drawGlyphs(line, lx, ly);
+            int dummyIdx = 0;
+            drawGlyphs(line, lx, ly, dummyIdx);
             ly += lineH;
         }
         cursorY = ly;
