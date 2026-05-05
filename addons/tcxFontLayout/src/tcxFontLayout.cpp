@@ -166,27 +166,36 @@ std::vector<ShapedGlyph> FontLayout::shape(const std::string& text,
     if (!info || !pos) return result;
 
     // Build byte-offset → Unicode codepoint map.
+    // Map ALL bytes of a multi-byte sequence, not just the first.
+    // HarfBuzz cluster may point to any byte within the sequence.
     std::unordered_map<int, uint32_t> byteOffsetToCP;
     for (size_t idx = 0; idx < text.size(); ) {
         int byteStart = (int)idx;
+        int byteEnd   = byteStart;
         uint32_t cp = 0;
         uint8_t c = (uint8_t)text[idx++];
         if ((c & 0x80) == 0) {
-            cp = c;
+            cp = c;  byteEnd = byteStart + 1;
         } else if ((c & 0xE0) == 0xC0) {
             cp = (c & 0x1F) << 6;
             if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F);
+            byteEnd = (int)idx;
         } else if ((c & 0xF0) == 0xE0) {
             cp = (c & 0x0F) << 12;
             if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F) << 6;
             if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F);
+            byteEnd = (int)idx;
         } else if ((c & 0xF8) == 0xF0) {
             cp = (c & 0x07) << 18;
             if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F) << 12;
             if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F) << 6;
             if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F);
+            byteEnd = (int)idx;
         }
-        byteOffsetToCP[byteStart] = cp;
+        // Map every byte in the sequence to the same codepoint
+        for (int b = byteStart; b < byteEnd; ++b) {
+            byteOffsetToCP[b] = cp;
+        }
     }
 
     for (unsigned int i = 0; i < glyphCount; ++i) {
@@ -343,7 +352,6 @@ void FontLayout::drawInBox(const std::string& text,
         std::vector<ShapedGlyph> currentLine;
         float lineAdv = 0;
         size_t lastSpace = (size_t)-1;  // for word-wrap
-        float  lastSpaceAdv = 0;
 
         for (size_t gi = 0; gi < glyphs.size(); ++gi) {
             auto& g = glyphs[gi];
@@ -352,10 +360,8 @@ void FontLayout::drawInBox(const std::string& text,
             // Check if overflow — word-wrap or character-wrap
             if (boxLimit > 0 && lineAdv + adv > boxLimit && !currentLine.empty()) {
                 if (wordWrap_ && lastSpace != (size_t)-1) {
-                    // Roll back to last space
-                    size_t rollback = currentLine.size() - (gi - lastSpace);
-                    // Actually, simpler approach for word-wrap:
-                    // break the line BEFORE the overflowing word
+                    // Break at last space: words before space → line,
+                    // overflowing word → next line.
                     lines.push_back({});
                     for (size_t k = 0; k <= lastSpace; ++k)
                         lines.back().push_back(currentLine[k]);
@@ -375,7 +381,6 @@ void FontLayout::drawInBox(const std::string& text,
             // Track spaces for word-wrap
             if (g.codepoint == ' ') {
                 lastSpace = currentLine.size();
-                lastSpaceAdv = lineAdv;
             }
 
             currentLine.push_back(g);
@@ -386,6 +391,12 @@ void FontLayout::drawInBox(const std::string& text,
         }
 
         // Draw each line
+        // --- Vertical alignment within box ---
+        float totalH = lines.size() * lineH;
+        float ly = cursorY;
+        if (align_ & Align::Middle)  ly += (boxH - totalH) / 2.0f;
+        if (align_ & Align::Bottom)  ly += boxH - totalH;
+
         for (auto& line : lines) {
             // Horizontal alignment within box
             float lineWidth = 0;
@@ -394,7 +405,7 @@ void FontLayout::drawInBox(const std::string& text,
             if (align_ & Align::Center)  lx += (boxW - lineWidth) / 2.0f;
             if (align_ & Align::Right)   lx += boxW - lineWidth;
 
-            float gx = lx, gy = cursorY;
+            float gx = lx, gy = ly;
             for (auto& g : line) {
                 if (g.codepoint == 0) continue;
                 font_.drawString(cpToUTF8(g.codepoint),
@@ -403,8 +414,9 @@ void FontLayout::drawInBox(const std::string& text,
                 gx += g.xAdvance + letterSpacing_;
                 gy += g.yAdvance;
             }
-            cursorY += lineH;
+            ly += lineH;
         }
+        cursorY = ly;
     }
 }
 
@@ -412,21 +424,32 @@ void FontLayout::drawInBox(const std::string& text,
 // Measure — returns (width, height) of shaped text
 // =============================================================================
 Vec2 FontLayout::measure(const std::string& text) {
+    bool isVert = (direction_ == TextDirection::TTB || direction_ == TextDirection::BTT);
     auto glyphs = shape(text, font_);
     float w = 0, h = 0;
-    float lineW = 0;
+    float lineAdv = 0;
+    float lineH = font_.getLineHeight() * lineSpacingMul_;
 
     for (auto& g : glyphs) {
         if (g.codepoint == '\n') {
-            w = std::max(w, lineW);
-            lineW = 0;
-            h += font_.getLineHeight() * lineSpacingMul_;
+            w = std::max(w, lineAdv);
+            lineAdv = 0;
+            h += lineH;
             continue;
         }
-        lineW += g.xAdvance + letterSpacing_;
+        lineAdv += (isVert ? g.yAdvance : g.xAdvance) + letterSpacing_;
     }
-    w = std::max(w, lineW);
-    h += font_.getLineHeight() * lineSpacingMul_;
+    if (isVert) {
+        // For vertical: width = line width, height = max column advance
+        w = std::max(w, lineAdv);
+        h += lineH;
+        // Swap: w=column_advance, h=total_column_height
+        std::swap(w, h);  // TTB: width ≈ font size, height = text length
+        w = fontSize_ * 1.15f;  // one column wide
+    } else {
+        w = std::max(w, lineAdv);
+        h += lineH;
+    }
 
     return Vec2(w, h);
 }
