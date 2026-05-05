@@ -214,31 +214,82 @@ std::vector<ShapedGlyph> FontLayout::shape(const std::string& text,
 void FontLayout::draw(const std::string& text, float x, float y) {
     if (!font_.isLoaded() || text.empty()) return;
 
-    auto glyphs = shape(text, font_);
-    if (glyphs.empty()) return;
+    // Split on \n — each piece is a column (TTB) or a line (LTR/RTL)
+    std::vector<std::string> pieces;
+    size_t start = 0;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\n') {
+            if (i > start) pieces.push_back(text.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+    if (start < text.size()) pieces.push_back(text.substr(start));
+    if (pieces.empty()) return;
 
-    float cursorX = x;
-    float cursorY = y;
+    float colAdvance = 0;   // horizontal advance per column (TTB) or 0 (LTR)
+    float rowAdvance = 0;   // vertical advance per line   (LTR) or 0 (TTB)
+    bool  rtl = (direction_ == TextDirection::TTB && lineDirection_ == LineDirection::TTB_RTL)
+                || direction_ == TextDirection::RTL;
 
-    // Apply vertical alignment offset
-    if (align_ & Align::Middle) {
-        float totalH = 0;
-        for (auto& g : glyphs) totalH += g.yAdvance;
-        cursorY -= totalH / 2.0f;
-    } else if (align_ & Align::Bottom) {
-        float totalH = 0;
-        for (auto& g : glyphs) totalH += g.yAdvance;
-        cursorY -= totalH;
+    if (direction_ == TextDirection::TTB || direction_ == TextDirection::BTT) {
+        // Vertical: each piece is a column. Columns arranged right→left or left→right.
+        colAdvance = font_.getLineHeight() * lineSpacingMul_ * 1.2f;
+    } else {
+        // Horizontal: each piece is a line. Lines arranged top→bottom.
+        rowAdvance = font_.getLineHeight() * lineSpacingMul_;
     }
 
-    for (auto& g : glyphs) {
-        if (g.codepoint == 0 || g.codepoint == '\n') continue;
-        float gx = cursorX + g.xOffset;
-        float gy = cursorY + g.yOffset;
-        font_.drawString(cpToUTF8(g.codepoint), gx, gy,
-                         Direction::Left, Direction::Top);
-        cursorX += g.xAdvance + letterSpacing_;
-        cursorY += g.yAdvance;
+    // Measure total extent for alignment
+    float totalW = 0, totalH = 0;
+    for (auto& p : pieces) {
+        auto gs = shape(p, font_);
+        float pw = 0, ph = 0;
+        for (auto& g : gs) {
+            pw += g.xAdvance;
+            ph += g.yAdvance;
+        }
+        if (direction_ == TextDirection::TTB || direction_ == TextDirection::BTT) {
+            totalW += colAdvance;
+            totalH = std::max(totalH, ph);
+        } else {
+            totalW = std::max(totalW, pw);
+            totalH += rowAdvance;
+        }
+    }
+
+    float startX = x, startY = y;
+    if (align_ & Align::Center)  startX -= totalW / 2.0f;
+    if (align_ & Align::Right)   startX -= totalW;
+    if (align_ & Align::Middle)  startY -= totalH / 2.0f;
+    if (align_ & Align::Bottom)  startY -= totalH;
+
+    float cursorX = startX;
+    float cursorY = startY;
+
+    // RTL: start from the right edge
+    if (rtl) cursorX += totalW - colAdvance;
+
+    for (size_t pi = 0; pi < pieces.size(); ++pi) {
+        auto glyphs = shape(pieces[pi], font_);
+        if (glyphs.empty()) continue;
+
+        float gx = cursorX, gy = cursorY;
+        for (auto& g : glyphs) {
+            if (g.codepoint == 0) continue;
+            font_.drawString(cpToUTF8(g.codepoint),
+                             gx + g.xOffset, gy + g.yOffset,
+                             Direction::Left, Direction::Top);
+            gx += g.xAdvance + letterSpacing_;
+            gy += g.yAdvance;
+        }
+
+        if (direction_ == TextDirection::TTB || direction_ == TextDirection::BTT) {
+            cursorX += (rtl ? -colAdvance : colAdvance);
+            cursorY = startY;
+        } else {
+            cursorY += rowAdvance;
+            cursorX = startX;
+        }
     }
 }
 
