@@ -202,6 +202,16 @@ std::vector<ShapedGlyph> FontLayout::shape(const std::string& text,
         g.xAdvance   = pos[i].x_advance * scale / 64.0f;
         g.yAdvance   = pos[i].y_advance * scale / 64.0f;
         g.cluster    = info[i].cluster;
+
+        // For TTB/BTT: rotate advances 90°.
+        // HarfBuzz outputs xAdvance even for vertical text when the font
+        // lacks vmtx table (most CJK fonts).  We manually swap.
+        if (direction_ == TextDirection::TTB ||
+            direction_ == TextDirection::BTT) {
+            g.yAdvance = g.xAdvance;   // glyph moves down
+            g.xAdvance = 0;             // stays in column
+        }
+
         result.push_back(g);
     }
 
@@ -232,8 +242,8 @@ void FontLayout::draw(const std::string& text, float x, float y) {
                 || direction_ == TextDirection::RTL;
 
     if (direction_ == TextDirection::TTB || direction_ == TextDirection::BTT) {
-        // Vertical: each piece is a column. Columns arranged right→left or left→right.
-        colAdvance = font_.getLineHeight() * lineSpacingMul_ * 1.2f;
+        // Vertical: each piece is a column. Column width ≈ font size.
+        colAdvance = fontSize_ * 1.15f;
     } else {
         // Horizontal: each piece is a line. Lines arranged top→bottom.
         rowAdvance = font_.getLineHeight() * lineSpacingMul_;
