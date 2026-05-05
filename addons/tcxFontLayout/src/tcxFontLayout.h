@@ -2,24 +2,27 @@
 // =============================================================================
 // tcxFontLayout — Advanced text layout addon for TrussC
 //
-// Wraps HarfBuzz for text shaping + TrussC's tc::Font for rasterization.
+// HarfBuzz text shaping + TrussC GPU font rendering.
 //
-// Features:
-//   - Text direction: LTR, RTL, TTB (vertical top→bottom), BTT
-//   - Line-break sub-direction for multi-line layouts
-//   - Box layout with automatic word/character wrap
-//   - Horizontal + vertical alignment within a bounding box
-//   - OpenType feature toggles
+// Capabilities:
+//   - LTR / RTL / TTB (vertical) / BTT text direction
+//   - Box layout with word-wrap & character-wrap
+//   - Per-glyph callback for kinetic typography
+//   - Multi-font fallback by Unicode range
+//   - Font metrics (ascender, descender, etc.)
+//   - Per-character colour arrays
+//   - Text-along-Bezier-path
+//   - .txt / .md file loading with content cleanup
 //
-// Reference: ofxTrueTypeFontUL2 (https://github.com/Akira-Hayasaka/ofxTrueTypeFontUL2)
+// Reference: ofxTrueTypeFontUL2
 // =============================================================================
 
 #include <TrussC.h>
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <functional>
 
-// Forward-declare HarfBuzz types (hb.h included only in .cpp to limit exposure)
 struct hb_buffer_t;
 struct hb_font_t;
 struct hb_face_t;
@@ -28,38 +31,19 @@ struct hb_blob_t;
 namespace trussc {
 
 // =============================================================================
-// Text direction
+// Enums
 // =============================================================================
 enum class TextDirection : int {
-    Invalid = 0,
-    LTR     = 1,   // Left to Right (default)
-    RTL     = 2,   // Right to Left
-    TTB     = 4,   // Top to Bottom (vertical, CJK)
-    BTT     = 8,   // Bottom to Top
+    Invalid = 0, LTR = 1, RTL = 2, TTB = 4, BTT = 8,
 };
-
-// =============================================================================
-// Line-break sub-direction (for multi-column / multi-line)
-// =============================================================================
 enum class LineDirection : int {
-    TTB_RTL = 0,   // columns right→left  (traditional CJK vertical)
-    TTB_LTR = 1,   // columns left→right  (Mongolian)
-    Invalid = -1,
+    TTB_RTL = 0, TTB_LTR = 1, Invalid = -1,
 };
-
-// =============================================================================
-// Text alignment flags (can be OR'd: Align::Left | Align::Top)
-// =============================================================================
 enum class Align : int {
-    Invalid  = 0,
-    Left     = 1,
-    Center   = 2,
-    Right    = 4,
-    Top      = 8,
-    Middle   = 16,
-    Bottom   = 32,
+    Invalid = 0,
+    Left = 1, Center = 2, Right = 4,
+    Top  = 8, Middle = 16, Bottom = 32,
 };
-
 inline Align operator|(Align a, Align b) {
     return static_cast<Align>(static_cast<int>(a) | static_cast<int>(b));
 }
@@ -68,98 +52,142 @@ inline bool operator&(Align a, Align b) {
 }
 
 // =============================================================================
-// A single shaped glyph — result of HarfBuzz shaping
+// ShapedGlyph — one shaped glyph from HarfBuzz
 // =============================================================================
 struct ShapedGlyph {
-    uint32_t codepoint  = 0;   // Unicode codepoint
-    uint32_t glyphIndex = 0;   // Font-internal glyph index
-    float    xOffset    = 0;   // horizontal position (logical px)
-    float    yOffset    = 0;   // vertical position   (logical px)
-    float    xAdvance   = 0;   // advance width
-    float    yAdvance   = 0;   // advance height (for vertical layout)
-    int      cluster    = 0;   // index into original UTF-8 string
+    uint32_t codepoint  = 0;
+    uint32_t glyphIndex = 0;
+    float    xOffset    = 0;
+    float    yOffset    = 0;
+    float    xAdvance   = 0;
+    float    yAdvance   = 0;
+    int      cluster    = 0;
 };
 
 // =============================================================================
-// FontLayout — the main class
+// GlyphCallback — called for each glyph before drawing.
+// Modify position/size/rotation/codepoint to animate per character.
+// Return false to skip this glyph.
+// =============================================================================
+using GlyphCallback = std::function<bool(ShapedGlyph& g, int index, int total)>;
+
+// =============================================================================
+// Cubic Bezier curve for path text
+// =============================================================================
+struct BezierCurve {
+    Vec2 p0, c0, c1, p1;  // start, control0, control1, end
+};
+
+// =============================================================================
+// FontLayout
 // =============================================================================
 class FontLayout {
 public:
     FontLayout();
     ~FontLayout();
 
-    // Non-copyable (owns HarfBuzz buffers)
     FontLayout(const FontLayout&) = delete;
     FontLayout& operator=(const FontLayout&) = delete;
 
-    // -------------------------------------------------------------------------
-    // Font loading
-    // -------------------------------------------------------------------------
+    // ---- Font loading ----
 
-    /// Load a TrueType/OpenType font for both HarfBuzz shaping and
-    /// TrussC GPU rendering.  Must be called before shape()/draw().
+    /// Load primary font. Must call before any draw/shape.
     bool load(const std::string& fontPath, int fontSize);
 
-    /// Returns true if a font is loaded and ready.
+    /// Add a fallback font for a Unicode range.
+    /// Characters in [rangeStart, rangeEnd] not covered by the primary
+    /// font will use this fallback.  sizeRate = relative to primary size.
+    bool addFallbackFont(const std::string& fontPath,
+                         float sizeRate = 1.0f,
+                         uint32_t rangeStart = 0x0000,
+                         uint32_t rangeEnd   = 0xFFFF);
+
     bool isLoaded() const { return hbFont_ != nullptr && font_.isLoaded(); }
 
-    // -------------------------------------------------------------------------
-    // Configuration
-    // -------------------------------------------------------------------------
+    // ---- Configuration ----
 
-    /// Set primary text direction (LTR, RTL, TTB, BTT).
     void setDirection(TextDirection dir);
-
-    /// Set line-break direction for multi-line/column layouts.
-    /// e.g. TTB_RTL = columns flow right→left (traditional CJK).
     void setLineDirection(LineDirection lineDir);
-
-    /// Set text alignment within the layout box.
     void setAlign(Align align);
-
-    /// Enable/disable word-wrap (default: character-wrap for CJK).
     void setWordWrap(bool enable);
-
-    /// Set letter spacing (tracking) in logical pixels.
     void setLetterSpacing(float px);
-
-    /// Set line spacing multiplier (1.0 = default, 1.5 = 1.5× line height).
     void setLineSpacing(float multiplier);
 
-    // -------------------------------------------------------------------------
-    // Shaping (low-level)
-    // -------------------------------------------------------------------------
+    // ---- Font metrics ----
 
-    /// Shape a UTF-8 string with the given font.
-    /// Returns glyph positions and indices.  Does NOT render.
+    float getAscender()  const;
+    float getDescender() const;
+    float getLineHeight() const;
+    float getCapHeight()  const;   // height of capital 'H'
+    float getXHeight()    const;   // height of lowercase 'x'
+    int   getFontSize()   const { return fontSize_; }
+
+    // ---- Shaping ----
+
     std::vector<ShapedGlyph> shape(const std::string& text,
                                    const Font& font);
 
-    // -------------------------------------------------------------------------
-    // Layout + Draw (high-level)
-    // -------------------------------------------------------------------------
+    // ---- Drawing ----
 
-    /// Draw text within a bounding box.
+    /// Draw at a point (\\n = new line/column).
+    void draw(const std::string& text, float x, float y);
+
+    /// Draw with per-glyph callback.
+    void draw(const std::string& text, float x, float y,
+              GlyphCallback cb);
+
+    /// Draw with per-character colours (size must match glyph count).
+    void draw(const std::string& text, float x, float y,
+              const std::vector<Color>& colors);
+
+    /// Draw within a bounding box with word/character wrap.
     void drawInBox(const std::string& text,
                    float x, float y, float boxW, float boxH);
 
-    /// Draw text at a point (no wrapping, single line/column).
-    void draw(const std::string& text, float x, float y);
+    /// Draw text along a cubic Bezier curve.
+    /// Characters follow the curve tangent (rotated).
+    void drawOnPath(const std::string& text, const BezierCurve& curve);
 
-    /// Measure the bounding box of shaped text without drawing.
+    // ---- Measurement ----
+
     Vec2 measure(const std::string& text);
 
+    // ---- Text file loading ----
+
+    /// Load plain text from .txt file.
+    /// Normalizes line endings (CRLF→LF), strips BOM, trims trailing
+    /// whitespace per line, filters control chars except \\n and \\t.
+    static std::string loadTxt(const std::string& path);
+
+    /// Load text from .md (Markdown) file.
+    /// Strips common markdown syntax: headings (#), bold/italic (*, **, _),
+    /// code fences (```), inline code (`), links, images, blockquotes (>),
+    /// horizontal rules (---, ***), unordered lists (-, *).
+    /// Preserves paragraphs and line breaks.
+    static std::string loadMarkdown(const std::string& path);
+
 private:
-    // HarfBuzz objects
+    // HarfBuzz
     hb_buffer_t* hbBuf_  = nullptr;
     hb_blob_t*   hbBlob_ = nullptr;
     hb_face_t*   hbFace_ = nullptr;
     hb_font_t*   hbFont_ = nullptr;
 
-    // Font data (must outlive hb_blob)
-    std::vector<uint8_t> fontData_;
+    // Fallback fonts
+    struct FallbackFont {
+        std::vector<uint8_t> data;
+        hb_blob_t* blob = nullptr;
+        hb_face_t* face = nullptr;
+        hb_font_t* font = nullptr;
+        float sizeRate       = 1.0f;
+        uint32_t rangeStart  = 0;
+        uint32_t rangeEnd    = 0xFFFF;
+        trussc::Font tcFont;
+    };
+    std::vector<FallbackFont> fallbacks_;
 
-    // TrussC font for GPU rendering
+    // Font data
+    std::vector<uint8_t> fontData_;
     trussc::Font font_;
 
     // Settings
@@ -170,6 +198,15 @@ private:
     float         letterSpacing_  = 0.0f;
     float         lineSpacingMul_ = 1.0f;
     int           fontSize_       = 0;
+
+    // Internal helpers
+    void drawGlyphs(const std::vector<ShapedGlyph>& glyphs,
+                    float originX, float originY,
+                    GlyphCallback cb = nullptr,
+                    const std::vector<Color>* colors = nullptr);
+    hb_font_t* findFallbackFont(uint32_t codepoint) const;
+    static Vec2 bezierPoint(const BezierCurve& c, float t);
+    static Vec2 bezierTangent(const BezierCurve& c, float t);
 };
 
 } // namespace trussc
