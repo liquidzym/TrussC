@@ -125,11 +125,12 @@ bool FontLayout::load(const std::string& fontPath, int fontSize) {
 
     hbFont_ = hb_font_create(hbFace_);
 
-    // Set font scale based on requested pixel size.
-    // hb_font_set_scale takes a 16.16 fixed-point value.
-    // We use a unit of 1 point = 1 pixel, so scale = fontSize << 6.
-    int scale = fontSize * 64;  // 26.6 fixed point
-    hb_font_set_scale(hbFont_, scale, scale);
+    // Set font scale based on UPEM (units per em).
+    // Scale is 16.16 fixed-point: pixel_size * 65536 / UPEM.
+    int upem = hb_face_get_upem(hbFace_);
+    if (upem <= 0) upem = 1000;
+    int hbScale = (int)((float)fontSize * 65536.0f / (float)upem + 0.5f);
+    hb_font_set_scale(hbFont_, hbScale, hbScale);
 
     fontSize_ = fontSize;
 
@@ -164,10 +165,7 @@ std::vector<ShapedGlyph> FontLayout::shape(const std::string& text,
 
     if (!info || !pos) return result;
 
-    float scale = fontSize_ / 64.0f;  // convert 26.6 → pixels
-
     // Build byte-offset → Unicode codepoint map.
-    // HarfBuzz's info[i].cluster is a byte offset into the original UTF-8.
     std::unordered_map<int, uint32_t> byteOffsetToCP;
     for (size_t idx = 0; idx < text.size(); ) {
         int byteStart = (int)idx;
@@ -197,19 +195,19 @@ std::vector<ShapedGlyph> FontLayout::shape(const std::string& text,
         auto it = byteOffsetToCP.find(cluster);
         g.codepoint  = (it != byteOffsetToCP.end()) ? it->second : 0x25A1;
         g.glyphIndex = info[i].codepoint;
-        g.xOffset    = pos[i].x_offset * scale / 64.0f;
-        g.yOffset    = pos[i].y_offset * scale / 64.0f;
-        g.xAdvance   = pos[i].x_advance * scale / 64.0f;
-        g.yAdvance   = pos[i].y_advance * scale / 64.0f;
-        g.cluster    = info[i].cluster;
+        // HarfBuzz output is 26.6 fixed-point device pixels → /64 = float px
+        g.xOffset  = pos[i].x_offset / 64.0f;
+        g.yOffset  = pos[i].y_offset / 64.0f;
+        g.xAdvance = pos[i].x_advance / 64.0f;
+        g.yAdvance = pos[i].y_advance / 64.0f;
+        g.cluster  = info[i].cluster;
 
-        // For TTB/BTT: rotate advances 90°.
-        // HarfBuzz outputs xAdvance even for vertical text when the font
-        // lacks vmtx table (most CJK fonts).  We manually swap.
+        // TTB/BTT: font lacks vmtx → HarfBuzz puts advance in xAdvance.
+        // Manually rotate: yAdvance = xAdvance, xAdvance = 0.
         if (direction_ == TextDirection::TTB ||
             direction_ == TextDirection::BTT) {
-            g.yAdvance = g.xAdvance;   // glyph moves down
-            g.xAdvance = 0;             // stays in column
+            g.yAdvance = g.xAdvance;
+            g.xAdvance = 0;
         }
 
         result.push_back(g);
