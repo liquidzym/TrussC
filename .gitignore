@@ -111,6 +111,7 @@ addons/*
 !addons/tcxWebSocket
 !addons/tcxGltf
 !addons/tcxObj
+!addons/tcxFontLayout
 
 # =============================================================================
 # trusscli / Project Generator (built binary + build artifacts in tools/)
