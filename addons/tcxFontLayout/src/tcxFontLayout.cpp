@@ -11,21 +11,20 @@
 #include <cstring>
 #include <unordered_map>
 #include <sstream>
-#include <regex>
 
 namespace trussc {
 
 // =============================================================================
-// Internal helpers
+// Static helpers (cross-platform, no external deps)
 // =============================================================================
 
 static std::vector<uint8_t> loadFileBytes(const std::string& path) {
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (!f) return {};
-    size_t sz = f.tellg();
+    size_t sz = (size_t)f.tellg();
     f.seekg(0, std::ios::beg);
     std::vector<uint8_t> d(sz);
-    f.read(reinterpret_cast<char*>(d.data()), sz);
+    f.read(reinterpret_cast<char*>(d.data()), (std::streamsize)sz);
     return d;
 }
 
@@ -59,19 +58,19 @@ static std::string cpToUTF8(uint32_t cp) {
 }
 
 static std::vector<std::string> splitLines(const std::string& text) {
-    std::vector<std::string> pieces;
+    std::vector<std::string> out;
     size_t start = 0;
     for (size_t i = 0; i < text.size(); ++i) {
         if (text[i] == '\n') {
-            if (i > start) pieces.push_back(text.substr(start, i - start));
+            if (i > start) out.push_back(text.substr(start, i - start));
             start = i + 1;
         }
     }
-    if (start < text.size()) pieces.push_back(text.substr(start));
-    return pieces;
+    if (start < text.size()) out.push_back(text.substr(start));
+    return out;
 }
 
-/// Decode all codepoints from UTF-8, building byte-offset→codepoint map
+/// Build byte-offset → codepoint map for all bytes of every UTF-8 sequence.
 static std::unordered_map<int, uint32_t> buildByteOffsetMap(const std::string& text) {
     std::unordered_map<int, uint32_t> m;
     for (size_t idx = 0; idx < text.size(); ) {
@@ -110,10 +109,11 @@ FontLayout::FontLayout() {
 }
 
 FontLayout::~FontLayout() {
+    // Destroy in dependency order: font → face → blob
     for (auto& fb : fallbacks_) {
-        if (fb.font) { hb_font_destroy(fb.font); fb.font = nullptr; }
-        if (fb.face) { hb_face_destroy(fb.face); fb.face = nullptr; }
-        if (fb.blob) { hb_blob_destroy(fb.blob); fb.blob = nullptr; }
+        if (fb.hbFont) { hb_font_destroy(fb.hbFont); fb.hbFont = nullptr; }
+        if (fb.face)   { hb_face_destroy(fb.face);   fb.face   = nullptr; }
+        if (fb.blob)   { hb_blob_destroy(fb.blob);   fb.blob   = nullptr; }
     }
     if (hbFont_) { hb_font_destroy(hbFont_); hbFont_ = nullptr; }
     if (hbFace_) { hb_face_destroy(hbFace_); hbFace_ = nullptr; }
@@ -129,16 +129,17 @@ void FontLayout::setLineDirection(LineDirection lineDir) { lineDirection_ = line
 void FontLayout::setAlign(Align a)                       { align_ = a; }
 void FontLayout::setWordWrap(bool e)                     { wordWrap_ = e; }
 void FontLayout::setLetterSpacing(float px)              { letterSpacing_ = px; }
-void FontLayout::setLineSpacing(float m)                 { lineSpacingMul_ = std::max(0.2f, m); }
+void FontLayout::setLineSpacing(float m)                 { lineSpacingMul_ = (std::max)(0.2f, m); }
 
 // =============================================================================
 // Font loading
 // =============================================================================
 bool FontLayout::load(const std::string& fontPath, int fontSize) {
+    // Destroy previous
     for (auto& fb : fallbacks_) {
-        if (fb.font) hb_font_destroy(fb.font);
-        if (fb.face) hb_face_destroy(fb.face);
-        if (fb.blob) hb_blob_destroy(fb.blob);
+        if (fb.hbFont) hb_font_destroy(fb.hbFont);
+        if (fb.face)   hb_face_destroy(fb.face);
+        if (fb.blob)   hb_blob_destroy(fb.blob);
     }
     fallbacks_.clear();
     if (hbFont_) { hb_font_destroy(hbFont_); hbFont_ = nullptr; }
@@ -187,13 +188,13 @@ bool FontLayout::addFallbackFont(const std::string& fontPath,
                              HB_MEMORY_MODE_READONLY, nullptr, nullptr);
     fb.face = hb_face_create(fb.blob, 0);
     if (!fb.face) return false;
-    fb.font = hb_font_create(fb.face);
+    fb.hbFont = hb_font_create(fb.face);
 
     int upem = hb_face_get_upem(fb.face);
     if (upem <= 0) upem = 1000;
     int fs = (int)(fontSize_ * sizeRate);
     int hbScale = (int)((float)fs * 65536.0f / (float)upem + 0.5f);
-    hb_font_set_scale(fb.font, hbScale, hbScale);
+    hb_font_set_scale(fb.hbFont, hbScale, hbScale);
 
     fb.sizeRate   = sizeRate;
     fb.rangeStart = rangeStart;
@@ -204,31 +205,21 @@ bool FontLayout::addFallbackFont(const std::string& fontPath,
     return true;
 }
 
-hb_font_t* FontLayout::findFallbackFont(uint32_t codepoint) const {
-    for (auto& fb : fallbacks_) {
-        if (codepoint >= fb.rangeStart && codepoint <= fb.rangeEnd)
-            return fb.font;
-    }
-    return nullptr;
-}
-
 // =============================================================================
 // Font metrics
 // =============================================================================
 float FontLayout::getAscender() const {
     if (!hbFont_) return fontSize_ * 0.8f;
     hb_font_extents_t extents;
-    if (hb_font_get_h_extents(hbFont_, &extents)) {
+    if (hb_font_get_h_extents(hbFont_, &extents))
         return (float)extents.ascender / 64.0f;
-    }
     return fontSize_ * 0.8f;
 }
 float FontLayout::getDescender() const {
     if (!hbFont_) return -fontSize_ * 0.2f;
     hb_font_extents_t extents;
-    if (hb_font_get_h_extents(hbFont_, &extents)) {
+    if (hb_font_get_h_extents(hbFont_, &extents))
         return (float)extents.descender / 64.0f;
-    }
     return -fontSize_ * 0.2f;
 }
 float FontLayout::getLineHeight() const {
@@ -236,21 +227,16 @@ float FontLayout::getLineHeight() const {
                             : fontSize_ * 1.2f * lineSpacingMul_;
 }
 float FontLayout::getCapHeight() const {
-    if (!hbFace_) return fontSize_ * 0.7f;
-    // Approximate: cap height ≈ 0.7 × ascender for most fonts
     return getAscender() * 0.85f;
 }
 float FontLayout::getXHeight() const {
-    if (!hbFace_) return fontSize_ * 0.5f;
-    // Approximate: x-height ≈ 0.55 × ascender
     return getAscender() * 0.65f;
 }
 
 // =============================================================================
 // Shape — HarfBuzz → ShapedGlyph vector
 // =============================================================================
-std::vector<ShapedGlyph> FontLayout::shape(const std::string& text,
-                                           const Font& /*font*/) {
+std::vector<ShapedGlyph> FontLayout::shape(const std::string& text) {
     std::vector<ShapedGlyph> result;
     if (text.empty() || !hbBuf_ || !hbFont_) return result;
 
@@ -280,6 +266,7 @@ std::vector<ShapedGlyph> FontLayout::shape(const std::string& text,
         g.xAdvance = pos[i].x_advance / 64.0f;
         g.yAdvance = pos[i].y_advance / 64.0f;
         g.cluster  = cluster;
+        g.fontIdx  = 0;
 
         // TTB/BTT advance rotation
         if (direction_ == TextDirection::TTB ||
@@ -297,7 +284,16 @@ std::vector<ShapedGlyph> FontLayout::shape(const std::string& text,
 }
 
 // =============================================================================
-// drawGlyphs — shared drawing logic
+// fontForGlyph — return the correct render font for a glyph
+// =============================================================================
+Font& FontLayout::fontForGlyph(const ShapedGlyph& g) {
+    if (g.fontIdx > 0 && g.fontIdx <= (int)fallbacks_.size())
+        return fallbacks_[(size_t)g.fontIdx - 1].tcFont;
+    return font_;
+}
+
+// =============================================================================
+// drawGlyphs — shared rendering loop
 // =============================================================================
 void FontLayout::drawGlyphs(const std::vector<ShapedGlyph>& glyphs,
                              float originX, float originY,
@@ -309,21 +305,30 @@ void FontLayout::drawGlyphs(const std::vector<ShapedGlyph>& glyphs,
 
     for (int i = 0; i < total; ++i) {
         ShapedGlyph g = glyphs[i];
-        if (g.codepoint == 0) { gx += g.xAdvance; gy += g.yAdvance; ++globalIndex; continue; }
+        if (g.codepoint == 0) {
+            gx += g.xAdvance; gy += g.yAdvance; ++globalIndex;
+            continue;
+        }
 
+        // Per-glyph callback (creative hook)
         if (cb && !cb(g, globalIndex, total)) {
             gx += g.xAdvance; gy += g.yAdvance; ++globalIndex;
             continue;
         }
 
-        if (colors && globalIndex < (int)colors->size())
-            setColor((*colors)[globalIndex]);
-        else if (colors)
-            setColor(colors->back());
+        // Per-character colour
+        if (colors) {
+            if (globalIndex < (int)colors->size())
+                setColor((*colors)[(size_t)globalIndex]);
+            else
+                setColor(colors->back());
+        }
 
-        font_.drawString(cpToUTF8(g.codepoint),
-                         gx + g.xOffset, gy + g.yOffset,
-                         Direction::Left, Direction::Top);
+        // Pick the right render font (primary or fallback)
+        Font& renderFont = fontForGlyph(g);
+        renderFont.drawString(cpToUTF8(g.codepoint),
+                              gx + g.xOffset, gy + g.yOffset,
+                              Direction::Left, Direction::Top);
         gx += g.xAdvance + letterSpacing_;
         gy += g.yAdvance;
         ++globalIndex;
@@ -351,28 +356,27 @@ void FontLayout::draw(const std::string& text, float x, float y,
     float colAdvance = isVert ? fontSize_ * 1.15f : 0;
     float rowAdvance = isVert ? 0 : getLineHeight();
 
-    // Measure
     float totalW = 0, totalH = 0;
     for (auto& p : pieces) {
-        auto gs = shape(p, font_);
+        auto gs = shape(p);
         float pw = 0, ph = 0;
         for (auto& g : gs) { pw += g.xAdvance; ph += g.yAdvance; }
-        if (isVert) { totalW += colAdvance; totalH = std::max(totalH, ph); }
-        else        { totalW = std::max(totalW, pw); totalH += rowAdvance; }
+        if (isVert) { totalW += colAdvance; totalH = (std::max)(totalH, ph); }
+        else        { totalW = (std::max)(totalW, pw); totalH += rowAdvance; }
     }
 
     float sx = x, sy = y;
-    if (align_ & Align::Center)  sx -= totalW / 2.0f;
-    if (align_ & Align::Right)   sx -= totalW;
-    if (align_ & Align::Middle)  sy -= totalH / 2.0f;
-    if (align_ & Align::Bottom)  sy -= totalH;
+    if (align_ & Align::Center) sx -= totalW / 2.0f;
+    if (align_ & Align::Right)  sx -= totalW;
+    if (align_ & Align::Middle) sy -= totalH / 2.0f;
+    if (align_ & Align::Bottom) sy -= totalH;
 
     float cx2 = rtl ? sx + totalW - colAdvance : sx;
     float cy2 = sy;
     int globalIdx = 0;
 
     for (auto& p : pieces) {
-        auto gs = shape(p, font_);
+        auto gs = shape(p);
         if (gs.empty()) continue;
         drawGlyphs(gs, cx2, cy2, globalIdx, cb);
         if (isVert) { cx2 += (rtl ? -colAdvance : colAdvance); cy2 = sy; }
@@ -383,7 +387,7 @@ void FontLayout::draw(const std::string& text, float x, float y,
 void FontLayout::draw(const std::string& text, float x, float y,
                       const std::vector<Color>& colors) {
     draw(text, x, y, [&](ShapedGlyph&, int i, int) -> bool {
-        if (i < (int)colors.size()) setColor(colors[i]);
+        if (i < (int)colors.size()) setColor(colors[(size_t)i]);
         return true;
     });
 }
@@ -403,7 +407,7 @@ void FontLayout::drawInBox(const std::string& text,
 
     for (auto& para : paragraphs) {
         if (para.empty()) { cursorY += lineH; continue; }
-        auto glyphs = shape(para, font_);
+        auto glyphs = shape(para);
 
         std::vector<std::vector<ShapedGlyph>> lines;
         std::vector<ShapedGlyph> cur;
@@ -417,7 +421,7 @@ void FontLayout::drawInBox(const std::string& text,
                     lines.push_back({});
                     for (size_t k = 0; k <= lastSpace; ++k)
                         lines.back().push_back(cur[k]);
-                    cur.erase(cur.begin(), cur.begin() + lastSpace + 1);
+                    cur.erase(cur.begin(), cur.begin() + (std::ptrdiff_t)lastSpace + 1);
                     curAdv = 0;
                     for (auto& lg : cur) curAdv += lg.xAdvance;
                     lastSpace = (size_t)-1;
@@ -433,7 +437,7 @@ void FontLayout::drawInBox(const std::string& text,
         }
         if (!cur.empty()) lines.push_back(std::move(cur));
 
-        float totalH = lines.size() * lineH;
+        float totalH = (float)lines.size() * lineH;
         float ly = cursorY;
         if (align_ & Align::Middle) ly += (boxH - totalH) / 2.0f;
         if (align_ & Align::Bottom) ly += boxH - totalH;
@@ -461,38 +465,43 @@ Vec2 FontLayout::bezierPoint(const BezierCurve& c, float t) {
 }
 Vec2 FontLayout::bezierTangent(const BezierCurve& c, float t) {
     float u = 1.0f - t;
-    return (c.c0 - c.p0) * (3*u*u) + (c.c1 - c.c0) * (6*u*t) + (c.p1 - c.c1) * (3*t*t);
+    Vec2 tan = (c.c0 - c.p0) * (3*u*u) + (c.c1 - c.c0) * (6*u*t) + (c.p1 - c.c1) * (3*t*t);
+    // Return zero vector if degenerate (t=0 and p0=c0)
+    float len2 = tan.x*tan.x + tan.y*tan.y;
+    if (len2 < 0.0001f) {
+        // Use control→end direction as fallback
+        tan = c.p1 - c.p0;
+        if (tan.x*tan.x + tan.y*tan.y < 0.0001f) return Vec2(1,0);
+    }
+    return tan;
 }
 
 void FontLayout::drawOnPath(const std::string& text, const BezierCurve& curve) {
     if (!font_.isLoaded() || text.empty()) return;
 
-    auto glyphs = shape(text, font_);
+    auto glyphs = shape(text);
     if (glyphs.empty()) return;
 
-    // Measure total advance
-    float totalAdv = 0;
-    for (auto& g : glyphs) totalAdv += g.xAdvance + letterSpacing_;
-
-    // Sample curve at regular intervals
-    // Use approximate arc-length parameterization: sample 100 points
+    // Approximate arc-length parameterization
     const int samples = 100;
     float lengths[samples + 1];
     lengths[0] = 0;
     Vec2 prev = bezierPoint(curve, 0);
     for (int i = 1; i <= samples; ++i) {
-        float t = (float)i / samples;
+        float t = (float)i / (float)samples;
         Vec2 pt = bezierPoint(curve, t);
-        lengths[i] = lengths[i - 1] + (pt - prev).length();
+        float dx = pt.x - prev.x, dy = pt.y - prev.y;
+        lengths[i] = lengths[i - 1] + sqrtf(dx*dx + dy*dy);
         prev = pt;
     }
     float curveLen = lengths[samples];
     if (curveLen < 1.0f) return;
 
-    // Map advance → t via arc-length table
+    // Binary-search t from arc length
     auto advToT = [&](float adv) -> float {
-        float target = adv / curveLen * curveLen;  // same value, just for clarity
-        // binary search in lengths[]
+        float target = adv;
+        if (target <= 0) return 0;
+        if (target >= curveLen) return 1.0f;
         int lo = 0, hi = samples;
         while (lo < hi) {
             int mid = (lo + hi) / 2;
@@ -500,28 +509,34 @@ void FontLayout::drawOnPath(const std::string& text, const BezierCurve& curve) {
             else hi = mid;
         }
         if (lo == 0) return 0;
-        if (lo >= samples) return 1.0f;
         float segStart = lengths[lo - 1];
         float segLen   = lengths[lo] - segStart;
         float frac = segLen > 0 ? (target - segStart) / segLen : 0;
-        return ((float)(lo - 1) + frac) / samples;
+        return ((float)(lo - 1) + frac) / (float)samples;
     };
 
     float cursorAdv = 0;
     for (auto& g : glyphs) {
-        if (g.codepoint == 0) { cursorAdv += g.xAdvance + letterSpacing_; continue; }
+        if (g.codepoint == 0) {
+            cursorAdv += g.xAdvance + letterSpacing_;
+            continue;
+        }
 
         float t = advToT(cursorAdv);
         Vec2 pt = bezierPoint(curve, t);
         Vec2 tan = bezierTangent(curve, t);
-        float angle = atan2(tan.y, tan.x);
+        float angle = atan2f(tan.y, tan.x);
 
+        // Use push/pop matrix for per-character rotation.
+        // Works with TrussC's default perspective projection (FOV=45).
         pushMatrix();
         translate(pt.x, pt.y, 0);
         rotate(angle);
-        font_.drawString(cpToUTF8(g.codepoint),
-                         g.xOffset, g.yOffset,
-                         Direction::Left, Direction::Top);
+
+        Font& rf = fontForGlyph(g);
+        rf.drawString(cpToUTF8(g.codepoint),
+                      g.xOffset, g.yOffset,
+                      Direction::Left, Direction::Top);
         popMatrix();
 
         cursorAdv += g.xAdvance + letterSpacing_;
@@ -533,13 +548,13 @@ void FontLayout::drawOnPath(const std::string& text, const BezierCurve& curve) {
 // =============================================================================
 Vec2 FontLayout::measure(const std::string& text) {
     bool isVert = (direction_ == TextDirection::TTB || direction_ == TextDirection::BTT);
-    auto glyphs = shape(text, font_);
+    auto glyphs = shape(text);
     float w = 0, h = 0, lineAdv = 0;
     float lineH = getLineHeight();
 
     for (auto& g : glyphs) {
         if (g.codepoint == '\n') {
-            w = std::max(w, lineAdv);
+            w = (std::max)(w, lineAdv);
             lineAdv = 0;
             h += lineH;
             continue;
@@ -548,20 +563,19 @@ Vec2 FontLayout::measure(const std::string& text) {
     }
     if (isVert) {
         w = fontSize_ * 1.15f;
-        h = std::max(h, lineAdv) + lineH;
+        h = (std::max)(h, lineAdv) + lineH;
     } else {
-        w = std::max(w, lineAdv);
+        w = (std::max)(w, lineAdv);
         h += lineH;
     }
     return Vec2(w, h);
 }
 
 // =============================================================================
-// Text file loading
+// Text file loading (no std::regex — manual parsing for portability)
 // =============================================================================
 
-/// Filter control characters: keep \\n, \\t, \\r; drop everything else < 0x20
-static std::string filterControlChars(const std::string& s) {
+static std::string filterControls(const std::string& s) {
     std::string out;
     out.reserve(s.size());
     for (char c : s) {
@@ -572,163 +586,242 @@ static std::string filterControlChars(const std::string& s) {
     return out;
 }
 
+static std::string normalizeNewlines(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (size_t i = 0; i < raw.size(); ++i) {
+        if (raw[i] == '\r') {
+            out += '\n';
+            if (i + 1 < raw.size() && raw[i + 1] == '\n') ++i;
+        } else {
+            out += raw[i];
+        }
+    }
+    return out;
+}
+
+static std::string trimTrailingSpace(std::string line) {
+    while (!line.empty() && (line.back() == ' ' || line.back() == '\t'))
+        line.pop_back();
+    return line;
+}
+
+static std::string collapseBlanks(const std::string& text) {
+    std::istringstream iss(text);
+    std::string result, line;
+    int blankRun = 0;
+    while (std::getline(iss, line)) {
+        line = trimTrailingSpace(line);
+        if (line.empty()) {
+            if (++blankRun <= 2) result += '\n';
+        } else {
+            blankRun = 0;
+            result += line + '\n';
+        }
+    }
+    while (!result.empty() && result.back() == '\n')
+        result.pop_back();
+    return result;
+}
+
 std::string FontLayout::loadTxt(const std::string& path) {
     auto bytes = loadFileBytes(path);
     if (bytes.empty()) return {};
 
     std::string raw(bytes.begin(), bytes.end());
 
-    // Strip UTF-8 BOM if present
+    // Strip BOM
     if (raw.size() >= 3 && (uint8_t)raw[0] == 0xEF &&
         (uint8_t)raw[1] == 0xBB && (uint8_t)raw[2] == 0xBF)
         raw.erase(0, 3);
 
-    // Normalize line endings: CRLF → LF, standalone CR → LF
-    std::string norm;
-    norm.reserve(raw.size());
-    for (size_t i = 0; i < raw.size(); ++i) {
-        if (raw[i] == '\r') {
-            norm += '\n';
-            if (i + 1 < raw.size() && raw[i + 1] == '\n') ++i;  // skip LF in CRLF
-        } else {
-            norm += raw[i];
-        }
-    }
+    raw = normalizeNewlines(raw);
+    raw = filterControls(raw);
+    return collapseBlanks(raw);
+}
 
-    // Filter control chars (keep \n, \t)
-    std::string filtered = filterControlChars(norm);
+// ---- Manual Markdown strippers (no std::regex) ----
 
-    // Trim trailing whitespace per line, collapse multiple blank lines
-    std::istringstream iss(filtered);
-    std::string result, line;
-    int blankRun = 0;
+static std::string stripCodeFences(const std::string& md) {
+    std::string out;
+    bool inFence = false;
+    std::istringstream iss(md);
+    std::string line;
     while (std::getline(iss, line)) {
-        // Trim trailing whitespace
+        // Trim trailing whitespace for fence detection
         while (!line.empty() && (line.back() == ' ' || line.back() == '\t'))
             line.pop_back();
-
-        if (line.empty()) {
-            if (++blankRun <= 2) result += '\n';  // max 2 consecutive blank lines
-        } else {
-            blankRun = 0;
-            result += line + '\n';
+        if (line.size() >= 3 && line.find("```") == 0) {
+            inFence = !inFence;
+            continue;
         }
+        if (!inFence) out += line + '\n';
     }
-    // Remove trailing newline
-    while (!result.empty() && result.back() == '\n')
-        result.pop_back();
+    return out;
+}
 
-    return result;
+static std::string stripInlineCode(const std::string& md) {
+    std::string out;
+    bool inCode = false;
+    for (size_t i = 0; i < md.size(); ++i) {
+        if (md[i] == '`' && (i == 0 || md[i-1] != '\\')) {
+            inCode = !inCode;
+            continue;
+        }
+        if (!inCode) out += md[i];
+    }
+    return out;
+}
+
+static std::string stripImages(const std::string& md) {
+    // Remove ![alt](url) — manual scan
+    std::string out;
+    for (size_t i = 0; i < md.size(); ++i) {
+        if (md[i] == '!' && i+1 < md.size() && md[i+1] == '[') {
+            // Skip until closing ] then ( then )
+            size_t j = i + 2;
+            while (j < md.size() && md[j] != ']') ++j;
+            if (j < md.size() && j+1 < md.size() && md[j+1] == '(') {
+                size_t k = j + 2;
+                while (k < md.size() && md[k] != ')') ++k;
+                if (k < md.size()) { i = k; continue; }
+            }
+        }
+        out += md[i];
+    }
+    return out;
+}
+
+static std::string stripLinks(const std::string& md) {
+    // Convert [text](url) → text
+    std::string out;
+    for (size_t i = 0; i < md.size(); ++i) {
+        if (md[i] == '[' && (i == 0 || md[i-1] != '!')) {
+            size_t j = i + 1;
+            while (j < md.size() && md[j] != ']') ++j;
+            if (j < md.size() && j+1 < md.size() && md[j+1] == '(') {
+                size_t k = j + 2;
+                while (k < md.size() && md[k] != ')') ++k;
+                if (k < md.size()) {
+                    // Extract link text
+                    out.append(md, i+1, j - i - 1);
+                    i = k;
+                    continue;
+                }
+            }
+        }
+        out += md[i];
+    }
+    return out;
+}
+
+static std::string stripEmphasis(const std::string& md) {
+    // Manual approach: strip ** __ * _ markers.
+    // Process in one pass with simple state tracking.
+    std::string out;
+    for (size_t i = 0; i < md.size(); ++i) {
+        // Bold: ** or __
+        if (i+1 < md.size() && ((md[i] == '*' && md[i+1] == '*') ||
+                                 (md[i] == '_' && md[i+1] == '_'))) {
+            size_t j = i + 2;
+            while (j+1 < md.size() &&
+                   !(md[j] == md[i] && md[j+1] == md[i])) ++j;
+            if (j+1 < md.size() && md[j] == md[i] && md[j+1] == md[i]) {
+                out.append(md, i+2, j - i - 2);
+                i = j + 1;
+                continue;
+            }
+        }
+        // Italic: * or _ (but not part of ** or __)
+        if ((md[i] == '*' || md[i] == '_') &&
+            (i == 0 || md[i-1] != md[i]) &&
+            (i+1 >= md.size() || md[i+1] != md[i])) {
+            size_t j = i + 1;
+            while (j < md.size() && md[j] != md[i]) ++j;
+            if (j < md.size() && (j+1 >= md.size() || md[j+1] != md[i])) {
+                out.append(md, i+1, j - i - 1);
+                i = j;
+                continue;
+            }
+        }
+        out += md[i];
+    }
+    return out;
+}
+
+static std::string stripHeadings(const std::string& md) {
+    std::string out;
+    std::istringstream iss(md);
+    std::string line;
+    while (std::getline(iss, line)) {
+        size_t pos = 0;
+        while (pos < line.size() && line[pos] == '#') ++pos;
+        if (pos >= 1 && pos <= 6 && pos < line.size() && line[pos] == ' ')
+            line = line.substr(pos + 1);
+        out += line + '\n';
+    }
+    return out;
+}
+
+static std::string stripBlockquotes(const std::string& md) {
+    std::string out;
+    std::istringstream iss(md);
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (line.size() >= 2 && line[0] == '>' && line[1] == ' ')
+            line = line.substr(2);
+        out += line + '\n';
+    }
+    return out;
+}
+
+static std::string stripListMarkers(const std::string& md) {
+    std::string out;
+    std::istringstream iss(md);
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (line.size() >= 2 &&
+            (line[0] == '-' || line[0] == '*' || line[0] == '+') &&
+            line[1] == ' ')
+            line = line.substr(2);
+        out += line + '\n';
+    }
+    return out;
+}
+
+static std::string stripHorizRules(const std::string& md) {
+    std::string out;
+    std::istringstream iss(md);
+    std::string line;
+    while (std::getline(iss, line)) {
+        std::string t = trimTrailingSpace(line);
+        bool isRule = t.size() >= 3;
+        if (isRule) {
+            char c = t[0];
+            if (c != '-' && c != '*' && c != '_') isRule = false;
+            for (size_t i = 1; i < t.size() && isRule; ++i)
+                if (t[i] != c) isRule = false;
+        }
+        if (!isRule) out += line + '\n';
+    }
+    return out;
 }
 
 std::string FontLayout::loadMarkdown(const std::string& path) {
     std::string md = loadTxt(path);
     if (md.empty()) return {};
 
-    // Remove code fences (``` ... ```)
-    {
-        std::string out;
-        bool inFence = false;
-        std::istringstream iss(md);
-        std::string line;
-        while (std::getline(iss, line)) {
-            if (line.find("```") == 0) { inFence = !inFence; continue; }
-            if (!inFence) out += line + '\n';
-        }
-        md = out;
-    }
+    md = stripCodeFences(md);
+    md = stripInlineCode(md);
+    md = stripImages(md);
+    md = stripLinks(md);
+    md = stripEmphasis(md);
+    md = stripHeadings(md);
+    md = stripBlockquotes(md);
+    md = stripListMarkers(md);
+    md = stripHorizRules(md);
 
-    // Remove inline code (`code`)
-    {
-        std::string out;
-        bool inCode = false;
-        for (size_t i = 0; i < md.size(); ++i) {
-            if (md[i] == '`' && (i == 0 || md[i-1] != '\\')) {
-                inCode = !inCode;
-                continue;
-            }
-            if (!inCode) out += md[i];
-        }
-        md = out;
-    }
-
-    // Remove images ![alt](url)
-    md = std::regex_replace(md, std::regex("!\\[[^\\]]*\\]\\([^\\)]*\\)"), "");
-
-    // Replace links [text](url) → text
-    md = std::regex_replace(md, std::regex("\\[([^\\]]*)\\]\\([^\\)]*\\)"), "$1");
-
-    // Strip emphasis markers: ** __ * _
-    md = std::regex_replace(md, std::regex("\\*\\*([^*]*)\\*\\*"), "$1");
-    md = std::regex_replace(md, std::regex("__([^_]*)__"), "$1");
-    md = std::regex_replace(md, std::regex("(?<![*])\\*([^*]*)\\*(?![*])"), "$1");
-    md = std::regex_replace(md, std::regex("(?<!_)_([^_]*)_(?!_)"), "$1");
-
-    // Strip heading markers (# ...)
-    {
-        std::string out;
-        std::istringstream iss(md);
-        std::string line;
-        while (std::getline(iss, line)) {
-            if (line.find("# ") == 0 || line.find("## ") == 0 ||
-                line.find("### ") == 0 || line.find("#### ") == 0) {
-                size_t pos = line.find(' ');
-                line = line.substr(pos + 1);
-            }
-            out += line + '\n';
-        }
-        md = out;
-    }
-
-    // Remove horizontal rules (---, ***, ___)
-    md = std::regex_replace(md, std::regex("^[-*_]{3,}\\s*$", std::regex::multiline), "");
-
-    // Remove blockquote markers (> )
-    {
-        std::string out;
-        std::istringstream iss(md);
-        std::string line;
-        while (std::getline(iss, line)) {
-            if (line.find("> ") == 0) line = line.substr(2);
-            out += line + '\n';
-        }
-        md = out;
-    }
-
-    // Remove list markers (- , * at start of line)
-    {
-        std::string out;
-        std::istringstream iss(md);
-        std::string line;
-        while (std::getline(iss, line)) {
-            if ((line.find("- ") == 0 || line.find("* ") == 0) && line.size() > 2)
-                line = line.substr(2);
-            out += line + '\n';
-        }
-        md = out;
-    }
-
-    // Collapse multiple blank lines
-    {
-        std::string out;
-        std::istringstream iss(md);
-        std::string line;
-        int blankRun = 0;
-        while (std::getline(iss, line)) {
-            while (!line.empty() && (line.back() == ' ' || line.back() == '\t'))
-                line.pop_back();
-            if (line.empty()) {
-                if (++blankRun <= 2) out += '\n';
-            } else {
-                blankRun = 0;
-                out += line + '\n';
-            }
-        }
-        while (!out.empty() && out.back() == '\n') out.pop_back();
-        md = out;
-    }
-
-    return md;
+    return collapseBlanks(md);
 }
 
 } // namespace trussc
