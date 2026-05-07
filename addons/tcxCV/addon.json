@@ -1,0 +1,6 @@
+{
+  "description": "Computer vision utilities (port of ofxCv) with image processing, contour finding, optical flow, camera calibration, object detection, and more",
+  "author": "tettou771",
+  "license": "MIT",
+  "keywords": ["computer-vision", "opencv", "image-processing", "contour", "flow", "calibration", "tracking", "face-detection"]
+}

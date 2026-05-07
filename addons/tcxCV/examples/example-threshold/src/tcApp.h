@@ -1,0 +1,20 @@
+#pragma once
+#include <TrussC.h>
+#include <tcxCV.h>
+using namespace std;
+using namespace tc;
+using namespace tcx;
+
+class tcApp : public App {
+public:
+    Image original, thresh;
+    float thresholdValue = 128;
+    bool invert = false;
+    bool otsu = false;
+
+    void setup() override;
+    void update() override;
+    void draw() override;
+    void keyPressed(int key) override;
+    void createTestImage();
+};

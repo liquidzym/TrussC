@@ -112,6 +112,8 @@ addons/*
 !addons/tcxGltf
 !addons/tcxObj
 !addons/tcxFontLayout
+!addons/tcxOpenCV
+!addons/tcxCV
 
 # =============================================================================
 # trusscli / Project Generator (built binary + build artifacts in tools/)
