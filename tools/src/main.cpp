@@ -1,6 +1,7 @@
 #include "TrussC.h"
 #include "tcApp.h"
 #include "ProjectGenerator.h"
+#include "VsDetector.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -89,14 +90,14 @@ static string autoDetectTcRoot() {
 }
 
 // Walk up from `startPath` (or CWD if empty) looking for a TrussC project
-// marker (CMakeLists.txt + addons.make in the same dir). Returns absolute
-// path to the project root, or empty string if none found.
+// marker (src/ directory). CMakeLists.txt / CMakePresets.json / addons.make
+// are generated or optional, so we only rely on src/ here. Non-TrussC projects
+// that happen to have src/ are guarded later by signature check in update().
 static string autoDetectProjectRoot(const string& startPath) {
     fs::path searchPath = fs::absolute(
         startPath.empty() ? fs::current_path() : fs::path(startPath));
     for (int i = 0; i < 10; ++i) {
-        if (fs::exists(searchPath / "CMakeLists.txt") &&
-            fs::exists(searchPath / "addons.make")) {
+        if (fs::is_directory(searchPath / "src")) {
             return searchPath.string();
         }
         if (!searchPath.has_parent_path() ||
@@ -195,9 +196,15 @@ struct CaptureResult { int exitCode; string output; };
 #ifdef _WIN32
 #define tc_popen  _popen
 #define tc_pclose _pclose
+// _popen() runs commands via cmd.exe on Windows. /dev/null does not exist
+// in cmd.exe, so use NUL instead.
+#define TC_DEV_NULL "NUL"
+#define TC_WHICH "where"
 #else
 #define tc_popen  popen
 #define tc_pclose pclose
+#define TC_DEV_NULL "/dev/null"
+#define TC_WHICH "which"
 #endif
 
 static CaptureResult captureCommand(const string& cmd) {
@@ -226,7 +233,7 @@ struct CheckResult {
 
 static CheckResult checkCMake() {
     CheckResult r{"CMake", CheckStatus::OK, "", "", true};
-    auto [code, out] = captureCommand("cmake --version 2>/dev/null");
+    auto [code, out] = captureCommand("cmake --version 2>" TC_DEV_NULL);
     if (code != 0 || out.empty()) {
         r.status = CheckStatus::Error;
         r.detail = "not found";
@@ -288,10 +295,21 @@ static CheckResult checkCompiler() {
         r.detail = "(g++)";
     }
 #elif defined(_WIN32)
-    auto [code, out] = captureCommand("cl 2>&1");
-    r.detail = code == 0 ? "(MSVC)" : "not found";
-    if (code != 0) {
+    // Detect MSVC via vswhere instead of running cl.exe directly,
+    // because cl.exe is only in PATH inside a Developer Command Prompt.
+    auto vsVersions = VsDetector::detectInstalledVersions();
+    // Filter out the dummy fallback entry (no vcToolsVersion means not actually found)
+    bool found = false;
+    for (const auto& vs : vsVersions) {
+        if (!vs.vcToolsVersion.empty()) {
+            r.detail = vs.displayName + " (MSVC " + vs.vcToolsVersion + ")";
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
         r.status = CheckStatus::Error;
+        r.detail = "not found";
         r.hint = "Install Visual Studio with C++ workload";
     }
 #endif
@@ -347,7 +365,7 @@ static CheckResult checkPlatformSDK() {
 
 static CheckResult checkEmscripten() {
     CheckResult r{"Emscripten", CheckStatus::OK, "", ""};
-    auto [code, out] = captureCommand("emcc --version 2>/dev/null");
+    auto [code, out] = captureCommand("emcc --version 2>" TC_DEV_NULL);
     if (code != 0 || out.empty()) {
         r.status = CheckStatus::Error;
         r.detail = "not found";
@@ -379,7 +397,7 @@ static CheckResult checkAndroidNDK() {
 
 static CheckResult checkNinja() {
     CheckResult r{"Ninja", CheckStatus::OK, "", ""};
-    auto [code, out] = captureCommand("ninja --version 2>/dev/null");
+    auto [code, out] = captureCommand("ninja --version 2>" TC_DEV_NULL);
     if (code != 0 || out.empty()) {
         r.status = CheckStatus::Warning;
         r.detail = "not found (optional — cmake uses make as fallback)";
@@ -397,7 +415,7 @@ static CheckResult checkNinja() {
 
 static CheckResult checkGit() {
     CheckResult r{"Git", CheckStatus::OK, "", ""};
-    auto [code, out] = captureCommand("git --version 2>/dev/null");
+    auto [code, out] = captureCommand("git --version 2>" TC_DEV_NULL);
     if (code != 0 || out.empty()) {
         r.status = CheckStatus::Warning;
         r.detail = "not found";
@@ -423,8 +441,8 @@ static int resolveProjectAndTcRoot(const string& explicitPath,
     if (explicitPath.empty()) {
         outProjectPath = autoDetectProjectRoot("");
         if (outProjectPath.empty()) {
-            cerr << "Error: not inside a TrussC project (no CMakeLists.txt + "
-                 << "addons.make found in CWD or any parent).\n"
+            cerr << "Error: not inside a TrussC project "
+                 << "(no src/ directory found in CWD or any parent).\n"
                  << "Use '-p <path>' or run from inside a project.\n";
             return 1;
         }
@@ -699,7 +717,7 @@ static bool isSkippedInCp(const string& name) {
 
 // Returns true if `path` sits inside a git work tree.
 static bool isGitWorkTree(const fs::path& path) {
-    string cmd = "git -C \"" + path.string() + "\" rev-parse --is-inside-work-tree 2>/dev/null";
+    string cmd = "git -C \"" + path.string() + "\" rev-parse --is-inside-work-tree 2>" TC_DEV_NULL;
     auto [code, out] = captureCommand(cmd);
     if (code != 0) return false;
     // Expect "true\n"
@@ -715,7 +733,7 @@ static bool isGitWorkTree(const fs::path& path) {
 static vector<string> gitListFiles(const fs::path& srcRoot) {
     // -c: cached (tracked), -o: others (untracked), --exclude-standard: honor .gitignore
     string cmd = "git -C \"" + srcRoot.string() +
-                 "\" ls-files -co --exclude-standard 2>/dev/null";
+                 "\" ls-files -co --exclude-standard 2>" TC_DEV_NULL;
     auto [code, out] = captureCommand(cmd);
     vector<string> files;
     if (code != 0) return files;
@@ -2459,8 +2477,25 @@ static int cmdBuild(const vector<string>& args) {
         targetPreset = kNativePreset;
     }
 
-    // Check that the preset exists in the project
+    // Auto-run update if build files are missing (first-time setup after a
+    // minimal git clone that only ships src/). Flags are forwarded so that
+    // e.g. `trusscli build --web` implies `trusscli update --web`.
+    string cmakeListsPath = projectPath + "/CMakeLists.txt";
     string presetsFile = projectPath + "/CMakePresets.json";
+    if (!fs::exists(cmakeListsPath) || !fs::exists(presetsFile)) {
+        cout << "[update] Build files not found, running 'trusscli update' first...\n";
+        vector<string> updateArgs;
+        if (targetPreset == string("web"))     updateArgs.push_back("--web");
+        if (targetPreset == string("android")) updateArgs.push_back("--android");
+        if (targetPreset == string("ios"))     updateArgs.push_back("--ios");
+        updateArgs.push_back("-p");
+        updateArgs.push_back(projectPath);
+        if (int urc = cmdUpdate(updateArgs)) return urc;
+        cout << "\n";
+    }
+
+    // Safety check (should be generated by update above, but keep this as a
+    // belt-and-suspenders guard for edge cases).
     if (!fs::exists(presetsFile)) {
         cerr << "Error: no CMakePresets.json in " << projectPath << "\n"
              << "Run 'trusscli update' first to generate build files.\n";
@@ -2625,7 +2660,7 @@ static int cmdRun(const vector<string>& args) {
         }
         cout << "Launching web server for " << htmlPath << " ...\n";
         // Try emrun first (Emscripten's built-in server)
-        auto [emrunCode, emrunOut] = captureCommand("which emrun 2>/dev/null");
+        auto [emrunCode, emrunOut] = captureCommand(TC_WHICH " emrun 2>" TC_DEV_NULL);
         if (emrunCode == 0 && !emrunOut.empty()) {
             return runProcess({"emrun", htmlPath});
         }

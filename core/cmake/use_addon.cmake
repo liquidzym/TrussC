@@ -32,33 +32,35 @@
 # アドオンが既に追加されているかを追跡
 set(_TC_LOADED_ADDONS "" CACHE INTERNAL "List of loaded TrussC addons")
 
+# _tc_load_addon(addon_name)
+# Create the addon's CMake target without linking it to anything. Used by
+# both `use_addon` (which then links to the requested target) and the hot
+# reload path (which links the addon's static lib directly to the guest).
+macro(_tc_load_addon _ADDON_NAME)
+    list(FIND _TC_LOADED_ADDONS ${_ADDON_NAME} _ADDON_INDEX)
+    if(_ADDON_INDEX EQUAL -1)
+        get_filename_component(_ADDON_PATH "${TRUSSC_DIR}/../addons/${_ADDON_NAME}" ABSOLUTE)
+
+        if(NOT EXISTS "${_ADDON_PATH}")
+            message(FATAL_ERROR "TrussC addon not found: ${_ADDON_NAME}\n  Looked in: ${_ADDON_PATH}")
+        endif()
+
+        if(EXISTS "${_ADDON_PATH}/CMakeLists.txt")
+            add_subdirectory("${_ADDON_PATH}" "${CMAKE_BINARY_DIR}/addons/${_ADDON_NAME}")
+        else()
+            _tc_auto_addon(${_ADDON_NAME} "${_ADDON_PATH}")
+        endif()
+
+        list(APPEND _TC_LOADED_ADDONS ${_ADDON_NAME})
+        set(_TC_LOADED_ADDONS "${_TC_LOADED_ADDONS}" CACHE INTERNAL "List of loaded TrussC addons")
+    endif()
+endmacro()
+
 # use_addon(target addon_name [addon_name2 ...])
 # ターゲットに TrussC アドオンを追加してリンクする
 macro(use_addon TARGET_NAME)
     foreach(_ADDON_NAME ${ARGN})
-        # まだ追加されていないアドオンのみ処理
-        list(FIND _TC_LOADED_ADDONS ${_ADDON_NAME} _ADDON_INDEX)
-        if(_ADDON_INDEX EQUAL -1)
-            # アドオンのパスを解決（TRUSSC_DIR から相対パス）
-            get_filename_component(_ADDON_PATH "${TRUSSC_DIR}/../addons/${_ADDON_NAME}" ABSOLUTE)
-
-            if(NOT EXISTS "${_ADDON_PATH}")
-                message(FATAL_ERROR "TrussC addon not found: ${_ADDON_NAME}\n  Looked in: ${_ADDON_PATH}")
-            endif()
-
-            if(EXISTS "${_ADDON_PATH}/CMakeLists.txt")
-                # CMakeLists.txt がある場合 → それを使用
-                add_subdirectory("${_ADDON_PATH}" "${CMAKE_BINARY_DIR}/addons/${_ADDON_NAME}")
-            else()
-                # CMakeLists.txt がない場合 → 自動収集
-                _tc_auto_addon(${_ADDON_NAME} "${_ADDON_PATH}")
-            endif()
-
-            list(APPEND _TC_LOADED_ADDONS ${_ADDON_NAME})
-            set(_TC_LOADED_ADDONS "${_TC_LOADED_ADDONS}" CACHE INTERNAL "List of loaded TrussC addons")
-        endif()
-
-        # ターゲットにリンク
+        _tc_load_addon(${_ADDON_NAME})
         target_link_libraries(${TARGET_NAME} PRIVATE ${_ADDON_NAME})
     endforeach()
 endmacro()

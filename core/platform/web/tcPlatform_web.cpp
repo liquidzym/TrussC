@@ -19,6 +19,13 @@ float getDisplayScaleFactor() {
 void setImmersiveMode(bool enabled) { (void)enabled; }
 bool getImmersiveMode() { return false; }
 
+// Orientation (no-op on web)
+void setOrientation(Orientation mask) { (void)mask; }
+
+// Keep screen on (TODO: Screen Wake Lock API via JS — no-op for now)
+void setKeepScreenOn(bool enabled) { (void)enabled; }
+bool getKeepScreenOn() { return false; }
+
 IVec2 getWindowPosition() {
     logWarning("Platform") << "getWindowPosition() is not supported on Web";
     return IVec2(-1, -1);
