@@ -1,0 +1,33 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "macos",
+      "displayName": "macOS",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-macos",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
+        "TRUSSC_DIR": "/Users/mac/Desktop/TrussC/core"
+      }
+    },
+    {
+      "name": "xcode",
+      "displayName": "Xcode",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/xcode",
+      "cacheVariables": {
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
+        "TRUSSC_DIR": "/Users/mac/Desktop/TrussC/core"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "macos",
+      "configurePreset": "macos",
+      "jobs": 4
+    }
+  ]
+}

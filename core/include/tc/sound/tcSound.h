@@ -497,6 +497,7 @@ public:
     static constexpr int SAMPLE_RATE = 44100;
     static constexpr int NUM_CHANNELS = 2;  // Stereo output
     static constexpr int ANALYSIS_BUFFER_SIZE = 4096;  // FFT analysis buffer size
+    using OutputCallback = void (*)(float* output, int numFrames, int numChannels, void* userData);
 
     static AudioEngine& getInstance() {
         static AudioEngine instance;
@@ -556,6 +557,18 @@ public:
     // Called from audio callback (internal use)
     void mixAudio(float* buffer, int num_frames, int num_channels);
 
+    // Optional realtime output hook for addons.
+    // Called after built-in Sound mixing and before clipping/analysis.
+    void setOutputCallback(OutputCallback callback, void* userData = nullptr) {
+        outputCallbackUserData_.store(userData, std::memory_order_release);
+        outputCallback_.store(callback, std::memory_order_release);
+    }
+
+    void clearOutputCallback() {
+        outputCallback_.store(nullptr, std::memory_order_release);
+        outputCallbackUserData_.store(nullptr, std::memory_order_release);
+    }
+
 private:
     AudioEngine() {
         playingSounds_.resize(MAX_PLAYING_SOUNDS);
@@ -570,79 +583,87 @@ private:
         // Clear buffer
         std::memset(buffer, 0, num_frames * num_channels * sizeof(float));
 
-        std::lock_guard<std::mutex> lock(mutex_);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
 
-        for (auto& sound : playingSounds_) {
-            if (!sound || !sound->playing || sound->paused) continue;
+            for (auto& sound : playingSounds_) {
+                if (!sound || !sound->playing || sound->paused) continue;
 
-            auto& src = sound->buffer;
-            double posF = sound->positionF;
-            float vol = sound->volume;
-            float pan = sound->pan;
-            float speed = sound->speed;
+                auto& src = sound->buffer;
+                double posF = sound->positionF;
+                float vol = sound->volume;
+                float pan = sound->pan;
+                float speed = sound->speed;
 
-            // Calculate left/right volume from pan
-            // pan = -1.0: left 100%, right 0%
-            // pan =  0.0: left 100%, right 100%
-            // pan =  1.0: left 0%,   right 100%
-            float panL = (pan <= 0.0f) ? 1.0f : (1.0f - pan);
-            float panR = (pan >= 0.0f) ? 1.0f : (1.0f + pan);
+                // Calculate left/right volume from pan
+                // pan = -1.0: left 100%, right 0%
+                // pan =  0.0: left 100%, right 100%
+                // pan =  1.0: left 0%,   right 100%
+                float panL = (pan <= 0.0f) ? 1.0f : (1.0f - pan);
+                float panR = (pan >= 0.0f) ? 1.0f : (1.0f + pan);
 
-            for (int frame = 0; frame < num_frames; frame++) {
-                size_t pos0 = (size_t)posF;
-                size_t pos1 = pos0 + 1;
-                float frac = (float)(posF - pos0);
+                for (int frame = 0; frame < num_frames; frame++) {
+                    size_t pos0 = (size_t)posF;
+                    size_t pos1 = pos0 + 1;
+                    float frac = (float)(posF - pos0);
 
-                // Loop handling
-                if (pos0 >= src->numSamples) {
-                    if (sound->loop) {
-                        posF = 0.0;
-                        pos0 = 0;
-                        pos1 = 1;
-                        frac = 0.0f;
-                    } else {
-                        sound->playing = false;
-                        break;
+                    // Loop handling
+                    if (pos0 >= src->numSamples) {
+                        if (sound->loop) {
+                            posF = 0.0;
+                            pos0 = 0;
+                            pos1 = 1;
+                            frac = 0.0f;
+                        } else {
+                            sound->playing = false;
+                            break;
+                        }
                     }
+
+                    // Boundary check (when pos1 is out of range)
+                    if (pos1 >= src->numSamples) {
+                        pos1 = sound->loop ? 0 : pos0;
+                    }
+
+                    // Get samples (linear interpolation)
+                    float left0, right0, left1, right1;
+                    if (src->channels == 1) {
+                        // Mono
+                        left0 = right0 = src->samples[pos0];
+                        left1 = right1 = src->samples[pos1];
+                    } else {
+                        // Stereo
+                        left0 = src->samples[pos0 * 2];
+                        right0 = src->samples[pos0 * 2 + 1];
+                        left1 = src->samples[pos1 * 2];
+                        right1 = src->samples[pos1 * 2 + 1];
+                    }
+
+                    // Linear interpolation
+                    float left = left0 + (left1 - left0) * frac;
+                    float right = right0 + (right1 - right0) * frac;
+
+                    // Apply volume and pan
+                    left *= vol * panL;
+                    right *= vol * panR;
+
+                    // Mix
+                    buffer[frame * num_channels] += left;
+                    if (num_channels > 1) {
+                        buffer[frame * num_channels + 1] += right;
+                    }
+
+                    posF += speed;
                 }
 
-                // Boundary check (when pos1 is out of range)
-                if (pos1 >= src->numSamples) {
-                    pos1 = sound->loop ? 0 : pos0;
-                }
-
-                // Get samples (linear interpolation)
-                float left0, right0, left1, right1;
-                if (src->channels == 1) {
-                    // Mono
-                    left0 = right0 = src->samples[pos0];
-                    left1 = right1 = src->samples[pos1];
-                } else {
-                    // Stereo
-                    left0 = src->samples[pos0 * 2];
-                    right0 = src->samples[pos0 * 2 + 1];
-                    left1 = src->samples[pos1 * 2];
-                    right1 = src->samples[pos1 * 2 + 1];
-                }
-
-                // Linear interpolation
-                float left = left0 + (left1 - left0) * frac;
-                float right = right0 + (right1 - right0) * frac;
-
-                // Apply volume and pan
-                left *= vol * panL;
-                right *= vol * panR;
-
-                // Mix
-                buffer[frame * num_channels] += left;
-                if (num_channels > 1) {
-                    buffer[frame * num_channels + 1] += right;
-                }
-
-                posF += speed;
+                sound->positionF = posF;
             }
+        }
 
-            sound->positionF = posF;
+        OutputCallback callback = outputCallback_.load(std::memory_order_acquire);
+        if (callback) {
+            void* userData = outputCallbackUserData_.load(std::memory_order_acquire);
+            callback(buffer, num_frames, num_channels, userData);
         }
 
         // Clipping
@@ -671,6 +692,8 @@ private:
     bool initialized_ = false;
     std::vector<std::shared_ptr<PlayingSound>> playingSounds_;
     std::mutex mutex_;
+    std::atomic<OutputCallback> outputCallback_{nullptr};
+    std::atomic<void*> outputCallbackUserData_{nullptr};
 
     // FFT analysis ring buffer
     std::vector<float> analysisBuffer_;

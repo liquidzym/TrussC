@@ -1,0 +1,6 @@
+{
+  "description": "Real-time DSP graph, modular patch system, oscillators, filters, envelopes, delay, mixer, sample-accurate sequencer, synth modules, audio analysis. Based on ofxPDSP design.",
+  "author": "pi-coding-agent",
+  "license": "MIT",
+  "keywords": ["dsp", "audio", "synthesis", "oscillator", "filter", "envelope", "sequencer", "synth", "realtime"]
+}
