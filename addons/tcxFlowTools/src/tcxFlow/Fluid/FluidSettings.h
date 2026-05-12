@@ -6,6 +6,7 @@ struct FluidSettings {
     int solverIterations = 20;
     float timestep = 0.125f;
     float resolutionScale = 1.0f;
+    float outputResolutionScale = 0.0f;
     float velocityDissipation = 0.99f;
     float densityDissipation = 0.995f;
     float temperatureDissipation = 0.99f;

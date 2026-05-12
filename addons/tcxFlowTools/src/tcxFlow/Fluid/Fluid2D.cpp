@@ -17,6 +17,13 @@ void Fluid2D::resize(int width, int height) {
     settings_.resolutionScale = std::clamp(settings_.resolutionScale, 0.05f, 1.0f);
     simWidth_ = std::max(1, static_cast<int>(std::round(inputWidth_ * settings_.resolutionScale)));
     simHeight_ = std::max(1, static_cast<int>(std::round(inputHeight_ * settings_.resolutionScale)));
+    float outputScale = settings_.resolutionScale;
+    if (settings_.outputResolutionScale > 0.0f) {
+        settings_.outputResolutionScale = std::clamp(settings_.outputResolutionScale, 0.05f, 1.0f);
+        outputScale = settings_.outputResolutionScale;
+    }
+    outputWidth_ = std::max(1, static_cast<int>(std::round(inputWidth_ * outputScale)));
+    outputHeight_ = std::max(1, static_cast<int>(std::round(inputHeight_ * outputScale)));
     gpuBuffers_.release();
     debugFbo_.clear();
     externalVelocityTexture_.clear();
@@ -306,9 +313,7 @@ void Fluid2D::applyVelocityField(const std::vector<tc::Vec2>& field, int fieldWi
 void Fluid2D::drawDensity(float x, float y, float w, float h) const {
     if (!isAllocated()) return;
     if (lastUpdateUsedGpu_ && gpuBuffers_.isAllocated() && sg_isvalid()) {
-        if (!debugFbo_.isAllocated() || debugFbo_.getWidth() != simWidth_ || debugFbo_.getHeight() != simHeight_) {
-            debugFbo_.allocate(simWidth_, simHeight_, 1, TextureFormat::RGBA8);
-        }
+        if (!ensureDebugFbo()) return;
         passVisualizeDensity_.setTexture("tex0", gpuBuffers_.density().read().getTexture());
         passVisualizeDensity_.setColor(tc::Color(1.0f));
         passVisualizeDensity_.setOptions(1.0f, 0.0f, 1.0f, 0.0f);
@@ -325,9 +330,7 @@ void Fluid2D::drawDensity(float x, float y, float w, float h) const {
 void Fluid2D::drawVelocity(float x, float y, float w, float h) const {
     if (!isAllocated()) return;
     if (lastUpdateUsedGpu_ && gpuBuffers_.isAllocated() && sg_isvalid()) {
-        if (!debugFbo_.isAllocated() || debugFbo_.getWidth() != simWidth_ || debugFbo_.getHeight() != simHeight_) {
-            debugFbo_.allocate(simWidth_, simHeight_, 1, TextureFormat::RGBA8);
-        }
+        if (!ensureDebugFbo()) return;
         passVisualizeVelocity_.setTexture("tex0", gpuBuffers_.velocity().read().getTexture());
         passVisualizeVelocity_.setOptions(0.06f, 0.0f, 1.0f, 0.0f);
         passVisualizeVelocity_.render(debugFbo_);
@@ -352,9 +355,7 @@ void Fluid2D::drawVelocity(float x, float y, float w, float h) const {
 void Fluid2D::drawPressure(float x, float y, float w, float h) const {
     if (!isAllocated()) return;
     if (lastUpdateUsedGpu_ && gpuBuffers_.isAllocated() && sg_isvalid()) {
-        if (!debugFbo_.isAllocated() || debugFbo_.getWidth() != simWidth_ || debugFbo_.getHeight() != simHeight_) {
-            debugFbo_.allocate(simWidth_, simHeight_, 1, TextureFormat::RGBA8);
-        }
+        if (!ensureDebugFbo()) return;
         passVisualizePressure_.setTexture("tex0", gpuBuffers_.pressure().read().getTexture());
         passVisualizePressure_.setOptions(8.0f, 0.0f, 1.0f, 0.0f);
         passVisualizePressure_.render(debugFbo_);
@@ -377,9 +378,7 @@ void Fluid2D::drawPressure(float x, float y, float w, float h) const {
 void Fluid2D::drawTemperature(float x, float y, float w, float h) const {
     if (!isAllocated()) return;
     if (lastUpdateUsedGpu_ && gpuBuffers_.isAllocated() && sg_isvalid()) {
-        if (!debugFbo_.isAllocated() || debugFbo_.getWidth() != simWidth_ || debugFbo_.getHeight() != simHeight_) {
-            debugFbo_.allocate(simWidth_, simHeight_, 1, TextureFormat::RGBA8);
-        }
+        if (!ensureDebugFbo()) return;
         passVisualizeTemperature_.setTexture("tex0", gpuBuffers_.temperature().read().getTexture());
         passVisualizeTemperature_.setOptions(1.0f, 0.0f, 1.0f, 0.0f);
         passVisualizeTemperature_.render(debugFbo_);
@@ -402,9 +401,7 @@ void Fluid2D::drawTemperature(float x, float y, float w, float h) const {
 void Fluid2D::drawCombined(float x, float y, float w, float h) const {
     if (!isAllocated()) return;
     if (lastUpdateUsedGpu_ && gpuBuffers_.isAllocated() && sg_isvalid()) {
-        if (!debugFbo_.isAllocated() || debugFbo_.getWidth() != simWidth_ || debugFbo_.getHeight() != simHeight_) {
-            debugFbo_.allocate(simWidth_, simHeight_, 1, TextureFormat::RGBA8);
-        }
+        if (!ensureDebugFbo()) return;
         passVisualizeCombined_.setTexture("tex0", gpuBuffers_.density().read().getTexture());
         passVisualizeCombined_.setTexture("tex1", gpuBuffers_.velocity().read().getTexture());
         passVisualizeCombined_.setTexture("tex2", gpuBuffers_.temperature().read().getTexture());
@@ -421,9 +418,7 @@ void Fluid2D::drawCombined(float x, float y, float w, float h) const {
 void Fluid2D::drawLic(float x, float y, float w, float h) const {
     if (!isAllocated()) return;
     if (lastUpdateUsedGpu_ && gpuBuffers_.isAllocated() && sg_isvalid()) {
-        if (!debugFbo_.isAllocated() || debugFbo_.getWidth() != simWidth_ || debugFbo_.getHeight() != simHeight_) {
-            debugFbo_.allocate(simWidth_, simHeight_, 1, TextureFormat::RGBA8);
-        }
+        if (!ensureDebugFbo()) return;
         passVisualizeLic_.setTexture("tex0", gpuBuffers_.velocity().read().getTexture());
         passVisualizeLic_.setColor(tc::Color(1.0f));
         passVisualizeLic_.setOptions(0.06f, 1.8f, 22.0f, 0.45f);
@@ -934,6 +929,14 @@ bool Fluid2D::updateGpu(float dt) {
     gpuBuffers_.velocity().swap();
 
     return true;
+}
+
+bool Fluid2D::ensureDebugFbo() const {
+    if (outputWidth_ <= 0 || outputHeight_ <= 0) return false;
+    if (!debugFbo_.isAllocated() || debugFbo_.getWidth() != outputWidth_ || debugFbo_.getHeight() != outputHeight_) {
+        debugFbo_.allocate(outputWidth_, outputHeight_, 1, TextureFormat::RGBA8);
+    }
+    return debugFbo_.isAllocated();
 }
 
 void Fluid2D::uploadDensityImage() const {

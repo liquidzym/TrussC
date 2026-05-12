@@ -39,7 +39,12 @@ public:
     const FluidSettings& settings() const { return settings_; }
     int simWidth() const { return simWidth_; }
     int simHeight() const { return simHeight_; }
+    int outputWidth() const { return outputWidth_; }
+    int outputHeight() const { return outputHeight_; }
     float resolutionScale() const { return settings_.resolutionScale; }
+    float outputResolutionScale() const {
+        return settings_.outputResolutionScale > 0.0f ? settings_.outputResolutionScale : settings_.resolutionScale;
+    }
     bool isAllocated() const { return simWidth_ > 0 && simHeight_ > 0; }
     bool isGpuReady() const;
     bool lastUpdateUsedGpu() const { return lastUpdateUsedGpu_; }
@@ -79,6 +84,7 @@ private:
     void renderVelocityTexture(const tc::Texture& texture, float scale, bool mixMode);
     void renderDensityTexture(const tc::Texture& texture, float scale, const tc::Color& color, bool velocityMagnitude);
     void renderTemperatureTexture(const tc::Texture& texture, float scale, bool velocityMagnitude);
+    bool ensureDebugFbo() const;
     void uploadDensityImage() const;
 
     struct DensitySplat {
@@ -108,6 +114,8 @@ private:
     int inputHeight_ = 0;
     int simWidth_ = 0;
     int simHeight_ = 0;
+    int outputWidth_ = 0;
+    int outputHeight_ = 0;
     FluidSettings settings_;
     std::vector<tc::Color> density_;
     std::vector<tc::Vec2> velocity_;

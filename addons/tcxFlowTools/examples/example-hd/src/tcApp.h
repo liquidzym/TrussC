@@ -16,4 +16,5 @@ private:
 
     tcx::flow::Fluid2D fluid_;
     float scale_ = 0.25f;
+    float outputScale_ = 1.0f;
 };

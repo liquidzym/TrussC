@@ -14,6 +14,7 @@ This is the current audit against the checked reference repositories in `_fcache
 - First-pass GPU LIC visualization: `Fluid2D::drawLic()` and `example-lic-streamlines` render a LIC-style texture over the GPU velocity field.
 - GPU particles: `ParticleFlow` uses GPU state textures, spawn/update passes, and GPU drawing by default; CPU is fallback.
 - First-pass particle variants: `ParticleFlowSettings::variant` and `example-particle-variants` cover flow, attractor, and impulse modes on the GPU path with CPU fallback parity.
+- HD output-resolution split: `FluidSettings::outputResolutionScale`, `Fluid2D::outputWidth()/outputHeight()`, and `example-hd` cover separate simulation and GPU visualization/output resolution.
 - PixelFlow-style wind tunnel direction: `example-wind-tunnel` exists for obstacle and texture-inlet validation.
 - Examples are centralized under `examples/`.
 
@@ -23,7 +24,7 @@ This is the current audit against the checked reference repositories in `_fcache
 - ofxFlowTools visualization parity: velocity dots/field classes, pressure/temperature field styling, and watcher-style UI examples are not fully ported.
 - ofxFlowTools extensions: `AverageFlowWatcher`, full split-velocity shader graph, colorize luminance/velocity/gradient, decay, dilate, erode, inverse warp, normalization, ease, and time blur helper shaders are not fully ported.
 - ofxFlowTools particle parity: age/lifespan/mass tuning and richer draw/move shader controls are only represented by the first GPU particle path plus simple size/color controls.
-- ofxFlowTools HD parity: separate density/output resolution and exact HD visual pipeline remain partial.
+- ofxFlowTools HD parity: separate GPU visualization/output resolution exists; exact HD shader-family parity remains partial.
 - PixelFlow flow-field visuals: first-pass LIC is present; full streamline particle rendering, wind-tunnel LIC, image LIC, and optical-flow LIC examples are not ported.
 - PixelFlow fluid examples: multiple fluids, liquid painting/text, custom render streamlines, Verlet/collision demos, velocity encoding, and texture transfer examples remain candidates.
 - PixelFlow optical-flow examples: movie/capture optical flow into fluid/particles and PFM export are not ported.

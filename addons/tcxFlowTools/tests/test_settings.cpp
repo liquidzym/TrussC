@@ -12,6 +12,14 @@ int main() {
     fluid.setup(320, 200, settings);
     assert(fluid.simWidth() == 160);
     assert(fluid.simHeight() == 100);
+    assert(fluid.outputWidth() == 160);
+    assert(fluid.outputHeight() == 100);
+    settings.outputResolutionScale = 1.0f;
+    fluid.setup(320, 200, settings);
+    assert(fluid.simWidth() == 160);
+    assert(fluid.simHeight() == 100);
+    assert(fluid.outputWidth() == 320);
+    assert(fluid.outputHeight() == 200);
     fluid.addDensity(tc::Vec2(160, 100), 20.0f, tc::Color(1, 0, 0, 1));
     fluid.addVelocity(tc::Vec2(160, 100), 20.0f, tc::Vec2(40.0f, 0.0f));
     fluid.addTemperature(tc::Vec2(160, 100), 20.0f, 1.0f);

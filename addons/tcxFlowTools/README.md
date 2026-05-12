@@ -13,6 +13,7 @@ Implemented now:
 - Namespace: `tcx::flow`.
 - Settings structs for fluid, optical flow, bridge, and particles.
 - `Fluid2D` GPU solver with resize, density/velocity/temperature injection, advection, optional vorticity and buoyancy, divergence, Jacobi pressure solve, projection, and GPU debug visualizers.
+- `FluidSettings::resolutionScale` controls simulation resolution, while `outputResolutionScale` can independently size GPU visualization/output FBOs for HD-style low-sim/high-output workflows.
 - CPU fallback for `Fluid2D` when `sg_isvalid()` is false, headless mode is active, or `FluidSettings::useGpu` is disabled.
 - GPU obstacle mask support through `Fluid2D::addObstacle()` / `clearObstacles()`, with CPU fallback handling for no-GPU contexts.
 - `applyVelocityField()` uploads external CPU vector fields as a dynamic RGBA32F texture and blends them into the GPU velocity buffer.
@@ -145,7 +146,7 @@ Additional examples:
 - `example-particle-variants`: GPU particle flow, attractor, and impulse modes over GPU fluid; keys `1`, `2`, and `3` switch modes. `TCX_PARTICLE_VARIANT=attractor` or `impulse` can start a specific mode for automated visual checks.
 - `example-lic-streamlines`: GPU LIC texture over `Fluid2D::getVelocityTexture()`; density can be toggled separately.
 - `example-wind-tunnel`: GPU fluid obstacle/wind-tunnel example with texture inlet and debug views.
-- `example-hd`: GPU fluid with 1x / 0.5x / 0.25x simulation scale.
+- `example-hd`: GPU fluid with 1x / 0.5x / 0.25x simulation scale and independently toggled output resolution.
 
 ## Notes
 
@@ -260,4 +261,21 @@ Result:
 - `example-particles`: regression build pass.
 - Settings and core-contract tests passed.
 - Visual check: `TCX_PARTICLE_VARIANT=flow`, `attractor`, and `impulse` each launched the GPU path and rendered mode-specific particle behavior.
+- Known linker warning remains: duplicate `libTrussC.a` in the example link line.
+
+2026-05-13 HD output-resolution audit:
+
+```bash
+cmake --build addons/tcxFlowTools/examples/example-hd/build-macos --parallel 2
+cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
+```
+
+Result:
+
+- `example-hd`: build pass.
+- Settings and core-contract tests passed.
+- `Fluid2D` now reports separate simulation and output dimensions.
+- Visual check: `TCX_HD_SCALE=0.25 TCX_HD_OUTPUT_SCALE=1.0` rendered a 320x180 simulation through a 1280x720 output FBO; `TCX_HD_OUTPUT_SCALE=0.5` rendered a 640x360 output FBO.
 - Known linker warning remains: duplicate `libTrussC.a` in the example link line.

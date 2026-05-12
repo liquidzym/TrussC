@@ -21,7 +21,7 @@ This file is the strict review ledger for `tcxFlowTools`. A phase is only treate
 | Phase 5 | Bridge modules | `example-fluid-bridges`, camera/video texture input | Complete for GPU external texture bridge injection |
 | Phase 6 | Visualization/debug | debug visualizer example toggles | Complete with GPU fluid, combined, and first-pass LIC visualizers |
 | Phase 7 | Extensions/particles | `example-particles`, `example-particle-variants` | Complete with GPU particles default and first-pass variants |
-| Phase 8 | HD pipeline | `example-hd` with 1x/0.5x/0.25x sim scale | Complete with GPU fluid |
+| Phase 8 | HD pipeline | `example-hd` with independent sim/output scale | Complete with GPU fluid and separate output scale |
 | Phase 9 | Final tests/docs cleanup | all selected examples build; docs updated | Complete for GPU fluid milestone |
 
 ## Phase 1 Review
@@ -369,14 +369,18 @@ Particle variant audit on 2026-05-13:
 Implementation summary:
 
 - `FluidSettings::resolutionScale` controls input/display-to-simulation downscaling.
-- `example-hd` supports 1x, 0.5x, and 0.25x simulation scale with display of input and simulation dimensions.
+- `FluidSettings::outputResolutionScale` controls GPU visualization/output FBO scale independently from simulation scale. A value <= 0 follows `resolutionScale` for backward-compatible behavior.
+- `Fluid2D` exposes `outputWidth()` and `outputHeight()` alongside simulation dimensions.
+- `example-hd` supports 1x, 0.5x, and 0.25x simulation scale with independently toggled 1x/0.5x output scale.
 
 Review checklist:
 
 - 1x / 0.5x / 0.25x switching exists: pass.
+- Separate output-resolution scale exists: pass by `FluidSettings::outputResolutionScale`, `Fluid2D::outputWidth()`, and `Fluid2D::outputHeight()`.
 - Resize rebuilds simulation dimensions: pass by implementation and build.
 - HD example builds: pass on macOS.
-- GPU fluid display at multiple simulation scales: pass; separate HD density/output resolution: pending.
+- GPU fluid display at multiple simulation scales: pass.
+- GPU visualization output at independent resolution: pass.
 - TrussC core API changed: no.
 
 Review command:
@@ -388,6 +392,14 @@ cmake --build addons/tcxFlowTools/examples/example-hd/build-macos --parallel 2
 Review result on 2026-05-10:
 
 - `example-hd`: build pass.
+
+HD output-resolution audit on 2026-05-13:
+
+- `cmake --build addons/tcxFlowTools/examples/example-hd/build-macos --parallel 2`: pass, with the known duplicate `libTrussC.a` linker warning.
+- `cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2`: pass.
+- `addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings`: pass.
+- `addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts`: pass.
+- Visual check: `TCX_HD_SCALE=1.0 TCX_HD_OUTPUT_SCALE=1.0`, `TCX_HD_SCALE=0.25 TCX_HD_OUTPUT_SCALE=1.0`, and `TCX_HD_SCALE=0.25 TCX_HD_OUTPUT_SCALE=0.5` each rendered nonblank GPU fluid output with HUD dimensions matching the requested simulation/output split.
 
 ## Phase 9 Review
 
@@ -404,4 +416,4 @@ Current review result on 2026-05-10:
 - `example-particles`: build pass.
 - `example-hd`: build pass.
 
-Phase 9 is complete for the current GPU-first milestone. CPU remains a no-GPU fallback. Remaining reference gaps are now limited to deeper bridge parity, full streamline particle rendering, HD output-resolution parity, richer particle variants, split-velocity shader parity, and cross-platform builds; see `REFERENCE_GAPS.md`.
+Phase 9 is complete for the current GPU-first milestone. CPU remains a no-GPU fallback. Remaining reference gaps are now limited to deeper bridge parity, full streamline particle rendering, exact HD shader-family parity beyond output resolution, richer particle variants, split-velocity shader parity, and cross-platform builds; see `REFERENCE_GAPS.md`.
