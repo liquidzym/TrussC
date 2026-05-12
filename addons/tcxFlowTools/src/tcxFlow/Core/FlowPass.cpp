@@ -22,7 +22,7 @@ struct PassInfo {
     ShaderDescFn desc = nullptr;
 };
 
-constexpr std::array<PassInfo, 42> kCommonPasses = {{
+constexpr std::array<PassInfo, 43> kCommonPasses = {{
     {FlowPassKind::Copy, "copy", "shaders/common/copy.glsl", tcx_flow_copy_shader_desc},
     {FlowPassKind::Clear, "clear", "shaders/common/clear.glsl", tcx_flow_clear_shader_desc},
     {FlowPassKind::Multiply, "multiply", "shaders/common/multiply.glsl", tcx_flow_multiply_shader_desc},
@@ -62,6 +62,7 @@ constexpr std::array<PassInfo, 42> kCommonPasses = {{
     {FlowPassKind::VisualizePressure, "visualize_pressure", "shaders/visualization/pressure.glsl", tcx_flow_visualize_pressure_shader_desc},
     {FlowPassKind::VisualizeTemperature, "visualize_temperature", "shaders/visualization/temperature.glsl", tcx_flow_visualize_temperature_shader_desc},
     {FlowPassKind::VisualizeCombined, "visualize_combined", "shaders/visualization/combined.glsl", tcx_flow_visualize_combined_shader_desc},
+    {FlowPassKind::VisualizeLic, "visualize_lic", "shaders/visualization/lic.glsl", tcx_flow_visualize_lic_shader_desc},
     {FlowPassKind::ParticlesSpawn, "particles_spawn", "shaders/particles/spawn.glsl", tcx_flow_particles_spawn_shader_desc},
     {FlowPassKind::ParticlesUpdate, "particles_update", "shaders/particles/update.glsl", tcx_flow_particles_update_shader_desc},
     {FlowPassKind::ParticlesRender, "particles_render", "shaders/particles/render.glsl", tcx_flow_particles_render_shader_desc},

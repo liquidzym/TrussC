@@ -11,6 +11,7 @@ This is the current audit against the checked reference repositories in `_fcache
 - GPU texture optical flow: `OpticalFlow::update(const tc::Texture&, float)` and GPU flow/current/previous texture getters.
 - Real camera example: `example-camera-fluid` connects `tc::VideoGrabber` texture directly into GPU optical flow and GPU fluid.
 - GPU external texture bridges: `VelocityBridge`, `DensityBridge`, `TemperatureBridge`, and `CombinedBridge` render texture outputs and apply them to `Fluid2D`; `example-fluid-bridges` visually verifies modes 1-4.
+- First-pass GPU LIC visualization: `Fluid2D::drawLic()` and `example-lic-streamlines` render a LIC-style texture over the GPU velocity field.
 - GPU particles: `ParticleFlow` uses GPU state textures, spawn/update passes, and GPU drawing by default; CPU is fallback.
 - PixelFlow-style wind tunnel direction: `example-wind-tunnel` exists for obstacle and texture-inlet validation.
 - Examples are centralized under `examples/`.
@@ -22,7 +23,7 @@ This is the current audit against the checked reference repositories in `_fcache
 - ofxFlowTools extensions: `AverageFlowWatcher`, full split-velocity shader graph, colorize luminance/velocity/gradient, decay, dilate, erode, inverse warp, normalization, ease, and time blur helper shaders are not fully ported.
 - ofxFlowTools particle parity: age/lifespan/mass/size tuning and richer draw/move shader controls are only represented by the first GPU particle path.
 - ofxFlowTools HD parity: separate density/output resolution and exact HD visual pipeline remain partial.
-- PixelFlow flow-field visuals: LIC, streamlines, wind-tunnel LIC, image LIC, and optical-flow LIC examples are not ported.
+- PixelFlow flow-field visuals: first-pass LIC is present; full streamline particle rendering, wind-tunnel LIC, image LIC, and optical-flow LIC examples are not ported.
 - PixelFlow fluid examples: multiple fluids, liquid painting/text, custom render streamlines, Verlet/collision demos, velocity encoding, and texture transfer examples remain candidates.
 - PixelFlow optical-flow examples: movie/capture optical flow into fluid/particles and PFM export are not ported.
 - PixelFlow flow-field particle variants: attractors, cohesion, impulse, dam break, sprite generator, and optical-flow capture particles are not ported.
@@ -30,7 +31,7 @@ This is the current audit against the checked reference repositories in `_fcache
 
 ## Best Next Examples To Port
 
-- `example-lic-streamlines`: based on PixelFlow `FlowField_LIC_StreamLines` and `Fluid_Basic_LIC`.
+- `example-lic-streamlines`: first-pass LIC exists; next step is PixelFlow-style streamline particle rendering based on `FlowField_LIC_StreamLines`.
 - `example-wind-tunnel`: based on PixelFlow `Fluid_WindTunnel` / `Fluid_WindTunnel_LIC`, useful for obstacle validation.
 - `example-movie-fluid`: based on PixelFlow `OpticalFlow_MovieFluid`, using TrussC `VideoPlayer` texture input.
 - `example-particle-variants`: based on PixelFlow `FlowFieldParticles_Attractors`, `Impulse`, and `Cohesion`.

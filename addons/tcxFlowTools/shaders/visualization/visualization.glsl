@@ -167,9 +167,68 @@ void main() {
 }
 @end
 
+@fs fs_visualize_lic
+layout(binding=0) uniform texture2D licVelocityTex;
+layout(binding=0) uniform sampler licVelocitySmp;
+
+layout(binding=0) uniform visual_params {
+    vec4 color;
+    vec4 resolution;
+    vec4 texel;
+    vec4 options;
+};
+
+in vec2 uv;
+out vec4 frag_color;
+
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(127.1, 311.7, 74.7));
+    p3 += dot(p3, p3.yzx + 19.19);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash12(i);
+    float b = hash12(i + vec2(1.0, 0.0));
+    float c = hash12(i + vec2(0.0, 1.0));
+    float d = hash12(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+void main() {
+    vec2 velocity = texture(sampler2D(licVelocityTex, licVelocitySmp), uv).xy;
+    float speed = length(velocity);
+    vec2 dir = speed > 0.00001 ? normalize(velocity) : vec2(1.0, 0.0);
+    vec2 stepUv = dir * texel.xy * max(options.y, 1.0);
+    int samples = int(clamp(floor(options.z + 0.5), 4.0, 32.0));
+
+    float accum = noise(uv * resolution.xy * max(options.w, 0.25));
+    float weight = 1.0;
+    for (int i = 1; i <= 32; ++i) {
+        if (i > samples) break;
+        float w = 1.0 - float(i) / (float(samples) + 1.0);
+        vec2 offset = stepUv * float(i);
+        accum += (noise((uv + offset) * resolution.xy * max(options.w, 0.25)) +
+                  noise((uv - offset) * resolution.xy * max(options.w, 0.25))) * w;
+        weight += 2.0 * w;
+    }
+
+    float lic = accum / max(weight, 0.0001);
+    float contrast = pow(clamp(lic, 0.0, 1.0), 1.35);
+    float motion = smoothstep(0.001, 0.14, speed * options.x);
+    vec3 tint = mix(vec3(0.12, 0.18, 0.22), vec3(0.18, 0.84, 1.0), motion);
+    vec3 rgb = tint * (contrast * 1.35) + vec3(motion * 0.04);
+    frag_color = vec4(clamp(rgb * color.rgb, 0.0, 1.0), color.a);
+}
+@end
+
 @program tcx_flow_visualize_scalar visualization_vs fs_visualize_scalar
 @program tcx_flow_visualize_density visualization_vs fs_visualize_density
 @program tcx_flow_visualize_velocity_color visualization_vs fs_visualize_velocity_color
 @program tcx_flow_visualize_pressure visualization_vs fs_visualize_pressure
 @program tcx_flow_visualize_temperature visualization_vs fs_visualize_temperature
 @program tcx_flow_visualize_combined visualization_vs fs_visualize_combined
+@program tcx_flow_visualize_lic visualization_vs fs_visualize_lic

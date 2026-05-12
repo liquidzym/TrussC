@@ -19,7 +19,7 @@ This file is the strict review ledger for `tcxFlowTools`. A phase is only treate
 | Phase 3 | `Fluid2D` solver | `example-simple` with visible fluid; solver tests | Complete with GPU default and CPU fallback |
 | Phase 4 | Optical flow | `example-optical-flow` and nonzero motion field | Complete with GPU texture input and GPU fluid bridge |
 | Phase 5 | Bridge modules | `example-fluid-bridges`, camera/video texture input | Complete for GPU external texture bridge injection |
-| Phase 6 | Visualization/debug | debug visualizer example toggles | Complete with GPU fluid and combined visualizers |
+| Phase 6 | Visualization/debug | debug visualizer example toggles | Complete with GPU fluid, combined, and first-pass LIC visualizers |
 | Phase 7 | Extensions/particles | `example-particles` | Complete with GPU particles default |
 | Phase 8 | HD pipeline | `example-hd` with 1x/0.5x/0.25x sim scale | Complete with GPU fluid |
 | Phase 9 | Final tests/docs cleanup | all selected examples build; docs updated | Complete for GPU fluid milestone |
@@ -276,12 +276,12 @@ Bridge texture audit on 2026-05-12:
 
 Implementation summary:
 
-- `Fluid2D` exposes debug draw methods for density, velocity, pressure, temperature, and combined density/velocity/temperature; GPU fluid uses generated visualization passes, CPU fallback uses immediate/debug drawing.
+- `Fluid2D` exposes debug draw methods for density, velocity, pressure, temperature, combined density/velocity/temperature, and LIC over velocity; GPU fluid uses generated visualization passes, CPU fallback uses immediate/debug drawing.
 - `OpticalFlow` exposes `drawFlow()` and `drawDebug()`.
 - `FlowVisualizer` routes fluid and optical-flow debug drawing.
-- `shaders/visualization/visualization.glsl` provides generated scalar, velocity color, pressure, temperature, and combined visualization passes.
+- `shaders/visualization/visualization.glsl` provides generated scalar, velocity color, pressure, temperature, combined, and LIC visualization passes.
 - `FlowPassKind` maps visualization pass descriptors through the shared fullscreen pass wrapper.
-- `example-simple`, `example-optical-flow`, `example-fluid-bridges`, and `example-hd` exercise visualization paths.
+- `example-simple`, `example-optical-flow`, `example-fluid-bridges`, `example-lic-streamlines`, and `example-hd` exercise visualization paths.
 
 Review checklist:
 
@@ -290,6 +290,7 @@ Review checklist:
 - Pressure visualization: pass in `example-simple` mode `p`.
 - Temperature visualization: pass in `example-simple` mode `t`.
 - Combined visualization: pass in `example-fluid-bridges` mode `4`.
+- LIC visualization: pass in `example-lic-streamlines`.
 - Visualization shader deliverable compiles for `metal_macos:hlsl5:glsl300es:wgsl`: pass by build.
 - Visualization generated pass mapping is reachable through `FlowPassKind`: pass by `test_core_contracts`.
 - Shader visualizers are used for GPU fluid debug views: pass.
@@ -298,6 +299,16 @@ Review checklist:
 Review result on 2026-05-10:
 
 - Visualization paths compile through all current examples.
+
+LIC visualization audit on 2026-05-13:
+
+- `cmake -S addons/tcxFlowTools/examples/example-lic-streamlines -B addons/tcxFlowTools/examples/example-lic-streamlines/build-macos`: pass.
+- `cmake --build addons/tcxFlowTools/examples/example-lic-streamlines/build-macos --parallel 2`: pass, with the known duplicate `libTrussC.a` linker warning.
+- `cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2`: pass.
+- `addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings`: pass.
+- `addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts`: pass.
+- Visual check: `example-lic-streamlines` renders a nonblank LIC-style texture aligned to the GPU velocity field.
+- Remaining gap: full PixelFlow-style streamline particle rendering is not yet implemented.
 
 ## Phase 7 Review
 

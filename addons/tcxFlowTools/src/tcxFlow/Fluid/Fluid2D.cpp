@@ -418,6 +418,23 @@ void Fluid2D::drawCombined(float x, float y, float w, float h) const {
     drawDensity(x, y, w, h);
 }
 
+void Fluid2D::drawLic(float x, float y, float w, float h) const {
+    if (!isAllocated()) return;
+    if (lastUpdateUsedGpu_ && gpuBuffers_.isAllocated() && sg_isvalid()) {
+        if (!debugFbo_.isAllocated() || debugFbo_.getWidth() != simWidth_ || debugFbo_.getHeight() != simHeight_) {
+            debugFbo_.allocate(simWidth_, simHeight_, 1, TextureFormat::RGBA8);
+        }
+        passVisualizeLic_.setTexture("tex0", gpuBuffers_.velocity().read().getTexture());
+        passVisualizeLic_.setColor(tc::Color(1.0f));
+        passVisualizeLic_.setOptions(0.06f, 1.8f, 22.0f, 0.45f);
+        passVisualizeLic_.render(debugFbo_);
+        tc::setColor(1.0f);
+        debugFbo_.draw(x, y, w, h);
+        return;
+    }
+    drawVelocity(x, y, w, h);
+}
+
 float Fluid2D::densityEnergy() const {
     float sum = 0.0f;
     for (const auto& c : density_) {
@@ -704,6 +721,7 @@ void Fluid2D::setupGpuPasses() {
     passVisualizePressure_.setup(FlowPassKind::VisualizePressure);
     passVisualizeTemperature_.setup(FlowPassKind::VisualizeTemperature);
     passVisualizeCombined_.setup(FlowPassKind::VisualizeCombined);
+    passVisualizeLic_.setup(FlowPassKind::VisualizeLic);
     gpuPassesReady_ = true;
 }
 

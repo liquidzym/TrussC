@@ -119,6 +119,8 @@ int main() {
              tcx::flow::FlowPassKind::VisualizeVelocityColor,
              tcx::flow::FlowPassKind::VisualizePressure,
              tcx::flow::FlowPassKind::VisualizeTemperature,
+             tcx::flow::FlowPassKind::VisualizeCombined,
+             tcx::flow::FlowPassKind::VisualizeLic,
              tcx::flow::FlowPassKind::ParticlesSpawn,
              tcx::flow::FlowPassKind::ParticlesUpdate,
              tcx::flow::FlowPassKind::ParticlesRender,

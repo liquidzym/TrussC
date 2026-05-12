@@ -33,6 +33,7 @@ public:
     void drawPressure(float x, float y, float w, float h) const;
     void drawTemperature(float x, float y, float w, float h) const;
     void drawCombined(float x, float y, float w, float h) const;
+    void drawLic(float x, float y, float w, float h) const;
 
     FluidSettings& settings() { return settings_; }
     const FluidSettings& settings() const { return settings_; }
@@ -137,6 +138,7 @@ private:
     mutable FlowPass passVisualizePressure_;
     mutable FlowPass passVisualizeTemperature_;
     mutable FlowPass passVisualizeCombined_;
+    mutable FlowPass passVisualizeLic_;
     mutable tc::Fbo debugFbo_;
     tc::Texture externalVelocityTexture_;
     std::vector<float> externalVelocityPixels_;
