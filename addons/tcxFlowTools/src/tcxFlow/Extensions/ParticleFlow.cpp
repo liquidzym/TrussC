@@ -12,6 +12,15 @@ struct ParticlePointVertex {
     float corner[2];
 };
 
+int variantCode(ParticleFlowVariant variant) {
+    switch (variant) {
+        case ParticleFlowVariant::Attractor: return 1;
+        case ParticleFlowVariant::Impulse: return 2;
+        case ParticleFlowVariant::Flow:
+        default: return 0;
+    }
+}
+
 } // namespace
 
 ParticleFlow::~ParticleFlow() {
@@ -58,9 +67,19 @@ void ParticleFlow::update(const Fluid2D& fluid, float dt) {
     }
 
     const float damping = std::clamp(settings_.damping, 0.0f, 1.0f);
+    const tc::Vec2 variantCenter(settings_.variantCenter.x * width_, settings_.variantCenter.y * height_);
     for (std::size_t i = 0; i < positions_.size(); ++i) {
         ages_[i] += dt;
         velocities_[i] += fluid.sampleVelocityAtPosition(positions_[i]) * dt;
+        if (settings_.variant == ParticleFlowVariant::Attractor) {
+            const tc::Vec2 toward = variantCenter - positions_[i];
+            const float dist = std::max(1.0f, std::sqrt(toward.x * toward.x + toward.y * toward.y));
+            velocities_[i] += toward * (settings_.variantStrength * dt / dist);
+        } else if (settings_.variant == ParticleFlowVariant::Impulse) {
+            const tc::Vec2 away = positions_[i] - variantCenter;
+            const float dist = std::max(1.0f, std::sqrt(away.x * away.x + away.y * away.y));
+            velocities_[i] += away * (settings_.variantStrength * dt / dist);
+        }
         velocities_[i] *= damping;
         positions_[i] += velocities_[i] * (dt * settings_.velocityScale);
         if (settings_.respawn && (ages_[i] > settings_.lifetime || positions_[i].x < 0 || positions_[i].y < 0 ||
@@ -80,12 +99,12 @@ void ParticleFlow::draw(float x, float y, float w, float h) const {
         return;
     }
     if (width_ <= 0 || height_ <= 0) return;
-    tc::setColor(1.0f, 1.0f, 1.0f, 0.65f);
+    tc::setColor(settings_.particleColor);
     const float sx = w / width_;
     const float sy = h / height_;
     const std::size_t maxDraw = std::min<std::size_t>(positions_.size(), 4096);
     for (std::size_t i = 0; i < maxDraw; ++i) {
-        tc::drawCircle(x + positions_[i].x * sx, y + positions_[i].y * sy, 1.0f);
+        tc::drawCircle(x + positions_[i].x * sx, y + positions_[i].y * sy, settings_.particleSize);
     }
 }
 
@@ -198,7 +217,12 @@ void ParticleFlow::updateGpu(const Fluid2D& fluid, float dt) {
     gpuUpdatePass_.setTexture("tex0", gpuState_.read().getTexture());
     gpuUpdatePass_.setTexture("particleVelocityTex", *velocityTexture);
     const float normalizedVelocity = std::max(0.0f, dt) * settings_.velocityScale / std::max(1, std::max(width_, height_));
-    gpuUpdatePass_.setOptions(normalizedVelocity, std::max(0.0f, dt), settings_.lifetime, 1.0f);
+    gpuUpdatePass_.setColor(tc::Color(std::clamp(settings_.variantCenter.x, 0.0f, 1.0f),
+                                      std::clamp(settings_.variantCenter.y, 0.0f, 1.0f),
+                                      std::max(0.0f, settings_.variantStrength),
+                                      std::clamp(settings_.damping, 0.0f, 1.0f)));
+    gpuUpdatePass_.setOptions(normalizedVelocity, std::max(0.0f, dt), settings_.lifetime,
+                              static_cast<float>(variantCode(settings_.variant)));
     gpuUpdatePass_.render(gpuState_.write());
     gpuState_.swap();
 }
@@ -209,10 +233,10 @@ void ParticleFlow::drawGpu(float x, float y, float w, float h) const {
     sgl_draw();
 
     FlowPassParams params;
-    params.color[0] = 1.0f;
-    params.color[1] = 1.0f;
-    params.color[2] = 1.0f;
-    params.color[3] = 0.65f;
+    params.color[0] = settings_.particleColor.r;
+    params.color[1] = settings_.particleColor.g;
+    params.color[2] = settings_.particleColor.b;
+    params.color[3] = settings_.particleColor.a;
     params.resolution[0] = static_cast<float>(std::max(1, tc::getWindowWidth()));
     params.resolution[1] = static_cast<float>(std::max(1, tc::getWindowHeight()));
     params.resolution[2] = w;
@@ -220,7 +244,7 @@ void ParticleFlow::drawGpu(float x, float y, float w, float h) const {
     params.texel[0] = x;
     params.texel[1] = y;
     params.options[2] = settings_.lifetime;
-    params.options[3] = 1.4f;
+    params.options[3] = settings_.particleSize;
 
     sg_apply_pipeline(gpuPointPipeline_);
     sg_bindings bind = {};

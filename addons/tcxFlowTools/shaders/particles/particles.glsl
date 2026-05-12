@@ -98,13 +98,22 @@ void main() {
     vec2 pos = state.xy;
     vec2 flow = texture(sampler2D(particleVelocityTex, particleVelocitySmp), pos).xy;
     pos += flow * options.x;
+    if (options.w > 0.5 && options.w < 1.5) {
+        vec2 toward = color.xy - pos;
+        float dist = max(length(toward), 0.0005);
+        pos += toward / dist * color.z * options.y;
+    } else if (options.w > 1.5) {
+        vec2 away = pos - color.xy;
+        float dist = max(length(away), 0.0005);
+        pos += away / dist * color.z * options.y;
+    }
     pos = fract(pos);
     float age = state.z + options.y;
     if (age > options.z) {
         pos = uv;
         age = 0.0;
     }
-    frag_color = vec4(pos, age, 1.0) * color;
+    frag_color = vec4(pos, age, 1.0);
 }
 @end
 

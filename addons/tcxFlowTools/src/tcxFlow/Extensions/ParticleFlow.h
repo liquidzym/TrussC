@@ -6,12 +6,23 @@
 
 namespace tcx::flow {
 
+enum class ParticleFlowVariant {
+    Flow = 0,
+    Attractor = 1,
+    Impulse = 2
+};
+
 struct ParticleFlowSettings {
     int particleCount = 65536;
     float lifetime = 5.0f;
     float velocityScale = 1.0f;
     float damping = 0.995f;
     float spawnRadius = 1.0f;
+    float variantStrength = 0.0f;
+    float particleSize = 1.4f;
+    tc::Vec2 variantCenter = tc::Vec2(0.5f, 0.5f);
+    tc::Color particleColor = tc::Color(1.0f, 1.0f, 1.0f, 0.65f);
+    ParticleFlowVariant variant = ParticleFlowVariant::Flow;
     bool respawn = true;
     bool useGpuParticles = true;
 };

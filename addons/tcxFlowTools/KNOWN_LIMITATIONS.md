@@ -8,8 +8,8 @@ Generated: 2026-05-10
 - `example-camera-fluid` now uses real `tc::VideoGrabber` texture input directly into GPU optical flow, with procedural fallback only when camera/permission/GPU input is unavailable.
 - Bridge classes provide procedural fallback injection APIs, generated bridge shader assets, and GPU external texture wiring for velocity, density, temperature, and combined bridge injection.
 - Advanced bridge controls such as `BridgeSettings::invert`, `useAlphaAsMask`, `mirrorX`, and `mirrorY` remain tracked parity gaps.
-- `ParticleFlow` defaults to GPU state textures, a GPU update pass, and GPU particle drawing. CPU particles remain fallback when GPU is unavailable.
-- GPU particles are intentionally a first complete TrussC/sokol implementation, but they do not yet cover every PixelFlow/ofxFlowTools particle variant such as collision, attractors/cohesion, sprite trails, and dam-break style examples.
+- `ParticleFlow` defaults to GPU state textures, a GPU update pass, and GPU particle drawing. CPU particles remain fallback when GPU is unavailable. First-pass flow, attractor, and impulse variants are available.
+- GPU particles are intentionally a first complete TrussC/sokol implementation, but they do not yet cover every PixelFlow/ofxFlowTools particle variant such as collision, cohesion, sprite trails, optical-flow capture particles, and dam-break style examples.
 - ofxFlowTools HD separates simulation resolution from density/output resolution more deeply than the current single-grid `Fluid2D`; exact HD visual parity is still pending.
 - All requested example directories are centralized under `examples/` and build on macOS. Current app examples use GPU fluid by default; tests intentionally exercise CPU fallback because they run without an app graphics context.
 - Full streamline particle rendering, velocity-dot/field visualizers, average watchers, split-velocity shader parity, colorize/erode/dilate/inverse-warp/timeblur helper shaders, and PixelFlow multiple-fluid examples are still tracked in `REFERENCE_GAPS.md`.

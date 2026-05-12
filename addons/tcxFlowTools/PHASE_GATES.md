@@ -20,7 +20,7 @@ This file is the strict review ledger for `tcxFlowTools`. A phase is only treate
 | Phase 4 | Optical flow | `example-optical-flow` and nonzero motion field | Complete with GPU texture input and GPU fluid bridge |
 | Phase 5 | Bridge modules | `example-fluid-bridges`, camera/video texture input | Complete for GPU external texture bridge injection |
 | Phase 6 | Visualization/debug | debug visualizer example toggles | Complete with GPU fluid, combined, and first-pass LIC visualizers |
-| Phase 7 | Extensions/particles | `example-particles` | Complete with GPU particles default |
+| Phase 7 | Extensions/particles | `example-particles`, `example-particle-variants` | Complete with GPU particles default and first-pass variants |
 | Phase 8 | HD pipeline | `example-hd` with 1x/0.5x/0.25x sim scale | Complete with GPU fluid |
 | Phase 9 | Final tests/docs cleanup | all selected examples build; docs updated | Complete for GPU fluid milestone |
 
@@ -316,12 +316,14 @@ Implementation summary:
 
 - `ParticleFlow` defaults to GPU particle state textures over GPU fluid.
 - GPU particles update against `Fluid2D::getVelocityTexture()` and draw through a generated vertex texture sampling shader.
+- `ParticleFlowSettings::variant` supports first-pass flow, attractor, and impulse modes. The GPU update shader uses the configured normalized variant center and strength; CPU fallback mirrors the same force direction.
 - CPU particles still sample `Fluid2D::sampleVelocityAtPosition()` as no-GPU fallback.
 - `AverageFlow` computes sampled average velocity and speed from a `Fluid2D` field.
 - `SplitVelocity` computes sampled positive/negative velocity channels and horizontal/vertical energy.
 - `shaders/particles/particles.glsl` provides generated spawn, update, render helper, and point-draw passes.
 - `FlowPassKind` maps particle pass descriptors through the shared fullscreen pass wrapper.
 - `example-particles` demonstrates particle motion with optional fluid overlay.
+- `example-particle-variants` demonstrates flow, attractor, and impulse modes over GPU fluid.
 
 Review checklist:
 
@@ -333,6 +335,7 @@ Review checklist:
 - Particle generated pass mapping is reachable through `FlowPassKind`: pass by `test_core_contracts`.
 - Particle example builds: pass on macOS.
 - Full GPU particle simulation/rendering: pass for the default particle path; advanced reference variants remain tracked in `REFERENCE_GAPS.md`.
+- First-pass attractor and impulse variants: pass in `example-particle-variants`.
 - TrussC core API changed: no.
 
 Review command:
@@ -349,6 +352,17 @@ Audit note, 2026-05-10:
 
 - Reference checked: ofxFlowTools `ftParticleFlow`, particle init/move/draw shaders, and PixelFlow `FlowFieldParticles` examples.
 - Current implementation intentionally ports the default GPU state/update/draw shape first. It does not yet claim parity with every PixelFlow particle variant such as attractors, cohesion, sprite trails, or dam break.
+
+Particle variant audit on 2026-05-13:
+
+- `cmake -S addons/tcxFlowTools/examples/example-particle-variants -B addons/tcxFlowTools/examples/example-particle-variants/build-macos`: pass.
+- `cmake --build addons/tcxFlowTools/examples/example-particle-variants/build-macos --parallel 2`: pass, with the known duplicate `libTrussC.a` linker warning.
+- `cmake --build addons/tcxFlowTools/examples/example-particles/build-macos --parallel 2`: pass, with the known duplicate `libTrussC.a` linker warning.
+- `cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2`: pass.
+- `addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings`: pass.
+- `addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts`: pass.
+- Visual check: `TCX_PARTICLE_VARIANT=flow`, `attractor`, and `impulse` each launched on the GPU path and rendered a nonblank mode-specific particle field.
+- Remaining gap: richer PixelFlow particle families such as cohesion, dam-break, sprite trails, and optical-flow capture particles are still not implemented.
 
 ## Phase 8 Review
 
@@ -390,4 +404,4 @@ Current review result on 2026-05-10:
 - `example-particles`: build pass.
 - `example-hd`: build pass.
 
-Phase 9 is complete for the current GPU-first milestone. CPU remains a no-GPU fallback. Remaining reference gaps are now limited to deeper bridge parity, LIC/streamlines, HD output-resolution parity, advanced particle variants, split-velocity shader parity, and cross-platform builds; see `REFERENCE_GAPS.md`.
+Phase 9 is complete for the current GPU-first milestone. CPU remains a no-GPU fallback. Remaining reference gaps are now limited to deeper bridge parity, full streamline particle rendering, HD output-resolution parity, richer particle variants, split-velocity shader parity, and cross-platform builds; see `REFERENCE_GAPS.md`.
