@@ -46,6 +46,7 @@ enum class FlowPassKind {
     VisualizeVelocityColor,
     VisualizePressure,
     VisualizeTemperature,
+    VisualizeCombined,
     ParticlesSpawn,
     ParticlesUpdate,
     ParticlesRender

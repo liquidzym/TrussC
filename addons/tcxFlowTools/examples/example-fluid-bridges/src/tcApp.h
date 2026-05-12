@@ -13,11 +13,13 @@ public:
 
 private:
     void resizeSystems();
+    void updateInputTexture(float time);
 
     tcx::flow::Fluid2D fluid_;
     tcx::flow::VelocityBridge velocityBridge_;
     tcx::flow::DensityBridge densityBridge_;
     tcx::flow::TemperatureBridge temperatureBridge_;
     tcx::flow::CombinedBridge combinedBridge_;
+    tc::Fbo inputTexture_;
     int mode_ = 4;
 };

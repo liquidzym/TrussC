@@ -127,8 +127,49 @@ void main() {
 }
 @end
 
+@fs fs_visualize_combined
+layout(binding=0) uniform texture2D combinedDensityTex;
+layout(binding=0) uniform sampler combinedDensitySmp;
+layout(binding=1) uniform texture2D combinedVelocityTex;
+layout(binding=1) uniform sampler combinedVelocitySmp;
+layout(binding=2) uniform texture2D combinedTemperatureTex;
+layout(binding=2) uniform sampler combinedTemperatureSmp;
+
+layout(binding=0) uniform visual_params {
+    vec4 color;
+    vec4 resolution;
+    vec4 texel;
+    vec4 options;
+};
+
+in vec2 uv;
+out vec4 frag_color;
+
+void main() {
+    vec4 density = max(texture(sampler2D(combinedDensityTex, combinedDensitySmp), uv), vec4(0.0));
+    vec2 velocity = texture(sampler2D(combinedVelocityTex, combinedVelocitySmp), uv).xy * options.x;
+    float temperature = clamp(texture(sampler2D(combinedTemperatureTex, combinedTemperatureSmp), uv).r, 0.0, 1.0);
+
+    float densityEnergy = clamp((density.r + density.g + density.b) * 0.38 + density.a * 0.55, 0.0, 1.0);
+    float velocityEnergy = clamp(length(velocity), 0.0, 1.0);
+    float tempEnergy = smoothstep(0.015, 0.75, temperature);
+
+    vec3 densityRgb = density.rgb * (1.08 + densityEnergy * 0.35);
+    vec3 velocityRgb = vec3(
+        max(velocity.x, 0.0) + velocityEnergy * 0.12,
+        max(velocity.y, 0.0) + velocityEnergy * 0.12,
+        max(-velocity.x - velocity.y, 0.0)
+    ) * (0.25 + densityEnergy * 0.75);
+    vec3 temperatureRgb = mix(vec3(0.08, 0.05, 0.35), vec3(1.0, 0.30, 0.06), tempEnergy) * tempEnergy;
+
+    vec3 rgb = clamp(densityRgb + velocityRgb * 0.65 + temperatureRgb * 0.85, 0.0, 1.0);
+    frag_color = vec4(rgb * color.rgb, color.a);
+}
+@end
+
 @program tcx_flow_visualize_scalar visualization_vs fs_visualize_scalar
 @program tcx_flow_visualize_density visualization_vs fs_visualize_density
 @program tcx_flow_visualize_velocity_color visualization_vs fs_visualize_velocity_color
 @program tcx_flow_visualize_pressure visualization_vs fs_visualize_pressure
 @program tcx_flow_visualize_temperature visualization_vs fs_visualize_temperature
+@program tcx_flow_visualize_combined visualization_vs fs_visualize_combined

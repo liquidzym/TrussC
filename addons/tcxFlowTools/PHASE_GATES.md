@@ -18,8 +18,8 @@ This file is the strict review ledger for `tcxFlowTools`. A phase is only treate
 | Phase 2 | GPU/resource infrastructure: ping-pong buffers, common pass wrappers, texture format helpers, shader directory | `test_core_contracts`, `example-simple`, `example-core-pingpong` configure/build | Complete for common passes |
 | Phase 3 | `Fluid2D` solver | `example-simple` with visible fluid; solver tests | Complete with GPU default and CPU fallback |
 | Phase 4 | Optical flow | `example-optical-flow` and nonzero motion field | Complete with GPU texture input and GPU fluid bridge |
-| Phase 5 | Bridge modules | `example-fluid-bridges`, camera/video texture input | Complete with GPU camera texture path |
-| Phase 6 | Visualization/debug | debug visualizer example toggles | Complete with GPU fluid visualizers |
+| Phase 5 | Bridge modules | `example-fluid-bridges`, camera/video texture input | Complete for GPU external texture bridge injection |
+| Phase 6 | Visualization/debug | debug visualizer example toggles | Complete with GPU fluid and combined visualizers |
 | Phase 7 | Extensions/particles | `example-particles` | Complete with GPU particles default |
 | Phase 8 | HD pipeline | `example-hd` with 1x/0.5x/0.25x sim scale | Complete with GPU fluid |
 | Phase 9 | Final tests/docs cleanup | all selected examples build; docs updated | Complete for GPU fluid milestone |
@@ -232,9 +232,10 @@ Implementation summary:
 
 - Bridge hierarchy has `VelocityBridge`, `DensityBridge`, `TemperatureBridge`, and `CombinedBridge`.
 - Bridges support procedural `update(dt)` fallback when no texture/camera is available.
+- Bridges support GPU external texture input through `update(const tc::Texture&, float)` and render bridge outputs into RGBA32F FBOs before applying them to `Fluid2D`.
 - `shaders/bridge/bridge.glsl` provides generated luminance mask, velocity, density, and temperature bridge passes.
 - `FlowPassKind` maps bridge pass descriptors through the shared fullscreen pass wrapper.
-- `example-fluid-bridges` switches modes 1-4 across individual and combined bridges.
+- `example-fluid-bridges` switches modes 1-4 across individual and combined bridges with a dynamic texture source.
 - `example-camera-fluid` connects real `tc::VideoGrabber` texture input to `OpticalFlow::update(texture)`, then applies `getFlowTexture()` to GPU `Fluid2D`.
 
 Review checklist:
@@ -245,7 +246,8 @@ Review checklist:
 - Bridge generated pass mapping is reachable through `FlowPassKind`: pass by `test_core_contracts`.
 - Bridge example builds: pass on macOS.
 - Camera-fluid GPU-fluid example builds: pass on macOS.
-- Real camera/video texture bridge processing: pass for optical-flow velocity input; density/temperature external texture bridge parity remains partial.
+- External texture bridge processing: pass for velocity, density, temperature, and combined bridge injection.
+- Advanced bridge settings such as invert, alpha-mask, and mirror controls remain pending and are tracked in `REFERENCE_GAPS.md`.
 - TrussC core API changed: no.
 
 Review commands:
@@ -260,19 +262,24 @@ Review result on 2026-05-10:
 - `example-fluid-bridges`: build pass.
 - `example-camera-fluid`: build pass.
 
-Audit note, 2026-05-10:
+Bridge texture audit on 2026-05-12:
 
+- `cmake --build addons/tcxFlowTools/examples/example-fluid-bridges/build-macos --parallel 2`: pass, with the known duplicate `libTrussC.a` linker warning.
+- `cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2`: pass.
+- `addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings`: pass.
+- `addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts`: pass.
+- Visual check: mode 1 shows velocity, mode 2 shows density and is no longer black, mode 3 shows temperature, and mode 4 shows live combined density/velocity/temperature output.
 - Reference checked: ofxFlowTools bridge class split and PixelFlow filter primitives.
-- The shader assets implement threshold/gain/mask-oriented bridge outputs. The optical-flow velocity texture bridge is now wired through `Fluid2D::applyVelocityTexture()`, while full direct density/temperature texture bridge parity remains a tracked gap.
+- Remaining parity gap: advanced bridge controls such as invert, alpha-mask, mirror axes, and deeper mask options are not yet implemented.
 
 ## Phase 6 Review
 
 Implementation summary:
 
-- `Fluid2D` exposes debug draw methods for density, velocity, pressure, and temperature; GPU fluid uses generated visualization passes, CPU fallback uses immediate/debug drawing.
+- `Fluid2D` exposes debug draw methods for density, velocity, pressure, temperature, and combined density/velocity/temperature; GPU fluid uses generated visualization passes, CPU fallback uses immediate/debug drawing.
 - `OpticalFlow` exposes `drawFlow()` and `drawDebug()`.
 - `FlowVisualizer` routes fluid and optical-flow debug drawing.
-- `shaders/visualization/visualization.glsl` provides generated scalar, velocity color, pressure, and temperature visualization passes.
+- `shaders/visualization/visualization.glsl` provides generated scalar, velocity color, pressure, temperature, and combined visualization passes.
 - `FlowPassKind` maps visualization pass descriptors through the shared fullscreen pass wrapper.
 - `example-simple`, `example-optical-flow`, `example-fluid-bridges`, and `example-hd` exercise visualization paths.
 
@@ -282,6 +289,7 @@ Review checklist:
 - Velocity visualization: pass.
 - Pressure visualization: pass in `example-simple` mode `p`.
 - Temperature visualization: pass in `example-simple` mode `t`.
+- Combined visualization: pass in `example-fluid-bridges` mode `4`.
 - Visualization shader deliverable compiles for `metal_macos:hlsl5:glsl300es:wgsl`: pass by build.
 - Visualization generated pass mapping is reachable through `FlowPassKind`: pass by `test_core_contracts`.
 - Shader visualizers are used for GPU fluid debug views: pass.

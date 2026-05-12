@@ -52,11 +52,13 @@ out vec4 frag_color;
 
 void main() {
     vec2 px = texel.xy * max(options.z, 1.0);
+    float c = dot(texture(sampler2D(bridgeInputTex, bridgeInputSmp), uv).rgb, vec3(0.2126, 0.7152, 0.0722));
     float l = dot(texture(sampler2D(bridgeInputTex, bridgeInputSmp), uv - vec2(px.x, 0.0)).rgb, vec3(0.2126, 0.7152, 0.0722));
     float r = dot(texture(sampler2D(bridgeInputTex, bridgeInputSmp), uv + vec2(px.x, 0.0)).rgb, vec3(0.2126, 0.7152, 0.0722));
     float u = dot(texture(sampler2D(bridgeInputTex, bridgeInputSmp), uv - vec2(0.0, px.y)).rgb, vec3(0.2126, 0.7152, 0.0722));
     float d = dot(texture(sampler2D(bridgeInputTex, bridgeInputSmp), uv + vec2(0.0, px.y)).rgb, vec3(0.2126, 0.7152, 0.0722));
-    vec2 v = vec2(r - l, d - u) * options.x * color.xy;
+    float mask = step(options.y, max(max(max(max(c, l), r), u), d));
+    vec2 v = vec2(r - l, d - u) * options.x * mask * color.xy;
     frag_color = vec4(v, 0.0, 1.0);
 }
 @end
@@ -79,7 +81,8 @@ void main() {
     vec4 src = texture(sampler2D(bridgeInputTex, bridgeInputSmp), uv);
     float y = dot(src.rgb, vec3(0.2126, 0.7152, 0.0722));
     float mask = step(options.y, y);
-    frag_color = vec4(color.rgb * y * options.x * mask, max(src.a, y) * mask);
+    float density = y * options.x * mask;
+    frag_color = vec4(color.rgb * density, density);
 }
 @end
 
@@ -101,7 +104,7 @@ void main() {
     vec4 src = texture(sampler2D(bridgeInputTex, bridgeInputSmp), uv);
     float y = dot(src.rgb, vec3(0.2126, 0.7152, 0.0722));
     float t = max(y - options.y, 0.0) * options.x;
-    frag_color = vec4(t, t * 0.25, 1.0 - t, src.a) * color;
+    frag_color = vec4(vec3(t), t) * color;
 }
 @end
 
