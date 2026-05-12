@@ -5,6 +5,7 @@
 #include "bridge/bridge.glsl.h"
 #include "visualization/visualization.glsl.h"
 #include "particles/particles.glsl.h"
+#include "extensions/extensions.glsl.h"
 
 #include <algorithm>
 #include <array>
@@ -22,7 +23,7 @@ struct PassInfo {
     ShaderDescFn desc = nullptr;
 };
 
-constexpr std::array<PassInfo, 43> kCommonPasses = {{
+constexpr std::array<PassInfo, 44> kCommonPasses = {{
     {FlowPassKind::Copy, "copy", "shaders/common/copy.glsl", tcx_flow_copy_shader_desc},
     {FlowPassKind::Clear, "clear", "shaders/common/clear.glsl", tcx_flow_clear_shader_desc},
     {FlowPassKind::Multiply, "multiply", "shaders/common/multiply.glsl", tcx_flow_multiply_shader_desc},
@@ -66,6 +67,7 @@ constexpr std::array<PassInfo, 43> kCommonPasses = {{
     {FlowPassKind::ParticlesSpawn, "particles_spawn", "shaders/particles/spawn.glsl", tcx_flow_particles_spawn_shader_desc},
     {FlowPassKind::ParticlesUpdate, "particles_update", "shaders/particles/update.glsl", tcx_flow_particles_update_shader_desc},
     {FlowPassKind::ParticlesRender, "particles_render", "shaders/particles/render.glsl", tcx_flow_particles_render_shader_desc},
+    {FlowPassKind::ExtensionSplitVelocity, "extension_split_velocity", "shaders/extensions/split_velocity.glsl", tcx_flow_extensions_split_velocity_shader_desc},
 }};
 
 const PassInfo* findPass(FlowPassKind kind) {

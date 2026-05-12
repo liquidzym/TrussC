@@ -23,6 +23,10 @@ This file is the strict review ledger for `tcxFlowTools`. A phase is only treate
 | Phase 7 | Extensions/particles | `example-particles`, `example-particle-variants` | Complete with GPU particles default and first-pass variants |
 | Phase 8 | HD pipeline | `example-hd` with independent sim/output scale | Complete with GPU fluid and separate output scale |
 | Phase 9 | Final tests/docs cleanup | all selected examples build; docs updated | Complete for GPU fluid milestone |
+| Phase 10 | ofx helper shader gaps | split velocity / average watcher / helper filters | In progress |
+| Phase 11 | PixelFlow CFD + flow-field examples | liquid text/painting, streamlines, collision, velocity encoding | Planned |
+| Phase 12 | PixelFlow Softbody Dynamics | SoftBody2D/3D cloth, chains, collision, playground | Planned |
+| Phase 13 | Broader PixelFlow modules | Skylight, post-processing, anti-aliasing, Shadertoy, sampling/geometry | Planned |
 
 ## Phase 1 Review
 
@@ -416,4 +420,42 @@ Current review result on 2026-05-10:
 - `example-particles`: build pass.
 - `example-hd`: build pass.
 
-Phase 9 is complete for the current GPU-first milestone. CPU remains a no-GPU fallback. Remaining reference gaps are now limited to deeper bridge parity, full streamline particle rendering, exact HD shader-family parity beyond output resolution, richer particle variants, split-velocity shader parity, and cross-platform builds; see `REFERENCE_GAPS.md`.
+Phase 9 is complete for the current GPU-first milestone. CPU remains a no-GPU fallback. Remaining reference gaps now include deeper bridge parity, full streamline particle rendering, exact HD shader-family parity beyond output resolution, richer particle variants, helper shader parity, broader PixelFlow CFD examples, PixelFlow Softbody Dynamics, Skylight/PostProcessing/AntiAliasing/Shadertoy/sampling/geometry modules, and cross-platform builds; see `REFERENCE_GAPS.md`.
+
+## Phase 10 Review
+
+Implementation summary:
+
+- `SplitVelocity` still computes CPU sampled positive/negative velocity metrics.
+- `SplitVelocity::updateTexture()` adds a first GPU helper shader output for combined, positive, and negative velocity channels.
+- `shaders/extensions/extensions.glsl` adds the generated split-velocity helper pass.
+- `FlowPassKind::ExtensionSplitVelocity` maps the generated pass through the shared fullscreen pass wrapper.
+- `example-split-velocity` demonstrates combined/positive/negative split views over GPU fluid.
+
+Review checklist:
+
+- Split-velocity helper shader compiles for `metal_macos:hlsl5:glsl300es:wgsl`: pass by build.
+- Generated extension shader header exists and pass mapping is reachable through `FlowPassKind`: pass by `test_core_contracts`.
+- Existing CPU split metrics still run: pass by `tcxFlowTools_settings`.
+- Visual example builds: pass on macOS.
+- Visual example renders nonblank combined/positive/negative GPU views: pass by screenshot audit.
+- Full ofx helper parity remains partial: velocity-dot/field visualizers, AverageFlowWatcher, colorize helpers, decay, dilate/erode, inverse warp, normalization, ease, and time blur are not done.
+- TrussC core API changed: no.
+
+Review commands:
+
+```bash
+cmake -S addons/tcxFlowTools/examples/example-split-velocity -B addons/tcxFlowTools/examples/example-split-velocity/build-macos
+cmake --build addons/tcxFlowTools/examples/example-split-velocity/build-macos --parallel 2
+cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
+```
+
+## Phase 11+ Scope Note
+
+2026-05-13 clarification:
+
+- The visual references are the ofxFlowTools Vimeo example and PixelFlow's Vimeo/example index. The goal is matching the core visual effect family, not only compiling similarly named APIs.
+- PixelFlow Softbody Dynamics and Computational Fluid Dynamics examples are explicitly in scope.
+- Broader PixelFlow modules such as Skylight, PostProcessing Filters, AntiAliasing, Shadertoy wrappers, sampling, and geometry/util examples are also in parity scope unless a later task splits them into companion addons.

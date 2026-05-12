@@ -2,7 +2,7 @@
 
 `tcxFlowTools` is a TrussC addon for fluid-style creative coding workflows. The fluid solver defaults to a sokol/TrussC GPU ping-pong graph; the CPU path remains only as a robustness fallback when no graphics context or GPU path is available.
 
-The target is a sokol-compatible GPU rewrite of concepts from ofxFlowTools and PixelFlow: 2D fluid simulation, optical flow, bridges, visualizers, particles, and HD input pipelines.
+The target is a sokol-compatible GPU rewrite of concepts from ofxFlowTools and PixelFlow. Current work is centered on 2D fluid simulation, optical flow, bridges, visualizers, particles, and HD input pipelines; the PixelFlow parity scope also includes Softbody Dynamics, Computational Fluid Dynamics examples, Skylight, post-processing, anti-aliasing, Shadertoy-style shader wrappers, sampling, and geometry/util families.
 
 ## Status
 
@@ -23,13 +23,13 @@ Implemented now:
 - Visualization helpers and mouse/particle extension scaffolding.
 - `ParticleFlow` defaults to GPU state textures, GPU update pass, and GPU particle drawing; CPU particles remain only as fallback. First-pass attractor and impulse variants are available through `ParticleFlowSettings::variant`.
 - `example-simple` with mouse injection and density/velocity/pressure/temperature view switching.
-- `example-core-pingpong`, `example-optical-flow`, `example-fluid-bridges`, `example-camera-fluid`, `example-particles`, `example-particle-variants`, `example-wind-tunnel`, and `example-hd`.
-- `example-lic-streamlines` with a first-pass GPU LIC visualization over `Fluid2D` velocity.
+- `example-core-pingpong`, `example-optical-flow`, `example-fluid-bridges`, `example-camera-fluid`, `example-particles`, `example-particle-variants`, `example-lic-streamlines`, `example-split-velocity`, `example-wind-tunnel`, and `example-hd`.
 - Basic tests for settings, resize, density injection, and procedural optical-flow state.
 
 Still limited:
 
-- Full streamline particle rendering, split-velocity shader parity, advanced bridge controls such as invert/alpha/mirror options, and richer PixelFlow-style particle variants remain pending.
+- Full streamline particle rendering, full split-velocity shader graph parity, advanced bridge controls such as invert/alpha/mirror options, and richer PixelFlow-style particle variants remain pending.
+- PixelFlow Softbody Dynamics, broader Computational Fluid Dynamics examples, Skylight, post-processing, anti-aliasing, Shadertoy-style wrappers, sampling, and geometry/util families are tracked parity scope but are not yet implemented.
 - CPU tests intentionally exercise the fallback path because they run without an app graphics context.
 
 ## Install
@@ -145,6 +145,7 @@ Additional examples:
 - `example-particles`: GPU particle state/update/draw over GPU fluid; CPU particles are fallback only.
 - `example-particle-variants`: GPU particle flow, attractor, and impulse modes over GPU fluid; keys `1`, `2`, and `3` switch modes. `TCX_PARTICLE_VARIANT=attractor` or `impulse` can start a specific mode for automated visual checks.
 - `example-lic-streamlines`: GPU LIC texture over `Fluid2D::getVelocityTexture()`; density can be toggled separately.
+- `example-split-velocity`: GPU split-velocity helper output over GPU fluid; keys `1`, `2`, and `3` switch combined/positive/negative views.
 - `example-wind-tunnel`: GPU fluid obstacle/wind-tunnel example with texture inlet and debug views.
 - `example-hd`: GPU fluid with 1x / 0.5x / 0.25x simulation scale and independently toggled output resolution.
 
@@ -278,4 +279,21 @@ Result:
 - Settings and core-contract tests passed.
 - `Fluid2D` now reports separate simulation and output dimensions.
 - Visual check: `TCX_HD_SCALE=0.25 TCX_HD_OUTPUT_SCALE=1.0` rendered a 320x180 simulation through a 1280x720 output FBO; `TCX_HD_OUTPUT_SCALE=0.5` rendered a 640x360 output FBO.
+- Known linker warning remains: duplicate `libTrussC.a` in the example link line.
+
+2026-05-13 split-velocity helper audit:
+
+```bash
+cmake -S addons/tcxFlowTools/examples/example-split-velocity -B addons/tcxFlowTools/examples/example-split-velocity/build-macos
+cmake --build addons/tcxFlowTools/examples/example-split-velocity/build-macos --parallel 2
+cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
+```
+
+Result:
+
+- `example-split-velocity`: configure/build pass.
+- Settings and core-contract tests passed.
+- Visual check: `TCX_SPLIT_MODE=0`, `1`, and `2` each launched the GPU path and rendered combined, positive, and negative split-velocity views.
 - Known linker warning remains: duplicate `libTrussC.a` in the example link line.

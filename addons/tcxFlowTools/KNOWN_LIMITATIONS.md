@@ -12,6 +12,7 @@ Generated: 2026-05-10
 - GPU particles are intentionally a first complete TrussC/sokol implementation, but they do not yet cover every PixelFlow/ofxFlowTools particle variant such as collision, cohesion, sprite trails, optical-flow capture particles, and dam-break style examples.
 - `Fluid2D` can separate simulation resolution from GPU visualization/output resolution through `FluidSettings::outputResolutionScale`. The simulation itself still uses a single velocity/density/temperature grid, so exact ofxFlowTools HD shader-family parity is still pending.
 - All requested example directories are centralized under `examples/` and build on macOS. Current app examples use GPU fluid by default; tests intentionally exercise CPU fallback because they run without an app graphics context.
-- Full streamline particle rendering, velocity-dot/field visualizers, average watchers, split-velocity shader parity, colorize/erode/dilate/inverse-warp/timeblur helper shaders, and PixelFlow multiple-fluid examples are still tracked in `REFERENCE_GAPS.md`.
+- Full streamline particle rendering, velocity-dot/field visualizers, average watchers, full split-velocity shader parity, colorize/erode/dilate/inverse-warp/timeblur helper shaders, and PixelFlow multiple-fluid examples are still tracked in `REFERENCE_GAPS.md`.
+- PixelFlow Softbody Dynamics, Computational Fluid Dynamics example families, Skylight, post-processing, anti-aliasing, Shadertoy-style wrappers, sampling, and geometry/util families are explicit parity scope after the 2026-05-13 reference clarification, but they are not yet implemented.
 - Only the current macOS checkout is being tested in this pass. Windows, Linux, Web, iOS, and Android remain unverified.
 - No TrussC core API was modified in this pass.

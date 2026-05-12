@@ -50,7 +50,8 @@ enum class FlowPassKind {
     VisualizeLic,
     ParticlesSpawn,
     ParticlesUpdate,
-    ParticlesRender
+    ParticlesRender,
+    ExtensionSplitVelocity
 };
 
 struct FlowPassParams {

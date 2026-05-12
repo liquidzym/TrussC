@@ -33,6 +33,8 @@ int main() {
     assert(std::filesystem::exists(std::filesystem::path(TCX_FLOWTOOLS_SHADER_DIR) / "visualization" / "visualization.glsl.h"));
     assert(std::filesystem::exists(std::filesystem::path(TCX_FLOWTOOLS_SHADER_DIR) / "particles" / "particles.glsl"));
     assert(std::filesystem::exists(std::filesystem::path(TCX_FLOWTOOLS_SHADER_DIR) / "particles" / "particles.glsl.h"));
+    assert(std::filesystem::exists(std::filesystem::path(TCX_FLOWTOOLS_SHADER_DIR) / "extensions" / "extensions.glsl"));
+    assert(std::filesystem::exists(std::filesystem::path(TCX_FLOWTOOLS_SHADER_DIR) / "extensions" / "extensions.glsl.h"));
 
     tc::headless::active = true;
     tcx::flow::FluidBuffers fluidBuffers;
@@ -124,6 +126,7 @@ int main() {
              tcx::flow::FlowPassKind::ParticlesSpawn,
              tcx::flow::FlowPassKind::ParticlesUpdate,
              tcx::flow::FlowPassKind::ParticlesRender,
+             tcx::flow::FlowPassKind::ExtensionSplitVelocity,
          }) {
         tcx::flow::FlowPass pass;
         pass.setup(kind);
