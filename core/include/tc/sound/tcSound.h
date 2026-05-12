@@ -486,6 +486,14 @@ struct PlayingSound {
 
     // Playback position (floating-point for speed adjustment)
     double positionF{0.0};
+
+    // Buffer-to-engine sample-rate ratio, set when the sound is queued for
+    // playback (buffer->sampleRate / AudioEngine::SAMPLE_RATE). Each
+    // output frame advances positionF by `speed * rateRatio` so a buffer
+    // recorded at a different rate than the engine plays at the correct
+    // pitch. The user-facing `speed` field stays semantically "1.0 =
+    // natural pitch", independent of the engine rate.
+    float rateRatio{1.0f};
 };
 
 // ---------------------------------------------------------------------------
@@ -494,7 +502,7 @@ struct PlayingSound {
 class AudioEngine {
 public:
     static constexpr int MAX_PLAYING_SOUNDS = 32;
-    static constexpr int SAMPLE_RATE = 44100;
+    static constexpr int SAMPLE_RATE = 96000;
     static constexpr int NUM_CHANNELS = 2;  // Stereo output
     static constexpr int ANALYSIS_BUFFER_SIZE = 4096;  // FFT analysis buffer size
     using OutputCallback = void (*)(float* output, int numFrames, int numChannels, void* userData);
@@ -546,6 +554,13 @@ public:
                 slot->loop = false;
                 slot->playing = true;
                 slot->paused = false;
+                // Cache the resample ratio so the mixer can play buffers
+                // at the right pitch regardless of the engine's output
+                // sample rate. Falls back to 1.0 for buffers that didn't
+                // record a sample rate.
+                slot->rateRatio = (buffer->sampleRate > 0)
+                    ? ((float)buffer->sampleRate / (float)SAMPLE_RATE)
+                    : 1.0f;
                 return slot;
             }
         }
@@ -653,7 +668,10 @@ private:
                         buffer[frame * num_channels + 1] += right;
                     }
 
-                    posF += speed;
+                    // Advance by speed (user-facing playback rate) times the
+                    // buffer-vs-engine sample-rate ratio. This keeps 44.1k
+                    // generated buffers and 96k assets at their natural pitch.
+                    posF += (double)speed * (double)sound->rateRatio;
                 }
 
                 sound->positionF = posF;
