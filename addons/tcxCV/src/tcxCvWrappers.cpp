@@ -51,10 +51,14 @@ int forceOdd(int x) {
 // ======================================================================
 
 Vec3b convertColor(Vec3b color, int code) {
-    Mat_<Vec3b> mat(1, 1, CV_8UC3);
-    mat(0, 0) = color;
-    cvtColor(mat, mat, code);
-    return mat(0, 0);
+    Mat src(1, 1, CV_8UC3);
+    src.at<Vec3b>(0, 0) = color;
+    Mat dst;
+    cvtColor(src, dst, code);
+    if (dst.empty() || dst.channels() < 3) {
+        return Vec3b();
+    }
+    return dst.at<Vec3b>(0, 0);
 }
 
 tc::Color convertColor(tc::Color color, int code) {

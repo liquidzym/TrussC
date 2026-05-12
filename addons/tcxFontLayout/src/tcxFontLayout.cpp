@@ -1,40 +1,43 @@
 // =============================================================================
-// tcxFontLayout — HarfBuzz text-shaping + TrussC font rendering
-//
-// v0.3 — adds per-glyph independent transform + glyph outline extraction
+// tcxFontLayout - HarfBuzz shaping + TrussC glyph-index font rendering
 // =============================================================================
 
 #include "tcxFontLayout.h"
-#include <hb.h>
 
-// stb_truetype for glyph outline extraction (linked via TrussC)
+#include <hb.h>
+#include <hb-ot.h>
+
 #include "stb/stb_truetype.h"
 
-#include <fstream>
 #include <algorithm>
 #include <cmath>
-#include <cstring>
-#include <unordered_map>
-#include <sstream>
 #include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <sstream>
 
 namespace trussc {
 
-// =============================================================================
-// Static helpers
-// =============================================================================
+namespace {
 
-static std::vector<uint8_t> loadFileBytes(const std::string& path) {
+struct DecodedChar {
+    uint32_t cp = 0;
+    int byteStart = 0;
+    int byteEnd = 0;
+};
+
+std::vector<uint8_t> loadFileBytes(const std::string& path) {
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (!f) return {};
-    size_t sz = (size_t)f.tellg();
+    std::streamsize sz = f.tellg();
+    if (sz <= 0) return {};
     f.seekg(0, std::ios::beg);
-    std::vector<uint8_t> d(sz);
-    f.read(reinterpret_cast<char*>(d.data()), (std::streamsize)sz);
+    std::vector<uint8_t> d((size_t)sz);
+    if (!f.read(reinterpret_cast<char*>(d.data()), sz)) return {};
     return d;
 }
 
-static hb_direction_t toHbDir(TextDirection d) {
+hb_direction_t toHbDir(TextDirection d) {
     switch (d) {
         case TextDirection::LTR: return HB_DIRECTION_LTR;
         case TextDirection::RTL: return HB_DIRECTION_RTL;
@@ -44,70 +47,87 @@ static hb_direction_t toHbDir(TextDirection d) {
     }
 }
 
-static std::string cpToUTF8(uint32_t cp) {
-    std::string s;
-    if (cp < 0x80) { s += (char)cp; }
-    else if (cp < 0x800) {
-        s += (char)(0xC0 | (cp >> 6));
-        s += (char)(0x80 | (cp & 0x3F));
-    } else if (cp < 0x10000) {
-        s += (char)(0xE0 | (cp >> 12));
-        s += (char)(0x80 | ((cp >> 6) & 0x3F));
-        s += (char)(0x80 | (cp & 0x3F));
-    } else {
-        s += (char)(0xF0 | (cp >> 18));
-        s += (char)(0x80 | ((cp >> 12) & 0x3F));
-        s += (char)(0x80 | ((cp >> 6) & 0x3F));
-        s += (char)(0x80 | (cp & 0x3F));
-    }
-    return s;
-}
-
-static std::vector<std::string> splitLines(const std::string& text) {
+std::vector<std::string> splitLinesPreserveEmpty(const std::string& text) {
     std::vector<std::string> out;
     size_t start = 0;
     for (size_t i = 0; i < text.size(); ++i) {
         if (text[i] == '\n') {
-            if (i > start) out.push_back(text.substr(start, i - start));
+            out.push_back(text.substr(start, i - start));
             start = i + 1;
         }
     }
-    if (start < text.size()) out.push_back(text.substr(start));
+    out.push_back(text.substr(start));
     return out;
 }
 
-static std::unordered_map<int, uint32_t> buildByteOffsetMap(const std::string& text) {
-    std::unordered_map<int, uint32_t> m;
-    for (size_t idx = 0; idx < text.size(); ) {
-        int byteStart = (int)idx, byteEnd = byteStart;
-        uint32_t cp = 0;
-        uint8_t c = (uint8_t)text[idx++];
+std::vector<DecodedChar> decodeUtf8(const std::string& text) {
+    std::vector<DecodedChar> chars;
+    for (size_t i = 0; i < text.size(); ) {
+        size_t start = i;
+        uint8_t c = (uint8_t)text[i++];
+        uint32_t cp = 0xFFFD;
+        int need = 0;
+
         if ((c & 0x80) == 0) {
-            cp = c; byteEnd = byteStart + 1;
+            cp = c;
         } else if ((c & 0xE0) == 0xC0) {
-            cp = (c & 0x1F) << 6;
-            if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F);
-            byteEnd = (int)idx;
+            cp = c & 0x1F;
+            need = 1;
         } else if ((c & 0xF0) == 0xE0) {
-            cp = (c & 0x0F) << 12;
-            if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F) << 6;
-            if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F);
-            byteEnd = (int)idx;
+            cp = c & 0x0F;
+            need = 2;
         } else if ((c & 0xF8) == 0xF0) {
-            cp = (c & 0x07) << 18;
-            if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F) << 12;
-            if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F) << 6;
-            if (idx < text.size()) cp |= ((uint8_t)text[idx++] & 0x3F);
-            byteEnd = (int)idx;
+            cp = c & 0x07;
+            need = 3;
         }
-        for (int b = byteStart; b < byteEnd; ++b) m[b] = cp;
+
+        bool valid = true;
+        for (int n = 0; n < need; ++n) {
+            if (i >= text.size()) {
+                valid = false;
+                break;
+            }
+            uint8_t cc = (uint8_t)text[i];
+            if ((cc & 0xC0) != 0x80) {
+                valid = false;
+                break;
+            }
+            cp = (cp << 6) | (cc & 0x3F);
+            ++i;
+        }
+
+        if (!valid) {
+            cp = 0xFFFD;
+            i = start + 1;
+        }
+        chars.push_back({cp, (int)start, (int)i});
     }
-    return m;
+    return chars;
 }
 
+uint32_t codepointForCluster(const std::vector<DecodedChar>& chars, int cluster) {
+    for (const auto& c : chars) {
+        if (cluster >= c.byteStart && cluster < c.byteEnd) return c.cp;
+    }
+    if (!chars.empty()) return chars.front().cp;
+    return 0;
+}
+
+float glyphAdvanceX(const ShapedGlyph& g, float letterSpacing) {
+    return g.xAdvance + letterSpacing;
+}
+
+float glyphAdvanceY(const ShapedGlyph& g, float letterSpacing) {
+    float sign = (g.yAdvance < 0.0f) ? -1.0f : 1.0f;
+    return g.yAdvance + sign * letterSpacing;
+}
+
+} // namespace
+
 // =============================================================================
-// Construction / Destruction
+// Construction / destruction
 // =============================================================================
+
 FontLayout::FontLayout() {
     hbBuf_ = hb_buffer_create();
     if (!hbBuf_) logError("tcxFontLayout") << "Failed to create HarfBuzz buffer";
@@ -115,30 +135,24 @@ FontLayout::FontLayout() {
 
 FontLayout::~FontLayout() {
     for (auto& fb : fallbacks_) {
-        if (fb.hbFont) { hb_font_destroy(fb.hbFont); fb.hbFont = nullptr; }
-        if (fb.face)   { hb_face_destroy(fb.face);   fb.face   = nullptr; }
-        if (fb.blob)   { hb_blob_destroy(fb.blob);   fb.blob   = nullptr; }
+        if (fb.hbFont) hb_font_destroy(fb.hbFont);
+        if (fb.face) hb_face_destroy(fb.face);
+        if (fb.blob) hb_blob_destroy(fb.blob);
     }
-    if (hbFont_) { hb_font_destroy(hbFont_); hbFont_ = nullptr; }
-    if (hbFace_) { hb_face_destroy(hbFace_); hbFace_ = nullptr; }
-    if (hbBlob_) { hb_blob_destroy(hbBlob_); hbBlob_ = nullptr; }
-    if (hbBuf_)  { hb_buffer_destroy(hbBuf_);  hbBuf_  = nullptr; }
-    if (stbFontInfo_) { std::free(stbFontInfo_); stbFontInfo_ = nullptr; }
+    if (hbFont_) hb_font_destroy(hbFont_);
+    if (hbFace_) hb_face_destroy(hbFace_);
+    if (hbBlob_) hb_blob_destroy(hbBlob_);
+    if (hbBuf_) hb_buffer_destroy(hbBuf_);
+    if (stbFontInfo_) std::free(stbFontInfo_);
 }
 
-// =============================================================================
-// Configuration
-// =============================================================================
-void FontLayout::setDirection(TextDirection dir)        { direction_ = dir; }
+void FontLayout::setDirection(TextDirection dir) { direction_ = dir; }
 void FontLayout::setLineDirection(LineDirection lineDir) { lineDirection_ = lineDir; }
-void FontLayout::setAlign(Align a)                       { align_ = a; }
-void FontLayout::setWordWrap(bool e)                     { wordWrap_ = e; }
-void FontLayout::setLetterSpacing(float px)              { letterSpacing_ = px; }
-void FontLayout::setLineSpacing(float m)                 { lineSpacingMul_ = (std::max)(0.2f, m); }
+void FontLayout::setAlign(Align a) { align_ = a; }
+void FontLayout::setWordWrap(bool e) { wordWrap_ = e; }
+void FontLayout::setLetterSpacing(float px) { letterSpacing_ = px; }
+void FontLayout::setLineSpacing(float m) { lineSpacingMul_ = (std::max)(0.2f, m); }
 
-// =============================================================================
-// stb_truetype initialisation (for outline extraction)
-// =============================================================================
 void FontLayout::initStbFont() {
     if (stbFontInfo_ || fontData_.empty()) return;
 
@@ -156,11 +170,12 @@ void FontLayout::initStbFont() {
 // =============================================================================
 // Font loading
 // =============================================================================
+
 bool FontLayout::load(const std::string& fontPath, int fontSize) {
     for (auto& fb : fallbacks_) {
         if (fb.hbFont) hb_font_destroy(fb.hbFont);
-        if (fb.face)   hb_face_destroy(fb.face);
-        if (fb.blob)   hb_blob_destroy(fb.blob);
+        if (fb.face) hb_face_destroy(fb.face);
+        if (fb.blob) hb_blob_destroy(fb.blob);
     }
     fallbacks_.clear();
     if (hbFont_) { hb_font_destroy(hbFont_); hbFont_ = nullptr; }
@@ -179,19 +194,20 @@ bool FontLayout::load(const std::string& fontPath, int fontSize) {
                              (unsigned)fontData_.size(),
                              HB_MEMORY_MODE_READONLY, nullptr, nullptr);
     hbFace_ = hb_face_create(hbBlob_, 0);
-    if (!hbFace_) {
-        logError("tcxFontLayout") << "Failed to create hb_face";
+    hbFont_ = hb_font_create(hbFace_);
+    if (!hbFace_ || !hbFont_) {
+        logError("tcxFontLayout") << "Failed to create HarfBuzz font";
         return false;
     }
-    hbFont_ = hb_font_create(hbFace_);
 
-    int upem = hb_face_get_upem(hbFace_);
-    if (upem <= 0) upem = 1000;
-    int hbScale = (int)((float)fontSize * 65536.0f / (float)upem + 0.5f);
-    hb_font_set_scale(hbFont_, hbScale, hbScale);
+    hb_font_set_scale(hbFont_, fontSize * 64, fontSize * 64);
+    hb_ot_font_set_funcs(hbFont_);
     fontSize_ = fontSize;
 
-    font_.load(fontPath, fontSize);
+    if (!font_.load(fontPath, fontSize)) {
+        logError("tcxFontLayout") << "TrussC Font failed to load: " << fontPath;
+        return false;
+    }
     initStbFont();
 
     logNotice("tcxFontLayout") << "Loaded: " << fontPath << " @" << fontSize << "px";
@@ -199,303 +215,433 @@ bool FontLayout::load(const std::string& fontPath, int fontSize) {
 }
 
 bool FontLayout::addFallbackFont(const std::string& fontPath,
-                                  float sizeRate,
-                                  uint32_t rangeStart, uint32_t rangeEnd) {
+                                 float sizeRate,
+                                 uint32_t rangeStart,
+                                 uint32_t rangeEnd) {
+    if (!hbFont_ || fontSize_ <= 0) {
+        logError("tcxFontLayout") << "Load primary font before adding fallbacks";
+        return false;
+    }
+
     FallbackFont fb;
     fb.data = loadFileBytes(fontPath);
     if (fb.data.empty()) {
         logError("tcxFontLayout") << "Fallback font not found: " << fontPath;
         return false;
     }
+
     fb.blob = hb_blob_create(reinterpret_cast<const char*>(fb.data.data()),
                              (unsigned)fb.data.size(),
                              HB_MEMORY_MODE_READONLY, nullptr, nullptr);
     fb.face = hb_face_create(fb.blob, 0);
-    if (!fb.face) return false;
     fb.hbFont = hb_font_create(fb.face);
+    if (!fb.face || !fb.hbFont) {
+        if (fb.hbFont) hb_font_destroy(fb.hbFont);
+        if (fb.face) hb_face_destroy(fb.face);
+        if (fb.blob) hb_blob_destroy(fb.blob);
+        return false;
+    }
 
-    int upem = hb_face_get_upem(fb.face);
-    if (upem <= 0) upem = 1000;
-    int fs = (int)(fontSize_ * sizeRate);
-    int hbScale = (int)((float)fs * 65536.0f / (float)upem + 0.5f);
-    hb_font_set_scale(fb.hbFont, hbScale, hbScale);
+    int fs = (int)std::round((float)fontSize_ * sizeRate);
+    fs = (std::max)(1, fs);
+    hb_font_set_scale(fb.hbFont, fs * 64, fs * 64);
+    hb_ot_font_set_funcs(fb.hbFont);
 
-    fb.sizeRate   = sizeRate;
+    fb.sizeRate = sizeRate;
     fb.rangeStart = rangeStart;
-    fb.rangeEnd   = rangeEnd;
-    fb.tcFont.load(fontPath, (int)(fontSize_ * sizeRate));
+    fb.rangeEnd = rangeEnd;
+    if (!fb.tcFont.load(fontPath, fs)) {
+        hb_font_destroy(fb.hbFont);
+        hb_face_destroy(fb.face);
+        hb_blob_destroy(fb.blob);
+        return false;
+    }
 
     fallbacks_.push_back(std::move(fb));
     return true;
 }
 
 // =============================================================================
-// Font metrics
+// Metrics
 // =============================================================================
+
 float FontLayout::getAscender() const {
-    if (!hbFont_) return fontSize_ * 0.8f;
-    hb_font_extents_t extents;
-    if (hb_font_get_h_extents(hbFont_, &extents))
-        return (float)extents.ascender / 64.0f;
+    if (font_.isLoaded()) return font_.getAscent();
     return fontSize_ * 0.8f;
 }
+
 float FontLayout::getDescender() const {
-    if (!hbFont_) return -fontSize_ * 0.2f;
-    hb_font_extents_t extents;
-    if (hb_font_get_h_extents(hbFont_, &extents))
-        return (float)extents.descender / 64.0f;
+    if (font_.isLoaded()) return font_.getDescent();
     return -fontSize_ * 0.2f;
 }
+
 float FontLayout::getLineHeight() const {
     return font_.isLoaded() ? font_.getLineHeight() * lineSpacingMul_
                             : fontSize_ * 1.2f * lineSpacingMul_;
 }
+
 float FontLayout::getCapHeight() const { return getAscender() * 0.85f; }
-float FontLayout::getXHeight()   const { return getAscender() * 0.65f; }
+float FontLayout::getXHeight() const { return getAscender() * 0.65f; }
 
 // =============================================================================
-// Shape
+// Shaping
 // =============================================================================
+
+bool FontLayout::hasGlyph(int fontIdx, uint32_t cp, uint32_t* glyphIndex) const {
+    hb_font_t* font = hbFontForIndex(fontIdx);
+    if (!font) return false;
+    hb_codepoint_t glyph = 0;
+    bool ok = hb_font_get_nominal_glyph(font, cp, &glyph);
+    if (ok && glyphIndex) *glyphIndex = glyph;
+    return ok;
+}
+
+int FontLayout::fontIndexForCodepoint(uint32_t cp) const {
+    for (size_t i = 0; i < fallbacks_.size(); ++i) {
+        const auto& fb = fallbacks_[i];
+        if (cp < fb.rangeStart || cp > fb.rangeEnd) continue;
+        if (hasGlyph((int)i + 1, cp, nullptr)) return (int)i + 1;
+    }
+    if (hasGlyph(0, cp, nullptr)) return 0;
+
+    for (size_t i = 0; i < fallbacks_.size(); ++i) {
+        if (hasGlyph((int)i + 1, cp, nullptr)) return (int)i + 1;
+    }
+    return 0;
+}
+
+hb_font_t* FontLayout::hbFontForIndex(int fontIdx) const {
+    if (fontIdx <= 0) return hbFont_;
+    size_t idx = (size_t)fontIdx - 1;
+    return idx < fallbacks_.size() ? fallbacks_[idx].hbFont : hbFont_;
+}
+
+Font& FontLayout::fontForIndex(int fontIdx) {
+    if (fontIdx > 0 && fontIdx <= (int)fallbacks_.size())
+        return fallbacks_[(size_t)fontIdx - 1].tcFont;
+    return font_;
+}
+
 std::vector<ShapedGlyph> FontLayout::shape(const std::string& text) {
     std::vector<ShapedGlyph> result;
     if (text.empty() || !hbBuf_ || !hbFont_) return result;
 
-    hb_buffer_reset(hbBuf_);
-    hb_buffer_set_direction(hbBuf_, toHbDir(direction_));
-    hb_buffer_set_script(hbBuf_, HB_SCRIPT_UNKNOWN);
-    hb_buffer_set_language(hbBuf_, hb_language_get_default());
-    hb_buffer_add_utf8(hbBuf_, text.data(), (int)text.size(), 0, (int)text.size());
+    auto chars = decodeUtf8(text);
+    if (chars.empty()) return result;
 
-    hb_shape(hbFont_, hbBuf_, nullptr, 0);
-
-    unsigned int glyphCount = 0;
-    hb_glyph_info_t*  info = hb_buffer_get_glyph_infos(hbBuf_, &glyphCount);
-    hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(hbBuf_, &glyphCount);
-    if (!info || !pos) return result;
-
-    auto byteMap = buildByteOffsetMap(text);
-
-    for (unsigned i = 0; i < glyphCount; ++i) {
-        ShapedGlyph g;
-        int cluster = info[i].cluster;
-        auto it = byteMap.find(cluster);
-        g.codepoint  = (it != byteMap.end()) ? it->second : 0x25A1;
-        g.glyphIndex = info[i].codepoint;
-        g.xOffset  = pos[i].x_offset / 64.0f;
-        g.yOffset  = pos[i].y_offset / 64.0f;
-        g.xAdvance = pos[i].x_advance / 64.0f;
-        g.yAdvance = pos[i].y_advance / 64.0f;
-        g.cluster  = cluster;
-        g.fontIdx  = 0;
-
-        if (direction_ == TextDirection::TTB ||
-            direction_ == TextDirection::BTT) {
-            if (fabsf(g.yAdvance) < 0.01f)
-                g.yAdvance = g.xAdvance;
-            else
-                g.yAdvance = fabsf(g.yAdvance);
-            g.xAdvance = 0;
+    struct Run {
+        int fontIdx = 0;
+        int byteStart = 0;
+        int byteEnd = 0;
+    };
+    std::vector<Run> runs;
+    for (const auto& c : chars) {
+        int fontIdx = fontIndexForCodepoint(c.cp);
+        if (runs.empty() || runs.back().fontIdx != fontIdx || runs.back().byteEnd != c.byteStart) {
+            runs.push_back({fontIdx, c.byteStart, c.byteEnd});
+        } else {
+            runs.back().byteEnd = c.byteEnd;
         }
-
-        result.push_back(g);
     }
+
+    hb_direction_t dir = toHbDir(direction_);
+    bool isVert = direction_ == TextDirection::TTB || direction_ == TextDirection::BTT;
+
+    for (const auto& run : runs) {
+        hb_font_t* runFont = hbFontForIndex(run.fontIdx);
+        if (!runFont) continue;
+
+        hb_buffer_reset(hbBuf_);
+        hb_buffer_set_cluster_level(hbBuf_, HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS);
+        hb_buffer_add_utf8(hbBuf_,
+                           text.data(), (int)text.size(),
+                           run.byteStart, run.byteEnd - run.byteStart);
+        hb_buffer_guess_segment_properties(hbBuf_);
+        hb_buffer_set_direction(hbBuf_, dir);
+        hb_buffer_set_language(hbBuf_, hb_language_get_default());
+
+        hb_shape(runFont, hbBuf_, nullptr, 0);
+
+        unsigned int glyphCount = 0;
+        hb_glyph_info_t* info = hb_buffer_get_glyph_infos(hbBuf_, &glyphCount);
+        hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(hbBuf_, &glyphCount);
+        if (!info || !pos) continue;
+
+        for (unsigned i = 0; i < glyphCount; ++i) {
+            ShapedGlyph g;
+            int cluster = (int)info[i].cluster;
+            g.codepoint = codepointForCluster(chars, cluster);
+            g.glyphIndex = info[i].codepoint;
+            g.xOffset = pos[i].x_offset / 64.0f;
+            g.yOffset = pos[i].y_offset / 64.0f;
+            g.xAdvance = pos[i].x_advance / 64.0f;
+            g.yAdvance = pos[i].y_advance / 64.0f;
+            g.cluster = cluster;
+            g.fontIdx = run.fontIdx;
+
+            if (isVert) {
+                float adv = std::fabs(g.yAdvance) > 0.01f
+                                ? std::fabs(g.yAdvance)
+                                : std::fabs(g.xAdvance);
+                if (adv <= 0.01f) adv = (float)fontSize_;
+                g.xAdvance = 0.0f;
+                g.yAdvance = (direction_ == TextDirection::BTT) ? -adv : adv;
+            }
+            result.push_back(g);
+        }
+    }
+
     return result;
 }
 
 // =============================================================================
-// fontForGlyph
+// Drawing
 // =============================================================================
-Font& FontLayout::fontForGlyph(const ShapedGlyph& g) {
-    if (g.fontIdx > 0 && g.fontIdx <= (int)fallbacks_.size())
-        return fallbacks_[(size_t)g.fontIdx - 1].tcFont;
-    return font_;
-}
 
-// =============================================================================
-// drawGlyphs — with per-glyph transform support
-// =============================================================================
 void FontLayout::drawGlyphs(const std::vector<ShapedGlyph>& glyphs,
-                             float originX, float originY,
-                             int& globalIndex,
-                             GlyphCallback cb,
-                             const std::vector<Color>* colors) {
-    float gx = originX, gy = originY;
-    int total = (int)glyphs.size();
+                            float originX,
+                            float originY,
+                            int& globalIndex,
+                            GlyphCallback cb,
+                            const std::vector<Color>* colors) {
+    if (glyphs.empty()) return;
 
-    for (int i = 0; i < total; ++i) {
-        ShapedGlyph g = glyphs[i];
-        if (g.codepoint == 0) {
-            gx += g.xAdvance; gy += g.yAdvance; ++globalIndex;
-            continue;
+    bool isVert = direction_ == TextDirection::TTB || direction_ == TextDirection::BTT;
+    float penX = originX;
+    float penY = isVert ? originY : originY + getAscender();
+    std::vector<std::vector<FontGlyphRunItem>> runs(fallbacks_.size() + 1);
+    Color baseColor = getColor();
+
+    for (const auto& original : glyphs) {
+        ShapedGlyph g = original;
+        bool drawGlyph = g.glyphIndex != 0;
+
+        if (cb && !cb(g, globalIndex, (int)glyphs.size())) {
+            drawGlyph = false;
         }
 
-        if (cb && !cb(g, globalIndex, total)) {
-            gx += g.xAdvance; gy += g.yAdvance; ++globalIndex;
-            continue;
+        Color glyphColor = getColor();
+        if (!cb) glyphColor = baseColor;
+        if (colors && !colors->empty()) {
+            glyphColor = (globalIndex < (int)colors->size())
+                             ? (*colors)[(size_t)globalIndex]
+                             : colors->back();
         }
 
-        if (colors) {
-            if (globalIndex < (int)colors->size())
-                setColor((*colors)[(size_t)globalIndex]);
-            else
-                setColor(colors->back());
+        if (drawGlyph) {
+            int fontIdx = (g.fontIdx >= 0 && g.fontIdx <= (int)fallbacks_.size()) ? g.fontIdx : 0;
+            FontGlyphRunItem item;
+            item.glyphIndex = g.glyphIndex;
+            item.x = penX + g.xOffset;
+            item.y = penY - g.yOffset;
+            item.scaleX = g.scaleX;
+            item.scaleY = g.scaleY;
+            item.rotation = g.rotation;
+            item.color = glyphColor;
+            runs[(size_t)fontIdx].push_back(item);
         }
 
-        // ---- Per-glyph transform ----
-        bool hasTransform = (fabsf(g.scaleX - 1.0f) > 0.0001f ||
-                             fabsf(g.scaleY - 1.0f) > 0.0001f ||
-                             fabsf(g.rotation) > 0.0001f);
-        if (hasTransform) {
-            pushMatrix();
-            // Move to glyph centre, apply transform, move back
-            float cx = gx + g.xOffset + g.xAdvance * 0.5f;
-            float cy = gy + g.yOffset + g.yAdvance * 0.5f;
-            translate(cx, cy, 0);
-            rotate(g.rotation);
-            scale(g.scaleX, g.scaleY);
-            translate(-g.xAdvance * 0.5f, -g.yAdvance * 0.5f, 0);
+        if (isVert) {
+            penY += glyphAdvanceY(g, letterSpacing_);
+        } else {
+            penX += glyphAdvanceX(g, letterSpacing_);
+            penY += g.yAdvance;
         }
-
-        Font& rf = fontForGlyph(g);
-        rf.drawString(cpToUTF8(g.codepoint),
-                      gx + g.xOffset, gy + g.yOffset,
-                      Direction::Left, Direction::Top);
-
-        if (hasTransform) {
-            popMatrix();
-        }
-
-        gx += g.xAdvance + letterSpacing_;
-        gy += g.yAdvance;
         ++globalIndex;
+    }
+
+    for (size_t i = 0; i < runs.size(); ++i) {
+        if (!runs[i].empty()) fontForIndex((int)i).drawGlyphRun(runs[i]);
     }
 }
 
-// =============================================================================
-// draw / drawInBox / drawOnPath
-// =============================================================================
 void FontLayout::draw(const std::string& text, float x, float y) {
     draw(text, x, y, nullptr);
 }
 
-void FontLayout::draw(const std::string& text, float x, float y,
-                      GlyphCallback cb) {
+void FontLayout::draw(const std::string& text, float x, float y, GlyphCallback cb) {
     if (!font_.isLoaded() || text.empty()) return;
 
-    auto pieces = splitLines(text);
-    if (pieces.empty()) return;
+    auto lines = splitLinesPreserveEmpty(text);
+    bool isVert = direction_ == TextDirection::TTB || direction_ == TextDirection::BTT;
+    bool columnRtl = isVert && lineDirection_ == LineDirection::TTB_RTL;
 
-    bool isVert = (direction_ == TextDirection::TTB || direction_ == TextDirection::BTT);
-    bool rtl = (direction_ == TextDirection::TTB && lineDirection_ == LineDirection::TTB_RTL)
-               || direction_ == TextDirection::RTL;
+    std::vector<std::vector<ShapedGlyph>> shapedLines;
+    shapedLines.reserve(lines.size());
+    float totalW = 0.0f;
+    float totalH = 0.0f;
+    float lineAdvance = getLineHeight();
+    float colAdvance = (float)fontSize_ * 1.15f;
 
-    float colAdvance = isVert ? fontSize_ * 1.15f : 0;
-    float rowAdvance = isVert ? 0 : getLineHeight();
-
-    float totalW = 0, totalH = 0;
-    for (auto& p : pieces) {
-        auto gs = shape(p);
-        float pw = 0, ph = 0;
-        for (auto& g : gs) { pw += g.xAdvance; ph += g.yAdvance; }
-        if (isVert) { totalW += colAdvance; totalH = (std::max)(totalH, ph); }
-        else        { totalW = (std::max)(totalW, pw); totalH += rowAdvance; }
+    for (const auto& line : lines) {
+        shapedLines.push_back(shape(line));
+        float adv = 0.0f;
+        for (const auto& g : shapedLines.back()) {
+            adv += isVert ? std::fabs(glyphAdvanceY(g, letterSpacing_))
+                          : glyphAdvanceX(g, letterSpacing_);
+        }
+        if (isVert) {
+            totalW += colAdvance;
+            totalH = (std::max)(totalH, adv);
+        } else {
+            totalW = (std::max)(totalW, adv);
+            totalH += lineAdvance;
+        }
     }
 
-    float sx = x, sy = y;
-    if (align_ & Align::Center) sx -= totalW / 2.0f;
-    if (align_ & Align::Right)  sx -= totalW;
-    if (align_ & Align::Middle) sy -= totalH / 2.0f;
+    float sx = x;
+    float sy = y;
+    if (align_ & Align::Center) sx -= totalW * 0.5f;
+    if (align_ & Align::Right) sx -= totalW;
+    if (align_ & Align::Middle) sy -= totalH * 0.5f;
     if (align_ & Align::Bottom) sy -= totalH;
 
-    float cx2 = rtl ? sx + totalW - colAdvance : sx;
-    float cy2 = sy;
+    float cx = columnRtl ? sx + totalW - colAdvance : sx;
+    float cy = sy;
     int globalIdx = 0;
 
-    for (auto& p : pieces) {
-        auto gs = shape(p);
-        if (gs.empty()) continue;
-        drawGlyphs(gs, cx2, cy2, globalIdx, cb);
-        if (isVert) { cx2 += (rtl ? -colAdvance : colAdvance); cy2 = sy; }
-        else        { cy2 += rowAdvance; cx2 = sx; }
+    for (auto& glyphs : shapedLines) {
+        if (!glyphs.empty()) drawGlyphs(glyphs, cx, cy, globalIdx, cb);
+        if (isVert) {
+            cx += columnRtl ? -colAdvance : colAdvance;
+            cy = sy;
+        } else {
+            cy += lineAdvance;
+            cx = sx;
+        }
     }
 }
 
-void FontLayout::draw(const std::string& text, float x, float y,
+void FontLayout::draw(const std::string& text,
+                      float x,
+                      float y,
                       const std::vector<Color>& colors) {
-    draw(text, x, y, [&](ShapedGlyph&, int i, int) -> bool {
-        if (i < (int)colors.size()) setColor(colors[(size_t)i]);
-        return true;
-    });
+    if (!font_.isLoaded() || text.empty()) return;
+
+    auto lines = splitLinesPreserveEmpty(text);
+    bool isVert = direction_ == TextDirection::TTB || direction_ == TextDirection::BTT;
+    bool columnRtl = isVert && lineDirection_ == LineDirection::TTB_RTL;
+
+    std::vector<std::vector<ShapedGlyph>> shapedLines;
+    float totalW = 0.0f;
+    float totalH = 0.0f;
+    float lineAdvance = getLineHeight();
+    float colAdvance = (float)fontSize_ * 1.15f;
+    for (const auto& line : lines) {
+        shapedLines.push_back(shape(line));
+        float adv = 0.0f;
+        for (const auto& g : shapedLines.back()) {
+            adv += isVert ? std::fabs(glyphAdvanceY(g, letterSpacing_))
+                          : glyphAdvanceX(g, letterSpacing_);
+        }
+        if (isVert) {
+            totalW += colAdvance;
+            totalH = (std::max)(totalH, adv);
+        } else {
+            totalW = (std::max)(totalW, adv);
+            totalH += lineAdvance;
+        }
+    }
+
+    float sx = x;
+    float sy = y;
+    if (align_ & Align::Center) sx -= totalW * 0.5f;
+    if (align_ & Align::Right) sx -= totalW;
+    if (align_ & Align::Middle) sy -= totalH * 0.5f;
+    if (align_ & Align::Bottom) sy -= totalH;
+
+    float cx = columnRtl ? sx + totalW - colAdvance : sx;
+    float cy = sy;
+    int globalIdx = 0;
+    for (auto& glyphs : shapedLines) {
+        if (!glyphs.empty()) drawGlyphs(glyphs, cx, cy, globalIdx, nullptr, &colors);
+        if (isVert) {
+            cx += columnRtl ? -colAdvance : colAdvance;
+            cy = sy;
+        } else {
+            cy += lineAdvance;
+            cx = sx;
+        }
+    }
 }
 
 void FontLayout::drawInBox(const std::string& text,
-                           float x, float y, float boxW, float boxH) {
+                           float x,
+                           float y,
+                           float boxW,
+                           float boxH) {
     if (!font_.isLoaded() || text.empty()) return;
 
-    auto paragraphs = splitLines(text);
-    if (paragraphs.empty()) return;
+    bool oldWrap = wordWrap_;
+    auto paragraphs = splitLinesPreserveEmpty(text);
+    std::vector<std::vector<ShapedGlyph>> lines;
+    float lineH = getLineHeight();
 
-    float lineH   = getLineHeight();
-    float cursorX = x, cursorY = y;
-
-    for (auto& para : paragraphs) {
-        if (para.empty()) { cursorY += lineH; continue; }
+    for (const auto& para : paragraphs) {
         auto glyphs = shape(para);
+        if (glyphs.empty()) {
+            lines.push_back({});
+            continue;
+        }
 
-        std::vector<std::vector<ShapedGlyph>> lines;
-        std::vector<ShapedGlyph> cur;
-        float curAdv = 0;
-        size_t lastSpace = (size_t)-1;
+        size_t start = 0;
+        while (start < glyphs.size()) {
+            size_t i = start;
+            size_t lastBreak = (size_t)-1;
+            float adv = 0.0f;
+            for (; i < glyphs.size(); ++i) {
+                const ShapedGlyph& g = glyphs[i];
+                float nextAdv = glyphAdvanceX(g, letterSpacing_);
+                if (g.codepoint == ' ' || g.codepoint == '\t') lastBreak = i + 1;
+                if (boxW > 0.0f && adv > 0.0f && adv + nextAdv > boxW) break;
+                adv += nextAdv;
+            }
 
-        for (auto& g : glyphs) {
-            float adv = g.xAdvance;
-            if (boxW > 0 && curAdv + adv > boxW && !cur.empty()) {
-                if (wordWrap_ && lastSpace != (size_t)-1) {
-                    lines.push_back({});
-                    for (size_t k = 0; k <= lastSpace; ++k)
-                        lines.back().push_back(cur[k]);
-                    cur.erase(cur.begin(), cur.begin() + (std::ptrdiff_t)lastSpace + 1);
-                    curAdv = 0;
-                    for (auto& lg : cur) curAdv += lg.xAdvance;
-                    lastSpace = (size_t)-1;
-                } else {
-                    lines.push_back(std::move(cur));
-                    cur.clear();
-                    curAdv = 0;
+            size_t end = i;
+            if (end < glyphs.size()) {
+                if (oldWrap && lastBreak != (size_t)-1 && lastBreak > start) {
+                    end = lastBreak;
+                } else if (end == start) {
+                    end = start + 1;
                 }
             }
-            if (g.codepoint == ' ') lastSpace = cur.size();
-            cur.push_back(g);
-            curAdv += adv;
+            lines.emplace_back(glyphs.begin() + (std::ptrdiff_t)start,
+                               glyphs.begin() + (std::ptrdiff_t)end);
+            start = end;
+            while (start < glyphs.size() && glyphs[start].codepoint == ' ') ++start;
         }
-        if (!cur.empty()) lines.push_back(std::move(cur));
+    }
 
-        float totalH = (float)lines.size() * lineH;
-        float ly = cursorY;
-        if (align_ & Align::Middle) ly += (boxH - totalH) / 2.0f;
-        if (align_ & Align::Bottom) ly += boxH - totalH;
+    float totalH = (float)lines.size() * lineH;
+    float ly = y;
+    if (align_ & Align::Middle) ly += (boxH - totalH) * 0.5f;
+    if (align_ & Align::Bottom) ly += boxH - totalH;
 
-        for (auto& line : lines) {
-            float lw = 0;
-            for (auto& g : line) lw += g.xAdvance;
-            float lx = cursorX;
-            if (align_ & Align::Center) lx += (boxW - lw) / 2.0f;
-            if (align_ & Align::Right)  lx += boxW - lw;
-            int dummyIdx = 0;
-            drawGlyphs(line, lx, ly, dummyIdx);
-            ly += lineH;
+    int globalIdx = 0;
+    for (auto& line : lines) {
+        float lw = 0.0f;
+        for (const auto& g : line) lw += glyphAdvanceX(g, letterSpacing_);
+
+        float lx = x;
+        if (align_ & Align::Center) lx += (boxW - lw) * 0.5f;
+        if (align_ & Align::Right) lx += boxW - lw;
+
+        if (!line.empty()) {
+            drawGlyphs(line, lx, ly, globalIdx);
         }
-        cursorY = ly;
+        ly += lineH;
     }
 }
 
 // =============================================================================
-// drawOnPath
+// Path text
 // =============================================================================
+
 Vec2 FontLayout::bezierPoint(const BezierCurve& c, float t) {
     float u = 1.0f - t;
     return c.p0 * (u*u*u) + c.c0 * (3*u*u*t) + c.c1 * (3*u*t*t) + c.p1 * (t*t*t);
 }
+
 Vec2 FontLayout::bezierTangent(const BezierCurve& c, float t) {
     float u = 1.0f - t;
     Vec2 tan = (c.c0 - c.p0) * (3*u*u) + (c.c1 - c.c0) * (6*u*t) + (c.p1 - c.c1) * (3*t*t);
@@ -513,83 +659,100 @@ void FontLayout::drawOnPath(const std::string& text, const BezierCurve& curve) {
     auto glyphs = shape(text);
     if (glyphs.empty()) return;
 
-    const int samples = 100;
+    constexpr int samples = 160;
     float lengths[samples + 1];
-    lengths[0] = 0;
-    Vec2 prev = bezierPoint(curve, 0);
+    lengths[0] = 0.0f;
+    Vec2 prev = bezierPoint(curve, 0.0f);
     for (int i = 1; i <= samples; ++i) {
         float t = (float)i / (float)samples;
         Vec2 pt = bezierPoint(curve, t);
-        float dx = pt.x - prev.x, dy = pt.y - prev.y;
-        lengths[i] = lengths[i - 1] + sqrtf(dx*dx + dy*dy);
+        float dx = pt.x - prev.x;
+        float dy = pt.y - prev.y;
+        lengths[i] = lengths[i - 1] + std::sqrt(dx*dx + dy*dy);
         prev = pt;
     }
     float curveLen = lengths[samples];
     if (curveLen < 1.0f) return;
 
     auto advToT = [&](float adv) -> float {
-        if (adv <= 0) return 0;
+        if (adv <= 0.0f) return 0.0f;
         if (adv >= curveLen) return 1.0f;
-        int lo = 0, hi = samples;
+        int lo = 0;
+        int hi = samples;
         while (lo < hi) {
             int mid = (lo + hi) / 2;
             if (lengths[mid] < adv) lo = mid + 1;
             else hi = mid;
         }
-        if (lo == 0) return 0;
+        if (lo == 0) return 0.0f;
         float segStart = lengths[lo - 1];
-        float segLen   = lengths[lo] - segStart;
-        float frac = segLen > 0 ? (adv - segStart) / segLen : 0;
+        float segLen = lengths[lo] - segStart;
+        float frac = segLen > 0.0f ? (adv - segStart) / segLen : 0.0f;
         return ((float)(lo - 1) + frac) / (float)samples;
     };
 
-    float cursorAdv = 0;
-    for (auto& g : glyphs) {
-        if (g.codepoint == 0) { cursorAdv += g.xAdvance + letterSpacing_; continue; }
-
+    std::vector<std::vector<FontGlyphRunItem>> runs(fallbacks_.size() + 1);
+    Color color = getColor();
+    float cursorAdv = 0.0f;
+    for (const auto& g : glyphs) {
         float t = advToT(cursorAdv);
         Vec2 pt = bezierPoint(curve, t);
         Vec2 tan = bezierTangent(curve, t);
-        float angle = atan2f(tan.y, tan.x);
 
-        pushMatrix();
-        translate(pt.x, pt.y, 0);
-        rotate(angle);
-        Font& rf = fontForGlyph(g);
-        rf.drawString(cpToUTF8(g.codepoint), g.xOffset, g.yOffset,
-                      Direction::Left, Direction::Top);
-        popMatrix();
+        if (g.glyphIndex != 0) {
+            int fontIdx = (g.fontIdx >= 0 && g.fontIdx <= (int)fallbacks_.size()) ? g.fontIdx : 0;
+            FontGlyphRunItem item;
+            item.glyphIndex = g.glyphIndex;
+            item.x = pt.x + g.xOffset;
+            item.y = pt.y - g.yOffset;
+            item.rotation = std::atan2(tan.y, tan.x);
+            item.color = color;
+            runs[(size_t)fontIdx].push_back(item);
+        }
+        cursorAdv += glyphAdvanceX(g, letterSpacing_);
+    }
 
-        cursorAdv += g.xAdvance + letterSpacing_;
+    for (size_t i = 0; i < runs.size(); ++i) {
+        if (!runs[i].empty()) fontForIndex((int)i).drawGlyphRun(runs[i]);
     }
 }
 
 // =============================================================================
-// measure
+// Measurement
 // =============================================================================
-Vec2 FontLayout::measure(const std::string& text) {
-    bool isVert = (direction_ == TextDirection::TTB || direction_ == TextDirection::BTT);
-    auto glyphs = shape(text);
-    float w = 0, h = 0, lineAdv = 0;
-    float lineH = getLineHeight();
 
-    for (auto& g : glyphs) {
-        if (g.codepoint == '\n') {
-            w = (std::max)(w, lineAdv);
-            lineAdv = 0;
-            h += lineH;
-            continue;
+Vec2 FontLayout::measure(const std::string& text) {
+    if (text.empty()) return Vec2(0, 0);
+
+    bool isVert = direction_ == TextDirection::TTB || direction_ == TextDirection::BTT;
+    auto lines = splitLinesPreserveEmpty(text);
+    float lineH = getLineHeight();
+    float colAdvance = (float)fontSize_ * 1.15f;
+    float w = 0.0f;
+    float h = 0.0f;
+
+    for (const auto& line : lines) {
+        auto glyphs = shape(line);
+        float adv = 0.0f;
+        for (const auto& g : glyphs) {
+            adv += isVert ? std::fabs(glyphAdvanceY(g, letterSpacing_))
+                          : glyphAdvanceX(g, letterSpacing_);
         }
-        lineAdv += (isVert ? g.yAdvance : g.xAdvance) + letterSpacing_;
+        if (isVert) {
+            w += colAdvance;
+            h = (std::max)(h, adv);
+        } else {
+            w = (std::max)(w, adv);
+            h += lineH;
+        }
     }
-    if (isVert) { w = fontSize_ * 1.15f; h = (std::max)(h, lineAdv) + lineH; }
-    else        { w = (std::max)(w, lineAdv); h += lineH; }
     return Vec2(w, h);
 }
 
 // =============================================================================
-// getGlyphOutline — extract Bezier contours via stb_truetype
+// Glyph outline
 // =============================================================================
+
 std::vector<GlyphContour> FontLayout::getGlyphOutline(uint32_t codepoint) {
     std::vector<GlyphContour> result;
     if (!stbFontInfo_) return result;
@@ -598,64 +761,57 @@ std::vector<GlyphContour> FontLayout::getGlyphOutline(uint32_t codepoint) {
     int glyphIndex = stbtt_FindGlyphIndex(info, (int)codepoint);
     if (glyphIndex == 0) return result;
 
-    // Scale from font units to pixel units
     float scale = stbtt_ScaleForPixelHeight(info, (float)fontSize_);
-
     stbtt_vertex* verts = nullptr;
     int numVerts = stbtt_GetGlyphShape(info, glyphIndex, &verts);
     if (numVerts <= 0 || !verts) return result;
 
-    GlyphContour currentContour;
-
+    GlyphContour current;
     for (int i = 0; i < numVerts; ++i) {
         stbtt_vertex& v = verts[i];
-        OutlinePoint pt;
-        pt.x  = v.x * scale;
-        pt.y  = v.y * scale;
+        OutlinePoint pt{};
+        pt.x = v.x * scale;
+        pt.y = v.y * scale;
         pt.cx = v.cx * scale;
         pt.cy = v.cy * scale;
-        pt.c1x = 0; pt.c1y = 0;
+        pt.c1x = v.cx1 * scale;
+        pt.c1y = v.cy1 * scale;
 
         switch (v.type) {
             case STBTT_vmove:
-                if (!currentContour.empty()) {
-                    result.push_back(std::move(currentContour));
-                    currentContour.clear();
+                if (!current.empty()) {
+                    result.push_back(std::move(current));
+                    current.clear();
                 }
                 pt.type = OutlineSegmentType::Move;
-                currentContour.push_back(pt);
+                current.push_back(pt);
                 break;
             case STBTT_vline:
                 pt.type = OutlineSegmentType::Line;
-                currentContour.push_back(pt);
+                current.push_back(pt);
                 break;
             case STBTT_vcurve:
-                pt.type = OutlineSegmentType::Curve;
-                // Quadratic → cubic conversion:
-                // cubic c0 = (p0 + 2*cp) / 3,  cubic c1 = (p1 + 2*cp) / 3
-                if (!currentContour.empty()) {
-                    OutlinePoint& last = currentContour.back();
-                    pt.c1x = pt.x;  pt.c1y = pt.y;
-                    pt.cx  = last.x + (2.0f/3.0f) * (v.cx * scale - last.x);
-                    pt.cy  = last.y + (2.0f/3.0f) * (v.cy * scale - last.y);
-                    pt.c1x = pt.x + (2.0f/3.0f) * (v.cx * scale - pt.x);
-                    pt.c1y = pt.y + (2.0f/3.0f) * (v.cy * scale - pt.y);
+                pt.type = OutlineSegmentType::Cubic;
+                if (!current.empty()) {
+                    OutlinePoint& last = current.back();
+                    float qx = v.cx * scale;
+                    float qy = v.cy * scale;
+                    pt.cx = last.x + (2.0f / 3.0f) * (qx - last.x);
+                    pt.cy = last.y + (2.0f / 3.0f) * (qy - last.y);
+                    pt.c1x = pt.x + (2.0f / 3.0f) * (qx - pt.x);
+                    pt.c1y = pt.y + (2.0f / 3.0f) * (qy - pt.y);
                 }
-                currentContour.push_back(pt);
+                current.push_back(pt);
                 break;
             case STBTT_vcubic:
                 pt.type = OutlineSegmentType::Cubic;
-                pt.c1x = v.cx1 * scale;
-                pt.c1y = v.cy1 * scale;
-                currentContour.push_back(pt);
+                current.push_back(pt);
                 break;
         }
     }
 
-    if (!currentContour.empty())
-        result.push_back(std::move(currentContour));
-
-    std::free(verts); // stb_truetype uses malloc internally
+    if (!current.empty()) result.push_back(std::move(current));
+    stbtt_FreeShape(info, verts);
     return result;
 }
 
@@ -664,33 +820,47 @@ std::vector<GlyphContour> FontLayout::getGlyphOutline(uint32_t codepoint) {
 // =============================================================================
 
 static std::string filterControls(const std::string& s) {
-    std::string out; out.reserve(s.size());
+    std::string out;
+    out.reserve(s.size());
     for (char c : s) {
         uint8_t uc = (uint8_t)c;
         if (uc >= 0x20 || uc == '\n' || uc == '\t' || uc == '\r') out += c;
     }
     return out;
 }
+
 static std::string normalizeNewlines(const std::string& raw) {
-    std::string out; out.reserve(raw.size());
+    std::string out;
+    out.reserve(raw.size());
     for (size_t i = 0; i < raw.size(); ++i) {
-        if (raw[i] == '\r') { out += '\n'; if (i+1 < raw.size() && raw[i+1] == '\n') ++i; }
-        else out += raw[i];
+        if (raw[i] == '\r') {
+            out += '\n';
+            if (i + 1 < raw.size() && raw[i + 1] == '\n') ++i;
+        } else {
+            out += raw[i];
+        }
     }
     return out;
 }
+
 static std::string trimTrailingSpace(std::string line) {
     while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) line.pop_back();
     return line;
 }
+
 static std::string collapseBlanks(const std::string& text) {
     std::istringstream iss(text);
-    std::string result, line;
+    std::string result;
+    std::string line;
     int blankRun = 0;
     while (std::getline(iss, line)) {
         line = trimTrailingSpace(line);
-        if (line.empty()) { if (++blankRun <= 2) result += '\n'; }
-        else { blankRun = 0; result += line + '\n'; }
+        if (line.empty()) {
+            if (++blankRun <= 2) result += '\n';
+        } else {
+            blankRun = 0;
+            result += line + '\n';
+        }
     }
     while (!result.empty() && result.back() == '\n') result.pop_back();
     return result;
@@ -700,109 +870,169 @@ std::string FontLayout::loadTxt(const std::string& path) {
     auto bytes = loadFileBytes(path);
     if (bytes.empty()) return {};
     std::string raw(bytes.begin(), bytes.end());
-    if (raw.size() >= 3 && (uint8_t)raw[0] == 0xEF && (uint8_t)raw[1] == 0xBB && (uint8_t)raw[2] == 0xBF)
+    if (raw.size() >= 3 &&
+        (uint8_t)raw[0] == 0xEF &&
+        (uint8_t)raw[1] == 0xBB &&
+        (uint8_t)raw[2] == 0xBF) {
         raw.erase(0, 3);
+    }
     raw = normalizeNewlines(raw);
     raw = filterControls(raw);
     return collapseBlanks(raw);
 }
 
-// (Markdown strippers same as v0.2 — omitted for brevity, unchanged)
 static std::string stripCodeFences(const std::string& md) {
-    std::string out; bool inFence = false;
-    std::istringstream iss(md); std::string line;
+    std::string out;
+    bool inFence = false;
+    std::istringstream iss(md);
+    std::string line;
     while (std::getline(iss, line)) {
         while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) line.pop_back();
-        if (line.size() >= 3 && line.find("```") == 0) { inFence = !inFence; continue; }
+        if (line.size() >= 3 && line.find("```") == 0) {
+            inFence = !inFence;
+            continue;
+        }
         if (!inFence) out += line + '\n';
     }
     return out;
 }
+
 static std::string stripInlineCode(const std::string& md) {
-    std::string out; bool inCode = false;
+    std::string out;
+    bool inCode = false;
     for (size_t i = 0; i < md.size(); ++i) {
-        if (md[i] == '`' && (i == 0 || md[i-1] != '\\')) { inCode = !inCode; continue; }
+        if (md[i] == '`' && (i == 0 || md[i - 1] != '\\')) {
+            inCode = !inCode;
+            continue;
+        }
         if (!inCode) out += md[i];
     }
     return out;
 }
+
 static std::string stripImages(const std::string& md) {
     std::string out;
     for (size_t i = 0; i < md.size(); ++i) {
-        if (md[i] == '!' && i+1 < md.size() && md[i+1] == '[') {
-            size_t j = i+2; while (j < md.size() && md[j] != ']') ++j;
-            if (j < md.size() && j+1 < md.size() && md[j+1] == '(') {
-                size_t k = j+2; while (k < md.size() && md[k] != ')') ++k;
-                if (k < md.size()) { i = k; continue; }
+        if (md[i] == '!' && i + 1 < md.size() && md[i + 1] == '[') {
+            size_t j = i + 2;
+            while (j < md.size() && md[j] != ']') ++j;
+            if (j < md.size() && j + 1 < md.size() && md[j + 1] == '(') {
+                size_t k = j + 2;
+                while (k < md.size() && md[k] != ')') ++k;
+                if (k < md.size()) {
+                    i = k;
+                    continue;
+                }
             }
         }
         out += md[i];
     }
     return out;
 }
+
 static std::string stripLinks(const std::string& md) {
     std::string out;
     for (size_t i = 0; i < md.size(); ++i) {
-        if (md[i] == '[' && (i == 0 || md[i-1] != '!')) {
-            size_t j = i+1; while (j < md.size() && md[j] != ']') ++j;
-            if (j < md.size() && j+1 < md.size() && md[j+1] == '(') {
-                size_t k = j+2; while (k < md.size() && md[k] != ')') ++k;
-                if (k < md.size()) { out.append(md, i+1, j-i-1); i = k; continue; }
+        if (md[i] == '[' && (i == 0 || md[i - 1] != '!')) {
+            size_t j = i + 1;
+            while (j < md.size() && md[j] != ']') ++j;
+            if (j < md.size() && j + 1 < md.size() && md[j + 1] == '(') {
+                size_t k = j + 2;
+                while (k < md.size() && md[k] != ')') ++k;
+                if (k < md.size()) {
+                    out.append(md, i + 1, j - i - 1);
+                    i = k;
+                    continue;
+                }
             }
         }
         out += md[i];
     }
     return out;
 }
+
 static std::string stripEmphasis(const std::string& md) {
     std::string out;
     for (size_t i = 0; i < md.size(); ++i) {
-        if (i+1 < md.size() && ((md[i]=='*'&&md[i+1]=='*')||(md[i]=='_'&&md[i+1]=='_'))) {
-            size_t j = i+2; while (j+1 < md.size() && !(md[j]==md[i]&&md[j+1]==md[i])) ++j;
-            if (j+1 < md.size()) { out.append(md, i+2, j-i-2); i = j+1; continue; }
+        if (i + 1 < md.size() &&
+            ((md[i] == '*' && md[i + 1] == '*') || (md[i] == '_' && md[i + 1] == '_'))) {
+            size_t j = i + 2;
+            while (j + 1 < md.size() && !(md[j] == md[i] && md[j + 1] == md[i])) ++j;
+            if (j + 1 < md.size()) {
+                out.append(md, i + 2, j - i - 2);
+                i = j + 1;
+                continue;
+            }
         }
-        if ((md[i]=='*'||md[i]=='_') && (i==0||md[i-1]!=md[i]) && (i+1>=md.size()||md[i+1]!=md[i])) {
-            size_t j = i+1; while (j < md.size() && md[j]!=md[i]) ++j;
-            if (j < md.size() && (j+1>=md.size()||md[j+1]!=md[i])) {
-                out.append(md, i+1, j-i-1); i = j; continue;
+        if ((md[i] == '*' || md[i] == '_') &&
+            (i == 0 || md[i - 1] != md[i]) &&
+            (i + 1 >= md.size() || md[i + 1] != md[i])) {
+            size_t j = i + 1;
+            while (j < md.size() && md[j] != md[i]) ++j;
+            if (j < md.size() && (j + 1 >= md.size() || md[j + 1] != md[i])) {
+                out.append(md, i + 1, j - i - 1);
+                i = j;
+                continue;
             }
         }
         out += md[i];
     }
     return out;
 }
+
 static std::string stripHeadings(const std::string& md) {
-    std::string out; std::istringstream iss(md); std::string line;
+    std::string out;
+    std::istringstream iss(md);
+    std::string line;
     while (std::getline(iss, line)) {
-        size_t pos = 0; while (pos < line.size() && line[pos] == '#') ++pos;
-        if (pos >= 1 && pos <= 6 && pos < line.size() && line[pos] == ' ') line = line.substr(pos+1);
+        size_t pos = 0;
+        while (pos < line.size() && line[pos] == '#') ++pos;
+        if (pos >= 1 && pos <= 6 && pos < line.size() && line[pos] == ' ') line = line.substr(pos + 1);
         out += line + '\n';
     }
     return out;
 }
+
 static std::string stripBlockquotes(const std::string& md) {
-    std::string out; std::istringstream iss(md); std::string line;
+    std::string out;
+    std::istringstream iss(md);
+    std::string line;
     while (std::getline(iss, line)) {
-        if (line.size()>=2 && line[0]=='>' && line[1]==' ') line = line.substr(2);
+        if (line.size() >= 2 && line[0] == '>' && line[1] == ' ') line = line.substr(2);
         out += line + '\n';
     }
     return out;
 }
+
 static std::string stripListMarkers(const std::string& md) {
-    std::string out; std::istringstream iss(md); std::string line;
+    std::string out;
+    std::istringstream iss(md);
+    std::string line;
     while (std::getline(iss, line)) {
-        if (line.size()>=2 && (line[0]=='-'||line[0]=='*'||line[0]=='+') && line[1]==' ') line = line.substr(2);
+        if (line.size() >= 2 &&
+            (line[0] == '-' || line[0] == '*' || line[0] == '+') &&
+            line[1] == ' ') {
+            line = line.substr(2);
+        }
         out += line + '\n';
     }
     return out;
 }
+
 static std::string stripHorizRules(const std::string& md) {
-    std::string out; std::istringstream iss(md); std::string line;
+    std::string out;
+    std::istringstream iss(md);
+    std::string line;
     while (std::getline(iss, line)) {
         std::string t = trimTrailingSpace(line);
         bool isRule = t.size() >= 3;
-        if (isRule) { char c = t[0]; if (c!='-'&&c!='*'&&c!='_') isRule=false;
-            for (size_t i=1;i<t.size()&&isRule;++i) if (t[i]!=c) isRule=false; }
+        if (isRule) {
+            char c = t[0];
+            if (c != '-' && c != '*' && c != '_') isRule = false;
+            for (size_t i = 1; i < t.size() && isRule; ++i) {
+                if (t[i] != c) isRule = false;
+            }
+        }
         if (!isRule) out += line + '\n';
     }
     return out;

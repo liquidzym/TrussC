@@ -20,6 +20,7 @@
 
 #include <TrussC.h>
 #include <opencv2/opencv.hpp>
+#include <type_traits>
 #include "tcxCvUtilities.h"
 
 // Coherent Line Drawing
@@ -28,6 +29,45 @@
 #include "fdog.h"
 
 namespace tcx {
+
+namespace detail {
+
+template <class A, class B>
+bool validateCompatibleMats(const cv::Mat& a, const cv::Mat& b, const char* opName) {
+    if (a.empty() || b.empty()) {
+        tc::logWarning("tcxCV") << opName << " skipped: empty input";
+        return false;
+    }
+    if (a.size() != b.size() || a.type() != b.type()) {
+        tc::logWarning("tcxCV") << opName << " skipped: input size/type mismatch";
+        return false;
+    }
+    return true;
+}
+
+template <class S>
+int grayConversionFor(const S& src) {
+    int channels = getChannels(src);
+    if (channels == 4) {
+        return cv::COLOR_RGBA2GRAY;
+    }
+    if (channels == 3) {
+        return cv::COLOR_RGB2GRAY;
+    }
+    return -1;
+}
+
+inline int grayConversionFor(const cv::Mat& src) {
+    if (src.channels() == 4) {
+        return cv::COLOR_BGRA2GRAY;
+    }
+    if (src.channels() == 3) {
+        return cv::COLOR_BGR2GRAY;
+    }
+    return -1;
+}
+
+} // namespace detail
 
 // ======================================================================
 // File I/O
@@ -46,9 +86,9 @@ void saveImage(cv::Mat& mat, const std::string& filename);
 #define wrapThree(name) \
 template <class X, class Y, class Result> \
 void name(X& x, Y& y, Result& result) { \
-    imitate(y, x); \
-    imitate(result, x); \
     cv::Mat xMat = toCv(x), yMat = toCv(y); \
+    if (!detail::validateCompatibleMats<X, Y>(xMat, yMat, #name)) return; \
+    imitate(result, x); \
     cv::Mat resultMat = toCv(result); \
     cv::name(xMat, yMat, resultMat); \
     syncToGpu(result); \
@@ -193,6 +233,10 @@ void autothreshold(SD& srcDst, bool invert_ = false) {
 template <class S, class D>
 void convertColor(const S& src, D& dst, int code) {
     int targetChannels = getTargetChannelsFromCode(code);
+    if (targetChannels <= 0) {
+        targetChannels = getChannels(src);
+        tc::logWarning("tcxCV") << "convertColor using source channel count for unsupported code " << code;
+    }
     imitate(dst, src, getCvImageType(targetChannels, getDepth(src)));
     cv::Mat srcMat = toCv(src), dstMat = toCv(dst);
     cv::cvtColor(srcMat, dstMat, code);
@@ -209,12 +253,13 @@ tc::Color convertColor(tc::Color color, int code);
 template <class S, class D>
 void copyGray(const S& src, D& dst) {
     int channels = getChannels(src);
-    if (channels == 4) {
-        convertColor(src, dst, cv::COLOR_RGBA2GRAY);
-    } else if (channels == 3) {
-        convertColor(src, dst, cv::COLOR_RGB2GRAY);
+    int conversion = detail::grayConversionFor(src);
+    if (conversion >= 0) {
+        convertColor(src, dst, conversion);
     } else if (channels == 1) {
         copy(src, dst);
+    } else {
+        tc::logWarning("tcxCV") << "copyGray skipped: unsupported channel count " << channels;
     }
 }
 
@@ -340,11 +385,20 @@ void CLD(const S& src, D& dst,
          int halfw = 4, int smoothPasses = 2,
          double sigma1 = 0.4, double sigma2 = 3.0,
          double tau = 0.97, int black = 0) {
-    copy(src, dst);
     int width = getWidth(src), height = getHeight(src);
+    cv::Mat gray;
+    copyGray(src, gray);
+    if (gray.empty()) {
+        tc::logWarning("tcxCV") << "CLD skipped: empty or unsupported input";
+        return;
+    }
+
     imatrix img;
     img.init(height, width);
+
+    allocate(dst, width, height, CV_8UC1);
     cv::Mat dstMat = toCv(dst);
+    gray.copyTo(dstMat);
     if (black != 0) {
         cv::add(dstMat, cv::Scalar(black), dstMat);
     }
@@ -364,7 +418,7 @@ void CLD(const S& src, D& dst,
     for (int y = 0; y < height; ++y) {
         unsigned char* dstPtr = dstMat.ptr<unsigned char>(y);
         for (int x = 0; x < width; ++x) {
-            dstPtr[x] = (unsigned char)img[y][x];
+            dstPtr[x] = cv::saturate_cast<unsigned char>(img[y][x]);
         }
     }
     syncToGpu(dst);

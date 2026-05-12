@@ -86,12 +86,15 @@ inline std::vector<cv::Point3f> toCv(const std::vector<tc::Vec3>& points) {
     return out;
 }
 
-// tc::Color -> cv::Scalar (BGR 0-255)
+// tc::Color -> cv::Scalar in TrussC native channel order (R, G, B, A).
+// tcxCV::toCv(tc::Image) wraps Image pixels without conversion, so wrappers that
+// operate on Image data must use RGB/RGBA ordering. Use tcx::toCvMat() from
+// tcxOpenCV when an OpenCV-default BGR copy is required.
 inline cv::Scalar toCv(tc::Color color) {
     return cv::Scalar(
-        static_cast<int>(color.b * 255),
-        static_cast<int>(color.g * 255),
         static_cast<int>(color.r * 255),
+        static_cast<int>(color.g * 255),
+        static_cast<int>(color.b * 255),
         static_cast<int>(color.a * 255)
     );
 }
@@ -102,14 +105,14 @@ inline cv::Scalar toCv(tc::Color color) {
 // For a BGR copy, use tcx::toCvMat() instead.
 inline cv::Mat toCv(tc::Image& img) {
     if (!img.isAllocated()) return cv::Mat();
-    return cv::Mat(img.getHeight(), img.getWidth(), CV_8UC4,
+    return cv::Mat(img.getHeight(), img.getWidth(), CV_MAKETYPE(CV_8U, img.getChannels()),
                    img.getPixelsData());
 }
 
 // const tc::Image -> cv::Mat (makes a clone for safety)
 inline cv::Mat toCv(const tc::Image& img) {
     if (!img.isAllocated()) return cv::Mat();
-    cv::Mat rgba(img.getHeight(), img.getWidth(), CV_8UC4,
+    cv::Mat rgba(img.getHeight(), img.getWidth(), CV_MAKETYPE(CV_8U, img.getChannels()),
                  const_cast<unsigned char*>(img.getPixelsData()));
     return rgba.clone();
 }
@@ -237,7 +240,8 @@ inline float getMaxVal(const cv::Mat& mat) {
 inline int getTargetChannelsFromCode(int conversionCode) {
     switch (conversionCode) {
         case cv::COLOR_RGB2RGBA:
-        case cv::COLOR_GRAY2RGBA:
+        case cv::COLOR_BGR2RGBA:
+        case cv::COLOR_GRAY2BGRA:
         case cv::COLOR_BGRA2RGBA:
         case cv::COLOR_BGR5652BGRA:
         case cv::COLOR_BGR5652RGBA:
@@ -249,7 +253,8 @@ inline int getTargetChannelsFromCode(int conversionCode) {
         case cv::COLOR_Luv2LRGB:
             return 4;
         case cv::COLOR_BGRA2BGR:
-        case cv::COLOR_BGR2RGB:
+        case cv::COLOR_BGRA2RGB:
+        case cv::COLOR_RGB2BGR:
         case cv::COLOR_GRAY2RGB:
         case cv::COLOR_BGR2GRAY:
         case cv::COLOR_RGB2GRAY:
@@ -339,9 +344,9 @@ inline void imitate(tc::Image& dst, const tc::Image& src) {
     dst.update();
 }
 
-// Imitate: allocate dst Image to match src Mat (converts to RGBA)
+// Imitate: allocate dst Image to match src Mat.
 inline void imitate(tc::Image& dst, const cv::Mat& src) {
-    dst.allocate(src.cols, src.rows, 4);
+    dst.allocate(src.cols, src.rows, src.channels());
     dst.update();
 }
 
@@ -367,15 +372,13 @@ inline void imitate(cv::Mat& dst, const cv::Mat& src, int cvType) {
     dst = cv::Mat(src.rows, src.cols, cvType);
 }
 
-inline void imitate(tc::Image& dst, const tc::Image& src, int /*cvType*/) {
-    // tc::Image is always RGBA 8-bit, cvType is ignored
-    dst.allocate(src.getWidth(), src.getHeight(), 4);
+inline void imitate(tc::Image& dst, const tc::Image& src, int cvType) {
+    dst.allocate(src.getWidth(), src.getHeight(), CV_MAT_CN(cvType));
     dst.update();
 }
 
-inline void imitate(tc::Image& dst, const cv::Mat& src, int /*cvType*/) {
-    // tc::Image is always RGBA 8-bit
-    dst.allocate(src.cols, src.rows, 4);
+inline void imitate(tc::Image& dst, const cv::Mat& src, int cvType) {
+    dst.allocate(src.cols, src.rows, CV_MAT_CN(cvType));
     dst.update();
 }
 
@@ -383,8 +386,8 @@ inline void imitate(tc::Image& dst, const cv::Mat& src, int /*cvType*/) {
 // allocate() - Allocate an image to specific dimensions
 // ======================================================================
 
-inline void allocate(tc::Image& img, int width, int height, int /*cvType*/) {
-    img.allocate(width, height, 4);
+inline void allocate(tc::Image& img, int width, int height, int cvType) {
+    img.allocate(width, height, CV_MAT_CN(cvType));
     img.update();
 }
 
@@ -445,6 +448,7 @@ inline void copy(const tc::Image& src, tc::Image& dst) {
     cv::Mat srcMat = toCv(src);
     cv::Mat dstMat = toCv(dst);
     srcMat.copyTo(dstMat);
+    syncToGpu(dst);
 }
 
 } // namespace tcx

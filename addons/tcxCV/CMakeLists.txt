@@ -9,6 +9,23 @@ message(STATUS "[tcxCV] Loading addon...")
 
 # Depend on tcxOpenCV (which fetches OpenCV)
 # tcxCV extends tcxOpenCV with additional computer vision wrappers
+if(NOT TARGET tcxOpenCV)
+    get_filename_component(_TCX_CV_ADDONS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+    set(_TCX_CV_OPENCV_DIR "${_TCX_CV_ADDONS_DIR}/tcxOpenCV")
+    if(NOT EXISTS "${_TCX_CV_OPENCV_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR "[tcxCV] Required addon tcxOpenCV was not found at ${_TCX_CV_OPENCV_DIR}")
+    endif()
+
+    add_subdirectory("${_TCX_CV_OPENCV_DIR}" "${CMAKE_BINARY_DIR}/addons/tcxOpenCV")
+
+    # Keep TrussC's addon loader cache in sync when tcxCV loads its dependency.
+    # This prevents duplicate add_subdirectory() calls if addons.make also lists tcxOpenCV.
+    list(FIND _TC_LOADED_ADDONS tcxOpenCV _TCX_CV_OPENCV_INDEX)
+    if(_TCX_CV_OPENCV_INDEX EQUAL -1)
+        list(APPEND _TC_LOADED_ADDONS tcxOpenCV)
+        set(_TC_LOADED_ADDONS "${_TC_LOADED_ADDONS}" CACHE INTERNAL "List of loaded TrussC addons")
+    endif()
+endif()
 
 # Source files
 file(GLOB TCX_CV_SOURCES

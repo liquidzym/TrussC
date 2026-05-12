@@ -1,0 +1,13 @@
+{
+  "description": "Fluid simulation, optical flow scaffolding, bridge flows and visualization helpers for TrussC",
+  "author": "TrussC community / generated implementation",
+  "license": "MIT",
+  "keywords": [
+    "fluid",
+    "optical-flow",
+    "flow-field",
+    "shader",
+    "visuals",
+    "creative-coding"
+  ]
+}

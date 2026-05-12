@@ -201,6 +201,15 @@ addons/
 
 1. **GPU acceleration**: OpenCV has CUDA modules. Include? (probably not - license/complexity)
 
+## Build / Release Follow-ups
+
+- [ ] Resolve duplicate `libTrussC.a` link warning observed when building `addons/tcxCV/examples/example-verify` on macOS.
+      Current state: non-blocking link warning; app still builds. Likely requires tightening TrussC/addon link ownership so `TrussC` is not linked both directly and transitively.
+- [ ] Decide and lock down the OpenCV zlib source for distributable binaries.
+      Current macOS validation linked `/opt/local/lib/libz.1.dylib`, which was built for a newer deployment target than the example's `CMAKE_OSX_DEPLOYMENT_TARGET=14.0`. Before shipping binaries, prefer a controlled bundled/system zlib strategy instead of accidentally picking a local MacPorts dylib.
+- [ ] Run cross-platform validation for `tcxOpenCV` + `tcxCV`.
+      Current validation has only been performed on macOS x86_64. Still needs macOS arm64, Windows, Linux, and any mobile/web targets that are expected to be supported.
+
 ## License Notice (for README)
 
 ```

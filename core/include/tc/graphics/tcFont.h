@@ -23,6 +23,8 @@
 #include <fstream>
 #include <functional>
 #include <cstring>
+#include <cmath>
+#include "../../tcColor.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/fetch.h>
@@ -120,6 +122,22 @@ private:
     float width_, height_;       // Glyph size (pixels)
     float advance_;              // Advance width to next character
     bool valid_ = false;
+};
+
+// TrussC local extension, 2026-05-09:
+// Added for addons/tcxFontLayout so HarfBuzz-shaped glyph IDs can be rendered
+// directly by the core font atlas. Upstream-style Font::drawString() remains
+// Unicode/codepoint based; keep this glyph-index path when merging upstream if
+// tcxFontLayout should continue to support ligatures, RTL shaping, and OpenType
+// substitutions without duplicating a second font renderer inside the addon.
+struct FontGlyphRunItem {
+    uint32_t glyphIndex = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float scaleX = 1.0f;
+    float scaleY = 1.0f;
+    float rotation = 0.0f;
+    Color color = Color(1.0f, 1.0f, 1.0f, 1.0f);
 };
 
 // ---------------------------------------------------------------------------
@@ -265,6 +283,7 @@ public:
         pendingDestroys_.clear();
         atlases_.clear();
         glyphs_.clear();
+        glyphIndices_.clear();
         fontData_.clear();
         loaded_ = false;
     }
@@ -283,6 +302,25 @@ public:
         if (addGlyphToAtlas(codepoint, info)) {
             glyphs_[codepoint] = info;
             return &glyphs_[codepoint];
+        }
+
+        return nullptr;
+    }
+
+    // TrussC local extension, 2026-05-09:
+    // Cache/rasterize by font-internal glyph index for HarfBuzz output. This is
+    // separate from the legacy codepoint cache so existing Font::drawString()
+    // behavior stays unchanged.
+    const GlyphInfo* getOrLoadGlyphIndex(uint32_t glyphIndex) {
+        auto it = glyphIndices_.find(glyphIndex);
+        if (it != glyphIndices_.end()) {
+            return &it->second;
+        }
+
+        GlyphInfo info;
+        if (addGlyphIndexToAtlas(glyphIndex, info)) {
+            glyphIndices_[glyphIndex] = info;
+            return &glyphIndices_[glyphIndex];
         }
 
         return nullptr;
@@ -341,6 +379,7 @@ public:
         pendingDestroys_.clear();
         atlases_.clear();
         glyphs_.clear();
+        glyphIndices_.clear();
         if (loaded_) {
             createNewAtlas();
         }
@@ -357,7 +396,7 @@ public:
         return total;
     }
 
-    size_t getLoadedGlyphCount() const { return glyphs_.size(); }
+    size_t getLoadedGlyphCount() const { return glyphs_.size() + glyphIndices_.size(); }
 
 private:
     static constexpr int INITIAL_ATLAS_SIZE = 256;
@@ -381,6 +420,7 @@ private:
 
     // Glyph cache
     std::unordered_map<uint32_t, GlyphInfo> glyphs_;
+    std::unordered_map<uint32_t, GlyphInfo> glyphIndices_;
 
     bool loaded_ = false;
 
@@ -446,6 +486,15 @@ private:
                 g.v1_ *= scaleY;
             }
         }
+        for (auto& pair : glyphIndices_) {
+            GlyphInfo& g = pair.second;
+            if (g.atlasIndex_ == atlasIndex) {
+                g.u0_ *= scaleX;
+                g.u1_ *= scaleX;
+                g.v0_ *= scaleY;
+                g.v1_ *= scaleY;
+            }
+        }
 
         atlas.pixels_ = std::move(newPixels);
         atlas.width_ = newWidth;
@@ -470,15 +519,21 @@ private:
     }
 
     bool addGlyphToAtlas(uint32_t codepoint, GlyphInfo& outInfo) {
-        // Render glyph
         int glyphIndex = stbtt_FindGlyphIndex(&fontInfo_, codepoint);
+        return addGlyphIndexToAtlas((uint32_t)glyphIndex, outInfo, codepoint);
+    }
 
+    // TrussC local extension, 2026-05-09:
+    // Shared implementation for both codepoint rendering and HarfBuzz glyph-index
+    // rendering. logCodepoint is only used to preserve old warning messages when
+    // this is reached from the legacy codepoint path.
+    bool addGlyphIndexToAtlas(uint32_t glyphIndex, GlyphInfo& outInfo, uint32_t logCodepoint = 0) {
         // Get glyph metrics
         int advanceWidth, leftSideBearing;
-        stbtt_GetGlyphHMetrics(&fontInfo_, glyphIndex, &advanceWidth, &leftSideBearing);
+        stbtt_GetGlyphHMetrics(&fontInfo_, (int)glyphIndex, &advanceWidth, &leftSideBearing);
 
         int x0, y0, x1, y1;
-        stbtt_GetGlyphBitmapBox(&fontInfo_, glyphIndex, scale_, scale_, &x0, &y0, &x1, &y1);
+        stbtt_GetGlyphBitmapBox(&fontInfo_, (int)glyphIndex, scale_, scale_, &x0, &y0, &x1, &y1);
 
         int glyphWidth = x1 - x0;
         int glyphHeight = y1 - y0;
@@ -521,7 +576,11 @@ private:
             // Expand until it fits
             while (!tryFitGlyph(targetAtlas, paddedWidth, paddedHeight)) {
                 if (!expandAtlas(targetAtlas)) {
-                    logWarning() << "FontAtlasManager: cannot fit glyph for U+" << std::hex << codepoint << std::dec;
+                    if (logCodepoint != 0) {
+                        logWarning() << "FontAtlasManager: cannot fit glyph for U+" << std::hex << logCodepoint << std::dec;
+                    } else {
+                        logWarning() << "FontAtlasManager: cannot fit glyph index " << glyphIndex;
+                    }
                     outInfo.valid_ = false;
                     return false;
                 }
@@ -554,7 +613,7 @@ private:
                               glyphWidth, glyphHeight,
                               glyphWidth,  // stride
                               scale_, scale_,
-                              glyphIndex);
+                              (int)glyphIndex);
 
         // Copy to atlas (RGBA)
         for (int y = 0; y < glyphHeight; y++) {
@@ -1179,6 +1238,76 @@ public:
 
     size_t getLoadedGlyphCount() const {
         return atlasManager_ ? atlasManager_->getLoadedGlyphCount() : 0;
+    }
+
+    // TrussC local extension, 2026-05-09:
+    // Batch draw pre-shaped glyph-index runs for addons/tcxFontLayout. This keeps
+    // core atlas ownership in TrussC while avoiding per-glyph Font::drawString()
+    // calls and preserving OpenType shaping results from HarfBuzz.
+    void drawGlyphRun(const std::vector<FontGlyphRunItem>& glyphs) const {
+        if (!atlasManager_ || glyphs.empty()) return;
+
+        for (const auto& item : glyphs) {
+            if (item.glyphIndex != 0) {
+                atlasManager_->getOrLoadGlyphIndex(item.glyphIndex);
+            }
+        }
+        atlasManager_->ensureTexturesUpdated();
+
+        const float s = 1.0f / dpiScale_;
+        const size_t atlasCount = atlasManager_->getAtlasCount();
+        for (size_t atlasIdx = 0; atlasIdx < atlasCount; atlasIdx++) {
+            const AtlasState& atlas = atlasManager_->getAtlas(atlasIdx);
+            if (!atlas.isTextureValid()) continue;
+
+            if (internal::inFboPass && internal::currentFboBlendPipeline.id != 0) {
+                sgl_load_pipeline(internal::currentFboBlendPipeline);
+            } else {
+                sgl_load_pipeline(pipeline_);
+            }
+            sgl_enable_texture();
+            sgl_texture(atlas.getView(), sampler_);
+            sgl_begin_quads();
+
+            for (const auto& item : glyphs) {
+                if (item.glyphIndex == 0) continue;
+                const GlyphInfo* g = atlasManager_->getOrLoadGlyphIndex(item.glyphIndex);
+                if (!g || !g->isValid() || g->getAtlasIndex() != atlasIdx) continue;
+                if (g->getWidth() <= 0 || g->getHeight() <= 0) continue;
+
+                float x0 = item.x + g->getXoff() * s;
+                float y0 = item.y + g->getYoff() * s;
+                float x1 = x0 + g->getWidth() * s;
+                float y1 = y0 + g->getHeight() * s;
+                bool transformed = std::fabs(item.scaleX - 1.0f) > 0.0001f ||
+                                   std::fabs(item.scaleY - 1.0f) > 0.0001f ||
+                                   std::fabs(item.rotation) > 0.0001f;
+
+                auto emitVertex = [&](float px, float py, float u, float v) {
+                    if (transformed) {
+                        float cx = (x0 + x1) * 0.5f;
+                        float cy = (y0 + y1) * 0.5f;
+                        float lx = (px - cx) * item.scaleX;
+                        float ly = (py - cy) * item.scaleY;
+                        float c = std::cos(item.rotation);
+                        float sn = std::sin(item.rotation);
+                        px = cx + lx * c - ly * sn;
+                        py = cy + lx * sn + ly * c;
+                    }
+                    sgl_v2f_t2f(px, py, u, v);
+                };
+
+                sgl_c4f(item.color.r, item.color.g, item.color.b, item.color.a);
+                emitVertex(x0, y0, g->getU0(), g->getV0());
+                emitVertex(x1, y0, g->getU1(), g->getV0());
+                emitVertex(x1, y1, g->getU1(), g->getV1());
+                emitVertex(x0, y1, g->getU0(), g->getV1());
+            }
+
+            sgl_end();
+            sgl_disable_texture();
+            internal::restoreCurrentPipeline();
+        }
     }
 
     static size_t getTotalCacheMemoryUsage() {

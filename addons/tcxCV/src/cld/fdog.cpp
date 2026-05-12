@@ -1,6 +1,5 @@
 #include <cmath>
 #include <cstdlib>
-#include <cstdio>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -311,8 +310,6 @@ void GaussSmoothSep(imatrix& image, double sigma)
 		}
 	}
 	
-	printf("max_g = %f\n", max_g);
-	printf("min_g = %f\n", min_g);
 }
 
 void ConstructMergedImage(imatrix& image, imatrix& gray, imatrix& merged) 

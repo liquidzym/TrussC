@@ -14,12 +14,31 @@ set(ADDON_NAME tcxFontLayout)
 message(STATUS "[${ADDON_NAME}] Loading addon...")
 
 # ---------------------------------------------------------------------------
-# Fetch HarfBuzz
+# HarfBuzz dependency
 # ---------------------------------------------------------------------------
 include(FetchContent)
 
+if(EMSCRIPTEN)
+    set(_TCX_FONTLAYOUT_PLATFORM "web")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(_TCX_FONTLAYOUT_PLATFORM "ios")
+elseif(ANDROID)
+    set(_TCX_FONTLAYOUT_PLATFORM "android")
+elseif(APPLE)
+    set(_TCX_FONTLAYOUT_PLATFORM "macos")
+elseif(WIN32)
+    set(_TCX_FONTLAYOUT_PLATFORM "windows")
+else()
+    set(_TCX_FONTLAYOUT_PLATFORM "linux")
+endif()
+
+set(_TCX_FONTLAYOUT_CACHE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/_fcache")
+set(_TCX_FONTLAYOUT_BUILD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build-${_TCX_FONTLAYOUT_PLATFORM}")
+option(TCX_FONTLAYOUT_USE_SYSTEM_HARFBUZZ "Use an installed HarfBuzz package instead of the addon cache" OFF)
+
 # Shaping-only: disable ALL optional backends and utilities.
 # This minimizes compile time and avoids platform-specific dependencies.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(HB_HAVE_FREETYPE    OFF CACHE BOOL "" FORCE)
 set(HB_HAVE_GRAPHITE2   OFF CACHE BOOL "" FORCE)
 set(HB_HAVE_GLIB        OFF CACHE BOOL "" FORCE)
@@ -31,6 +50,9 @@ set(HB_HAVE_GDI         OFF CACHE BOOL "" FORCE)
 set(HB_BUILD_SUBSET     OFF CACHE BOOL "" FORCE)
 set(HB_BUILD_UTILS      OFF CACHE BOOL "" FORCE)
 set(HB_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
+set(HB_BUILD_DOCS       OFF CACHE BOOL "" FORCE)
+set(HB_BUILD_GOBJECT    OFF CACHE BOOL "" FORCE)
+set(HB_BUILD_INTROSPECTION OFF CACHE BOOL "" FORCE)
 
 # Emscripten: HarfBuzz needs pthreads disabled in some configs
 if(EMSCRIPTEN)
@@ -42,12 +64,30 @@ if(MSVC)
     set(HB_HAVE_VISIBILITY OFF CACHE BOOL "" FORCE)
 endif()
 
-FetchContent_Declare(
-    harfbuzz
-    GIT_REPOSITORY https://github.com/harfbuzz/harfbuzz.git
-    GIT_TAG 10.4.0
-)
-FetchContent_MakeAvailable(harfbuzz)
+set(_TCX_FONTLAYOUT_HARFBUZZ_TARGET harfbuzz)
+if(TCX_FONTLAYOUT_USE_SYSTEM_HARFBUZZ)
+    find_package(harfbuzz CONFIG QUIET)
+    if(TARGET harfbuzz::harfbuzz)
+        set(_TCX_FONTLAYOUT_HARFBUZZ_TARGET harfbuzz::harfbuzz)
+    elseif(TARGET harfbuzz)
+        set(_TCX_FONTLAYOUT_HARFBUZZ_TARGET harfbuzz)
+    endif()
+endif()
+
+if(NOT TARGET ${_TCX_FONTLAYOUT_HARFBUZZ_TARGET})
+    FetchContent_Declare(
+        harfbuzz
+        GIT_REPOSITORY https://github.com/harfbuzz/harfbuzz.git
+        GIT_TAG 10.4.0
+        GIT_SHALLOW TRUE
+        UPDATE_DISCONNECTED TRUE
+        SOURCE_DIR "${_TCX_FONTLAYOUT_CACHE_DIR}/harfbuzz-src"
+        BINARY_DIR "${_TCX_FONTLAYOUT_BUILD_ROOT}/harfbuzz-build"
+        SUBBUILD_DIR "${_TCX_FONTLAYOUT_BUILD_ROOT}/harfbuzz-subbuild"
+    )
+    FetchContent_MakeAvailable(harfbuzz)
+    set(_TCX_FONTLAYOUT_HARFBUZZ_TARGET harfbuzz)
+endif()
 
 # ---------------------------------------------------------------------------
 # Addon library
@@ -63,7 +103,7 @@ target_include_directories(${ADDON_NAME} PUBLIC
 
 target_link_libraries(${ADDON_NAME} PUBLIC
     TrussC
-    harfbuzz
+    ${_TCX_FONTLAYOUT_HARFBUZZ_TARGET}
 )
 
 # C++17 for std::function, unordered_map, string_view

@@ -7,15 +7,10 @@ namespace tcx {
 using namespace cv;
 using namespace std;
 
-// Sort helper for contour sorting by area
-struct CompareContourArea {
-    CompareContourArea(const vector<double>& areaVec) : mAreaVec(areaVec) {}
-
-    bool operator()(size_t a, size_t b) const {
-        return mAreaVec[a] > mAreaVec[b];
-    }
-
-    const vector<double>& mAreaVec;
+struct ContourEntry {
+    size_t contourIndex = 0;
+    double area = 0.0;
+    bool hole = false;
 };
 
 ContourFinder::ContourFinder()
@@ -66,9 +61,7 @@ void ContourFinder::findContours(Mat img) {
     // Filter contours by area
     bool needMinFilter = (minArea > 0);
     bool needMaxFilter = maxAreaNorm ? (maxArea < 1.0f) : (maxArea < numeric_limits<float>::infinity());
-    vector<size_t> allIndices;
-    vector<double> allAreas;
-    vector<bool> allHoles;
+    vector<ContourEntry> entries;
 
     if (needMinFilter || needMaxFilter) {
         double imgArea = img.rows * img.cols;
@@ -84,22 +77,20 @@ void ContourFinder::findContours(Mat img) {
 
             if ((!needMinFilter || curArea >= imgMinArea) &&
                 (!needMaxFilter || curArea <= imgMaxArea)) {
-                allIndices.push_back(i);
-                allHoles.push_back(hole);
-                allAreas.push_back(curArea);
+                entries.push_back({i, curArea, hole});
             }
         }
     } else {
         for (size_t i = 0; i < allContours.size(); i++) {
             double curArea = contourArea(Mat(allContours[i]), true);
-            allAreas.push_back(abs(curArea));
-            allHoles.push_back(curArea > 0);
-            allIndices.push_back(i);
+            entries.push_back({i, abs(curArea), curArea > 0});
         }
     }
 
-    if (allIndices.size() > 1 && sortBySize_) {
-        sort(allIndices.begin(), allIndices.end(), CompareContourArea(allAreas));
+    if (entries.size() > 1 && sortBySize_) {
+        sort(entries.begin(), entries.end(), [](const ContourEntry& a, const ContourEntry& b) {
+            return a.area > b.area;
+        });
     }
 
     // Generate polylines and bounding boxes
@@ -108,11 +99,11 @@ void ContourFinder::findContours(Mat img) {
     boundingRects.clear();
     holes.clear();
 
-    for (size_t i = 0; i < allIndices.size(); i++) {
-        contours.push_back(allContours[allIndices[i]]);
+    for (const auto& entry : entries) {
+        contours.push_back(allContours[entry.contourIndex]);
         polylines.push_back(toOf(contours.back()));
         boundingRects.push_back(boundingRect(contours.back()));
-        holes.push_back(allHoles[i]);
+        holes.push_back(entry.hole);
     }
 
     // Track bounding boxes

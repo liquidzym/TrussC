@@ -1,5 +1,6 @@
 #include "tcxCvRunningBackground.h"
 #include "tcxCvUtilities.h"
+#include "tcxCvWrappers.h"
 
 namespace tcx {
 
@@ -56,10 +57,10 @@ void RunningBackground::update(Mat frame, Mat& thresholded) {
     }
 
     // Threshold
-    if (foreground.channels() == 3) {
-        cvtColor(foreground, foregroundGray, COLOR_BGR2GRAY);
-    } else {
+    if (foreground.channels() == 1) {
         foregroundGray = foreground;
+    } else {
+        copyGray(foreground, foregroundGray);
     }
     threshold(foregroundGray, thresholded, (double)thresholdValue, 255.0, THRESH_BINARY);
 }

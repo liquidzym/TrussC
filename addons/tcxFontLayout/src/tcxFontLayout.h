@@ -12,7 +12,7 @@
 //   - Per-glyph callback (colour, position, transform, skip)
 //   - Per-glyph independent scale + rotation (GlyphTransform)
 //   - Glyph outline extraction (Bezier contours for custom rendering)
-//   - Multi-font fallback by Unicode range
+//   - Multi-font fallback by Unicode range and glyph availability
 //   - Font metrics (ascender, descender, cap-height, x-height)
 //   - Per-character colour arrays
 //   - Text-along-Bezier-path
@@ -57,7 +57,7 @@ inline bool operator&(Align a, Align b) {
 // ShapedGlyph — one shaped glyph from HarfBuzz
 // =============================================================================
 struct ShapedGlyph {
-    uint32_t codepoint  = 0;    // Unicode codepoint
+    uint32_t codepoint  = 0;    // representative Unicode codepoint for callbacks
     uint32_t glyphIndex = 0;    // font-internal glyph index
     float    xOffset    = 0;    // horizontal draw offset (px)
     float    yOffset    = 0;    // vertical draw offset (px)
@@ -215,12 +215,15 @@ private:
     int           fontSize_       = 0;
 
     // Internal
+    int  fontIndexForCodepoint(uint32_t cp) const;
+    bool hasGlyph(int fontIdx, uint32_t cp, uint32_t* glyphIndex = nullptr) const;
+    hb_font_t* hbFontForIndex(int fontIdx) const;
     void drawGlyphs(const std::vector<ShapedGlyph>& glyphs,
                     float originX, float originY,
                     int& globalIndex,
                     GlyphCallback cb = nullptr,
                     const std::vector<Color>* colors = nullptr);
-    Font& fontForGlyph(const ShapedGlyph& g);
+    Font& fontForIndex(int fontIdx);
     void initStbFont();
     static Vec2 bezierPoint(const BezierCurve& c, float t);
     static Vec2 bezierTangent(const BezierCurve& c, float t);

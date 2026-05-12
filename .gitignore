@@ -89,6 +89,7 @@ examples/**/*.vcxproj
 
 # Exclude build artifacts in addons
 addons/**/build/
+addons/**/_fcache/
 addons/**/bin/*
 !addons/**/bin/data/
 addons/**/*.xcodeproj/
@@ -115,6 +116,7 @@ addons/*
 !addons/tcxFontLayout
 !addons/tcxOpenCV
 !addons/tcxCV
+!addons/tcxFlowTools
 
 # =============================================================================
 # trusscli / Project Generator (built binary + build artifacts in tools/)

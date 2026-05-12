@@ -505,6 +505,11 @@ public:
     static constexpr int SAMPLE_RATE = 96000;
     static constexpr int NUM_CHANNELS = 2;  // Stereo output
     static constexpr int ANALYSIS_BUFFER_SIZE = 4096;  // FFT analysis buffer size
+    // TrussC local extension, 2026-05-09:
+    // Minimal realtime output hook added for addons/tcxPDSP. It lets addon DSP
+    // code render into TrussC's existing miniaudio device callback instead of
+    // embedding another cross-platform audio backend in the addon. Preserve this
+    // small bridge when merging upstream if tcxPDSP should remain backend-free.
     using OutputCallback = void (*)(float* output, int numFrames, int numChannels, void* userData);
 
     static AudioEngine& getInstance() {
@@ -572,8 +577,10 @@ public:
     // Called from audio callback (internal use)
     void mixAudio(float* buffer, int num_frames, int num_channels);
 
-    // Optional realtime output hook for addons.
-    // Called after built-in Sound mixing and before clipping/analysis.
+    // TrussC local extension, 2026-05-09:
+    // Optional realtime output hook for addons. Called after built-in Sound
+    // mixing and before clipping/analysis so tcxPDSP can either generate audio
+    // alone or layer DSP output over regular Sound playback.
     void setOutputCallback(OutputCallback callback, void* userData = nullptr) {
         outputCallbackUserData_.store(userData, std::memory_order_release);
         outputCallback_.store(callback, std::memory_order_release);
@@ -678,6 +685,10 @@ private:
             }
         }
 
+        // TrussC local extension, 2026-05-09:
+        // Invoke addon DSP on the audio thread after the built-in mixer has
+        // filled the buffer. The callback must be allocation-free and realtime
+        // safe; ownership/lifetime is managed by setOutputCallback().
         OutputCallback callback = outputCallback_.load(std::memory_order_acquire);
         if (callback) {
             void* userData = outputCallbackUserData_.load(std::memory_order_acquire);

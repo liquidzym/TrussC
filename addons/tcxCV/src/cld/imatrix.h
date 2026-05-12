@@ -1,76 +1,45 @@
 #ifndef _IMATRIX_H_
 #define _IMATRIX_H_
 
+#include <algorithm>
+#include <vector>
+
 class imatrix {
 private:
-	int Nr, Nc;
-	int** p; 
-	void delete_all() {
-		for (int i = 0; i < Nr; i++) 
-			delete[] p[i];
-		delete[] p;
-	}
-public:
-	imatrix() 
-	{
-		Nr = 1, Nc = 1;
-		p = new int*[Nr];
-		for(int i = 0; i < Nr; i++)
-			p[i] = new int[Nc];
-		p[0][0]=1; 
-	};
-	imatrix(int i, int j) 
-	{
-		Nr = i, Nc = j;
-		
-		p = new int*[Nr];
-		for(i = 0; i < Nr; i++)
-			p[i] = new int[Nc];
-	};
-	imatrix(imatrix& b) {
-		Nr = b.Nr;
-		Nc = b.Nc;
-		p = new int*[Nr];
-		for (int i = 0; i < Nr; i++) {
-			p[i] = new int[Nc];
-			for (int j = 0; j < Nc; j++) {
-				p[i][j] = b[i][j];
-			}
-		}
-	}
-	void init(int i, int j) 
-	{
-		delete_all();
-		Nr = i, Nc = j;
-		p = new int*[Nr];
-		for(i = 0; i < Nr; i++)
-			p[i] = new int[Nc];
-	};
-	
-	~imatrix()
-	{
-		delete_all();
-	}
-	int* operator[](int i) { return p[i]; };
-	
-	int& get( int i, int j ) const { return p[i][j]; }
-	int getRow() const { return Nr; }
-	int getCol() const { return Nc; }
-	
-	void zero()
-	{
-		for (int i = 0; i < Nr; i++) 
-			for (int j = 0; j < Nc; j++) 
-				p[i][j] = 0;
-	}
-	void copy(imatrix& b)
-	{
-		init(b.Nr, b.Nc);
-		for (int i = 0; i < Nr; i++) 
-			for (int j = 0; j < Nc; j++) 
-				p[i][j] = b.p[i][j];
-	}
-};
+    int Nr = 1;
+    int Nc = 1;
+    std::vector<int> data_{1};
 
+public:
+    imatrix() = default;
+
+    imatrix(int rows, int cols) {
+        init(rows, cols);
+    }
+
+    void init(int rows, int cols) {
+        Nr = std::max(0, rows);
+        Nc = std::max(0, cols);
+        data_.assign(static_cast<size_t>(Nr) * static_cast<size_t>(Nc), 0);
+    }
+
+    int* operator[](int i) { return data_.data() + static_cast<size_t>(i) * Nc; }
+    const int* operator[](int i) const { return data_.data() + static_cast<size_t>(i) * Nc; }
+
+    int& get(int i, int j) { return (*this)[i][j]; }
+    const int& get(int i, int j) const { return (*this)[i][j]; }
+    int getRow() const { return Nr; }
+    int getCol() const { return Nc; }
+
+    void zero() {
+        std::fill(data_.begin(), data_.end(), 0);
+    }
+
+    void copy(const imatrix& b) {
+        Nr = b.Nr;
+        Nc = b.Nc;
+        data_ = b.data_;
+    }
+};
 
 #endif
