@@ -24,6 +24,7 @@ Visual parity target:
 - PixelFlow-style wind tunnel direction: `example-wind-tunnel` exists for obstacle and texture-inlet validation.
 - First-pass split-velocity shader output: `SplitVelocity::updateTexture()` and `example-split-velocity` render combined/positive/negative GPU velocity-channel views.
 - First-pass PixelFlow `Fluid_LiquidText` CFD example: `example-fluid-liquid-text` injects a generated text FBO into GPU density and temperature and disturbs it with fluid velocity.
+- First-pass PixelFlow `Fluid_LiquidPainting` CFD example: `example-fluid-liquid-painting` injects the local PixelFlow Escher image into GPU density and uses procedural edge flow plus mouse drag to create liquid-smoke image smearing.
 - First-pass independent PixelFlow SoftBody2D foundation: `SoftBody2D` and `example-softbody2d-cloth` cover Verlet particles, structural/shear/bend constraints, fixed cloth anchors, wind, particle dragging, and spring cutting without depending on `tcxTraerPhysics`.
 - Examples are centralized under `examples/`.
 
@@ -35,11 +36,11 @@ Visual parity target:
 - ofxFlowTools particle parity: age/lifespan/mass tuning and richer draw/move shader controls are only represented by the first GPU particle path plus simple size/color controls.
 - ofxFlowTools HD parity: separate GPU visualization/output resolution exists; exact HD shader-family parity remains partial.
 - PixelFlow flow-field visuals: first-pass LIC is present; full streamline particle rendering, wind-tunnel LIC, image LIC, and optical-flow LIC examples are not ported.
-- PixelFlow fluid examples: liquid text has a first-pass parity example; multiple fluids, liquid painting, custom render streamlines, Verlet/collision demos, velocity encoding, and texture transfer examples remain candidates.
+- PixelFlow fluid examples: liquid text and liquid painting have first-pass parity examples; multiple fluids, custom render streamlines, Verlet/collision demos, velocity encoding, and texture transfer examples remain candidates.
 - PixelFlow optical-flow examples: movie/capture optical flow into fluid/particles and PFM export are not ported.
 - PixelFlow flow-field particle variants: first-pass attractor and impulse modes exist; cohesion, dam break, sprite generator, and optical-flow capture particles are not ported.
 - PixelFlow Softbody Dynamics is in scope: SoftBody2D cloth has a first-pass implementation; SoftBody2D chain, connected bodies, differential growth, liquid-like softbody behavior, particle collision, playground demos, and all SoftBody3D examples are not ported.
-- PixelFlow Computational Fluid Dynamics examples are in scope: wind tunnel and liquid text have first-pass examples; streamlines, Verlet particle collision system, fluid particles, liquid painting, velocity encoding, multiple fluids, and texture transfer must still be covered by TrussC examples with matching core visual effects.
+- PixelFlow Computational Fluid Dynamics examples are in scope: wind tunnel, liquid text, and liquid painting have first-pass examples; streamlines, Verlet particle collision system, fluid particles, velocity encoding, multiple fluids, and texture transfer must still be covered by TrussC examples with matching core visual effects.
 - PixelFlow Skylight, PostProcessing Filters, AntiAliasing, Shadertoy wrappers, sampling, and geometry/util modules are in scope as broader PixelFlow parity work. They can be implemented as staged tcxFlowTools modules or split into companion addons if the code boundary becomes cleaner, but they should not be treated as out-of-scope.
 
 ## Best Next Examples To Port
@@ -50,7 +51,6 @@ Visual parity target:
 - `example-particle-variants`: first-pass attractor and impulse modes exist; next useful step is cohesion or optical-flow capture particle behavior.
 - `example-split-velocity`: based on ofxFlowTools split-velocity shaders and visualizers.
 - `example-softbody2d-playground`: next SoftBody2D parity target after the first-pass cloth example, based on PixelFlow `SoftBody2D_Playground`.
-- `example-fluid-liquid-painting`: next CFD texture-injection parity target after the first-pass `example-fluid-liquid-text`, based on PixelFlow `Fluid_LiquidPainting`.
 - `example-fluid-verlet-collision`: CFD/particle collision parity target, based on PixelFlow `Fluid_VerletParticleCollisionSystem`.
 - `example-skylight-basic`: first broader PixelFlow renderer target, based on PixelFlow `Skylight_Basic`.
 

@@ -24,7 +24,7 @@ This file is the strict review ledger for `tcxFlowTools`. A phase is only treate
 | Phase 8 | HD pipeline | `example-hd` with independent sim/output scale | Complete with GPU fluid and separate output scale |
 | Phase 9 | Final tests/docs cleanup | all selected examples build; docs updated | Complete for GPU fluid milestone |
 | Phase 10 | ofx helper shader gaps | split velocity / average watcher / helper filters | In progress |
-| Phase 11 | PixelFlow CFD + flow-field examples | liquid text/painting, streamlines, collision, velocity encoding | In progress with first liquid-text example |
+| Phase 11 | PixelFlow CFD + flow-field examples | liquid text/painting, streamlines, collision, velocity encoding | In progress with liquid text and liquid painting |
 | Phase 12 | PixelFlow Softbody Dynamics | SoftBody2D/3D cloth, chains, collision, playground | In progress with first SoftBody2D cloth example |
 | Phase 13 | Broader PixelFlow modules | Skylight, post-processing, anti-aliasing, Shadertoy, sampling/geometry | Planned |
 
@@ -467,10 +467,13 @@ Implementation summary:
 - Added `example-fluid-liquid-text`, based on PixelFlow `Fluid_LiquidText`.
 - The example renders a Processing/Fluid/Simulation-style text source into a TrussC FBO, injects that texture into GPU fluid density and temperature, and adds procedural plus mouse velocity disturbance.
 - `TCX_LIQUID_TEXT_SOURCE=1` shows a source-preview panel for visual parity checks. `TCX_LIQUID_TEXT_DENSITY` and `TCX_LIQUID_TEXT_TEMPERATURE` expose startup tuning for automated visual runs.
+- Added `example-fluid-liquid-painting`, based on PixelFlow `Fluid_LiquidPainting`. It loads the local PixelFlow Escher image, injects it into GPU density, and uses procedural edge flow plus mouse drag to create liquid-smoke image smearing.
+- `TCX_LIQUID_PAINTING_SOURCE=1` shows the injected source preview. `TCX_LIQUID_PAINTING_MIX=<float>` tunes the persistent density source floor used to keep the source readable during GPU advection.
 
 Review checklist:
 
 - PixelFlow liquid-text source texture drives the fluid field: pass by screenshot inspection.
+- PixelFlow liquid-painting source texture remains readable while being pulled into fluid trails: pass by user visual confirmation.
 - GPU fluid path remains active: pass by example HUD and `Fluid2D` GPU draw output.
 - Tests still pass: pass.
 
@@ -479,14 +482,17 @@ Validation:
 ```bash
 cmake -S addons/tcxFlowTools/examples/example-fluid-liquid-text -B addons/tcxFlowTools/examples/example-fluid-liquid-text/build-macos
 cmake --build addons/tcxFlowTools/examples/example-fluid-liquid-text/build-macos --parallel 2
+cmake -S addons/tcxFlowTools/examples/example-fluid-liquid-painting -B addons/tcxFlowTools/examples/example-fluid-liquid-painting/build-macos
+cmake --build addons/tcxFlowTools/examples/example-fluid-liquid-painting/build-macos --parallel 2
 cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2
 addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings
 addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_softbody2d
 ```
 
-All passed. Visual screenshot `/tmp/example-fluid-liquid-text-tuned.png` showed the generated text source preview and live density/temperature fluid response. Synthetic macOS keypresses were blocked by accessibility permissions, so visual toggle verification used startup state and direct inspection rather than `osascript` key events.
+All passed. Visual screenshot `/tmp/example-fluid-liquid-text-tuned.png` showed the generated text source preview and live density/temperature fluid response. Visual screenshot `/tmp/example-fluid-liquid-painting-v4.png` showed the Escher source staying readable while the right edge pulled into liquid-smoke trails; user confirmed the effect is correct. Synthetic macOS keypresses were blocked by accessibility permissions, so visual toggle verification used startup state and direct inspection rather than `osascript` key events.
 
-Remaining gap: Phase 11 is still incomplete beyond the first liquid-text example. Liquid painting, Verlet collision, multiple fluids, velocity encoding, texture transfer, and full streamline particle examples remain tracked parity targets.
+Remaining gap: Phase 11 is still incomplete beyond the first liquid-text and liquid-painting examples. Verlet collision, multiple fluids, velocity encoding, texture transfer, and full streamline particle examples remain tracked parity targets.
 
 ## Phase 12 Review
 

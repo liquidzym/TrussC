@@ -24,14 +24,14 @@ Implemented now:
 - `ParticleFlow` defaults to GPU state textures, GPU update pass, and GPU particle drawing; CPU particles remain only as fallback. First-pass attractor and impulse variants are available through `ParticleFlowSettings::variant`.
 - `SoftBody2D` adds an independent PixelFlow Softbody Dynamics foundation inside tcxFlowTools: Verlet particles, structural/shear/bend constraints, fixed particles, bounds, drag, and constraint cutting.
 - `example-simple` with mouse injection and density/velocity/pressure/temperature view switching.
-- `example-core-pingpong`, `example-optical-flow`, `example-fluid-bridges`, `example-camera-fluid`, `example-particles`, `example-particle-variants`, `example-lic-streamlines`, `example-split-velocity`, `example-fluid-liquid-text`, `example-softbody2d-cloth`, `example-wind-tunnel`, and `example-hd`.
+- `example-core-pingpong`, `example-optical-flow`, `example-fluid-bridges`, `example-camera-fluid`, `example-particles`, `example-particle-variants`, `example-lic-streamlines`, `example-split-velocity`, `example-fluid-liquid-text`, `example-fluid-liquid-painting`, `example-softbody2d-cloth`, `example-wind-tunnel`, and `example-hd`.
 - Basic tests for settings, resize, density injection, and procedural optical-flow state.
 
 Still limited:
 
 - Full streamline particle rendering, full split-velocity shader graph parity, advanced bridge controls such as invert/alpha/mirror options, and richer PixelFlow-style particle variants remain pending.
 - PixelFlow Softbody Dynamics has a first independent SoftBody2D cloth implementation; SoftBody2D playground/liquid/collision/differential-growth and SoftBody3D examples remain pending.
-- Broader Computational Fluid Dynamics examples, Skylight, post-processing, anti-aliasing, Shadertoy-style wrappers, sampling, and geometry/util families are tracked parity scope but are not yet implemented.
+- Broader Computational Fluid Dynamics examples beyond liquid text and liquid painting, Skylight, post-processing, anti-aliasing, Shadertoy-style wrappers, sampling, and geometry/util families are tracked parity scope but are not yet implemented.
 - CPU tests intentionally exercise the fallback path because they run without an app graphics context.
 
 ## Install
@@ -149,6 +149,7 @@ Additional examples:
 - `example-lic-streamlines`: GPU LIC texture over `Fluid2D::getVelocityTexture()`; density can be toggled separately.
 - `example-split-velocity`: GPU split-velocity helper output over GPU fluid; keys `1`, `2`, and `3` switch combined/positive/negative views.
 - `example-fluid-liquid-text`: PixelFlow `Fluid_LiquidText` parity example; a generated text FBO is injected into GPU fluid density and temperature, with procedural and mouse velocity disturbance.
+- `example-fluid-liquid-painting`: PixelFlow `Fluid_LiquidPainting` parity example; the local PixelFlow Escher image is injected into GPU fluid density while edge flow and mouse drag pull it into liquid-smoke trails.
 - `example-softbody2d-cloth`: PixelFlow `SoftBody2D_Cloth` parity example; two independent spring cloths hang from fixed top corners with structural/shear/bend constraints, wind, particle dragging, and constraint cutting.
 - `example-wind-tunnel`: GPU fluid obstacle/wind-tunnel example with texture inlet and debug views.
 - `example-hd`: GPU fluid with 1x / 0.5x / 0.25x simulation scale and independently toggled output resolution.
@@ -336,4 +337,22 @@ Result:
 - `example-softbody2d-cloth`: configure/build pass.
 - Settings, core-contract, and SoftBody2D tests passed.
 - Visual check: two cloths render with PixelFlow `SoftBody2D_Cloth` core behavior: fixed top corners, visible particle/spring grid, shear/bend support, gravity sag, and wind deformation. User confirmed the visual direction as correct.
+- Known linker warning remains: duplicate `libTrussC.a` in the example link line.
+
+2026-05-13 PixelFlow liquid-painting CFD audit:
+
+```bash
+cmake -S addons/tcxFlowTools/examples/example-fluid-liquid-painting -B addons/tcxFlowTools/examples/example-fluid-liquid-painting/build-macos
+cmake --build addons/tcxFlowTools/examples/example-fluid-liquid-painting/build-macos --parallel 2
+cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_softbody2d
+```
+
+Result:
+
+- `example-fluid-liquid-painting`: configure/build pass.
+- Visual reference capture used PixelFlow Vimeo `184849892` with `yt-dlp`/`ffmpeg` into `/tmp/tcxFlowTools-reference-captures`; captured assets are not committed.
+- Visual check: `TCX_LIQUID_PAINTING_SOURCE=1` keeps the Escher source readable while procedural edge flow and mouse drag pull it into PixelFlow-style liquid-smoke trails. User confirmed the effect is correct.
 - Known linker warning remains: duplicate `libTrussC.a` in the example link line.
