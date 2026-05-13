@@ -22,14 +22,16 @@ Implemented now:
 - Bridge class hierarchy: `BridgeFlow`, `VelocityBridge`, `DensityBridge`, `TemperatureBridge`, `CombinedBridge`, with GPU external texture output for velocity, density, temperature, and combined bridge injection.
 - Visualization helpers and mouse/particle extension scaffolding.
 - `ParticleFlow` defaults to GPU state textures, GPU update pass, and GPU particle drawing; CPU particles remain only as fallback. First-pass attractor and impulse variants are available through `ParticleFlowSettings::variant`.
+- `SoftBody2D` adds an independent PixelFlow Softbody Dynamics foundation inside tcxFlowTools: Verlet particles, structural/shear/bend constraints, fixed particles, bounds, drag, and constraint cutting.
 - `example-simple` with mouse injection and density/velocity/pressure/temperature view switching.
-- `example-core-pingpong`, `example-optical-flow`, `example-fluid-bridges`, `example-camera-fluid`, `example-particles`, `example-particle-variants`, `example-lic-streamlines`, `example-split-velocity`, `example-fluid-liquid-text`, `example-wind-tunnel`, and `example-hd`.
+- `example-core-pingpong`, `example-optical-flow`, `example-fluid-bridges`, `example-camera-fluid`, `example-particles`, `example-particle-variants`, `example-lic-streamlines`, `example-split-velocity`, `example-fluid-liquid-text`, `example-softbody2d-cloth`, `example-wind-tunnel`, and `example-hd`.
 - Basic tests for settings, resize, density injection, and procedural optical-flow state.
 
 Still limited:
 
 - Full streamline particle rendering, full split-velocity shader graph parity, advanced bridge controls such as invert/alpha/mirror options, and richer PixelFlow-style particle variants remain pending.
-- PixelFlow Softbody Dynamics, broader Computational Fluid Dynamics examples, Skylight, post-processing, anti-aliasing, Shadertoy-style wrappers, sampling, and geometry/util families are tracked parity scope but are not yet implemented.
+- PixelFlow Softbody Dynamics has a first independent SoftBody2D cloth implementation; SoftBody2D playground/liquid/collision/differential-growth and SoftBody3D examples remain pending.
+- Broader Computational Fluid Dynamics examples, Skylight, post-processing, anti-aliasing, Shadertoy-style wrappers, sampling, and geometry/util families are tracked parity scope but are not yet implemented.
 - CPU tests intentionally exercise the fallback path because they run without an app graphics context.
 
 ## Install
@@ -147,6 +149,7 @@ Additional examples:
 - `example-lic-streamlines`: GPU LIC texture over `Fluid2D::getVelocityTexture()`; density can be toggled separately.
 - `example-split-velocity`: GPU split-velocity helper output over GPU fluid; keys `1`, `2`, and `3` switch combined/positive/negative views.
 - `example-fluid-liquid-text`: PixelFlow `Fluid_LiquidText` parity example; a generated text FBO is injected into GPU fluid density and temperature, with procedural and mouse velocity disturbance.
+- `example-softbody2d-cloth`: PixelFlow `SoftBody2D_Cloth` parity example; two independent spring cloths hang from fixed top corners with structural/shear/bend constraints, wind, particle dragging, and constraint cutting.
 - `example-wind-tunnel`: GPU fluid obstacle/wind-tunnel example with texture inlet and debug views.
 - `example-hd`: GPU fluid with 1x / 0.5x / 0.25x simulation scale and independently toggled output resolution.
 
@@ -315,4 +318,22 @@ Result:
 - Settings and core-contract tests passed.
 - Visual check: `TCX_LIQUID_TEXT_SOURCE=1` launched the GPU path, rendered the generated text source preview, and showed the same text being injected into the live fluid density/temperature field.
 - macOS keyboard event injection was blocked by system permissions during automation, so the source/combined toggles were verified through startup state plus visual inspection rather than synthetic keypresses.
+- Known linker warning remains: duplicate `libTrussC.a` in the example link line.
+
+2026-05-13 PixelFlow SoftBody2D cloth audit:
+
+```bash
+cmake -S addons/tcxFlowTools/examples/example-softbody2d-cloth -B addons/tcxFlowTools/examples/example-softbody2d-cloth/build-macos
+cmake --build addons/tcxFlowTools/examples/example-softbody2d-cloth/build-macos --parallel 2
+cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_softbody2d
+```
+
+Result:
+
+- `example-softbody2d-cloth`: configure/build pass.
+- Settings, core-contract, and SoftBody2D tests passed.
+- Visual check: two cloths render with PixelFlow `SoftBody2D_Cloth` core behavior: fixed top corners, visible particle/spring grid, shear/bend support, gravity sag, and wind deformation. User confirmed the visual direction as correct.
 - Known linker warning remains: duplicate `libTrussC.a` in the example link line.

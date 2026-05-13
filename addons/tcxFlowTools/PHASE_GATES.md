@@ -25,7 +25,7 @@ This file is the strict review ledger for `tcxFlowTools`. A phase is only treate
 | Phase 9 | Final tests/docs cleanup | all selected examples build; docs updated | Complete for GPU fluid milestone |
 | Phase 10 | ofx helper shader gaps | split velocity / average watcher / helper filters | In progress |
 | Phase 11 | PixelFlow CFD + flow-field examples | liquid text/painting, streamlines, collision, velocity encoding | In progress with first liquid-text example |
-| Phase 12 | PixelFlow Softbody Dynamics | SoftBody2D/3D cloth, chains, collision, playground | Planned |
+| Phase 12 | PixelFlow Softbody Dynamics | SoftBody2D/3D cloth, chains, collision, playground | In progress with first SoftBody2D cloth example |
 | Phase 13 | Broader PixelFlow modules | Skylight, post-processing, anti-aliasing, Shadertoy, sampling/geometry | Planned |
 
 ## Phase 1 Review
@@ -487,3 +487,34 @@ addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
 All passed. Visual screenshot `/tmp/example-fluid-liquid-text-tuned.png` showed the generated text source preview and live density/temperature fluid response. Synthetic macOS keypresses were blocked by accessibility permissions, so visual toggle verification used startup state and direct inspection rather than `osascript` key events.
 
 Remaining gap: Phase 11 is still incomplete beyond the first liquid-text example. Liquid painting, Verlet collision, multiple fluids, velocity encoding, texture transfer, and full streamline particle examples remain tracked parity targets.
+
+## Phase 12 Review
+
+Implementation summary:
+
+- Added an independent `tcx::flow::SoftBody2D` module inside tcxFlowTools. It is not backed by `tcxTraerPhysics`.
+- The module currently supports Verlet particles, structural/shear/bend constraints, fixed particles, bounds, drag positioning, impulse/force input, nearest-particle lookup, and spring cutting.
+- Added `example-softbody2d-cloth`, based on PixelFlow `SoftBody2D_Cloth`, with two cloth grids pinned at the top corners and rendered with translucent mesh fill, springs, particles, wind, mouse drag, and right-drag cutting.
+- Added `tcxFlowTools_softbody2d` headless test coverage for grid construction, constraint solving, fixed particles, gravity, nearest lookup, and spring cutting.
+
+Review checklist:
+
+- SoftBody2D implementation is independent from `tcxTraerPhysics`: pass.
+- PixelFlow `SoftBody2D_Cloth` core visual effect is represented: pass by user visual confirmation.
+- Tests still pass: pass.
+- TrussC core API changed: no.
+
+Validation:
+
+```bash
+cmake -S addons/tcxFlowTools/examples/example-softbody2d-cloth -B addons/tcxFlowTools/examples/example-softbody2d-cloth/build-macos
+cmake --build addons/tcxFlowTools/examples/example-softbody2d-cloth/build-macos --parallel 2
+cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_softbody2d
+```
+
+All passed. Visual screenshot `/tmp/example-softbody2d-cloth.png` was reviewed, and the user confirmed the effect is correct.
+
+Remaining gap: Phase 12 is still incomplete beyond the first SoftBody2D cloth example. SoftBody2D playground, chain, connected bodies, differential growth, liquid, particle collision, and SoftBody3D cloth/particle/playground examples remain tracked parity targets.

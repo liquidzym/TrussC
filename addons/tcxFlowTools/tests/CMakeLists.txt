@@ -13,3 +13,6 @@ target_link_libraries(tcxFlowTools_settings PRIVATE tcxFlowTools)
 
 add_executable(tcxFlowTools_core_contracts test_core_contracts.cpp)
 target_link_libraries(tcxFlowTools_core_contracts PRIVATE tcxFlowTools)
+
+add_executable(tcxFlowTools_softbody2d test_softbody2d.cpp)
+target_link_libraries(tcxFlowTools_softbody2d PRIVATE tcxFlowTools)
