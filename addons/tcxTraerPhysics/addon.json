@@ -1,0 +1,6 @@
+{
+  "description": "Traer Physics particle system — springs, attractions, integrators (Euler, Modified Euler, RK4). Header-only, modern C++.",
+  "author": "pi-coding-agent",
+  "license": "MIT",
+  "keywords": ["physics", "particle", "spring", "attraction", "simulation", "verlet"]
+}
