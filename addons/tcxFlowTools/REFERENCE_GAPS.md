@@ -23,6 +23,7 @@ Visual parity target:
 - HD output-resolution split: `FluidSettings::outputResolutionScale`, `Fluid2D::outputWidth()/outputHeight()`, and `example-hd` cover separate simulation and GPU visualization/output resolution.
 - PixelFlow-style wind tunnel direction: `example-wind-tunnel` exists for obstacle and texture-inlet validation.
 - First-pass split-velocity shader output: `SplitVelocity::updateTexture()` and `example-split-velocity` render combined/positive/negative GPU velocity-channel views.
+- First-pass PixelFlow `Fluid_LiquidText` CFD example: `example-fluid-liquid-text` injects a generated text FBO into GPU density and temperature and disturbs it with fluid velocity.
 - Examples are centralized under `examples/`.
 
 ## Still Missing Or Partial
@@ -33,11 +34,11 @@ Visual parity target:
 - ofxFlowTools particle parity: age/lifespan/mass tuning and richer draw/move shader controls are only represented by the first GPU particle path plus simple size/color controls.
 - ofxFlowTools HD parity: separate GPU visualization/output resolution exists; exact HD shader-family parity remains partial.
 - PixelFlow flow-field visuals: first-pass LIC is present; full streamline particle rendering, wind-tunnel LIC, image LIC, and optical-flow LIC examples are not ported.
-- PixelFlow fluid examples: multiple fluids, liquid painting/text, custom render streamlines, Verlet/collision demos, velocity encoding, and texture transfer examples remain candidates.
+- PixelFlow fluid examples: liquid text has a first-pass parity example; multiple fluids, liquid painting, custom render streamlines, Verlet/collision demos, velocity encoding, and texture transfer examples remain candidates.
 - PixelFlow optical-flow examples: movie/capture optical flow into fluid/particles and PFM export are not ported.
 - PixelFlow flow-field particle variants: first-pass attractor and impulse modes exist; cohesion, dam break, sprite generator, and optical-flow capture particles are not ported.
 - PixelFlow Softbody Dynamics is in scope: SoftBody2D and SoftBody3D examples, collision systems, cloth, chains, connected bodies, differential growth, liquid-like softbody behavior, and playground demos are not ported.
-- PixelFlow Computational Fluid Dynamics examples are in scope: wind tunnel, streamlines, Verlet particle collision system, fluid particles, liquid painting, liquid text, velocity encoding, multiple fluids, and texture transfer must be covered by TrussC examples with matching core visual effects.
+- PixelFlow Computational Fluid Dynamics examples are in scope: wind tunnel and liquid text have first-pass examples; streamlines, Verlet particle collision system, fluid particles, liquid painting, velocity encoding, multiple fluids, and texture transfer must still be covered by TrussC examples with matching core visual effects.
 - PixelFlow Skylight, PostProcessing Filters, AntiAliasing, Shadertoy wrappers, sampling, and geometry/util modules are in scope as broader PixelFlow parity work. They can be implemented as staged tcxFlowTools modules or split into companion addons if the code boundary becomes cleaner, but they should not be treated as out-of-scope.
 
 ## Best Next Examples To Port
@@ -48,7 +49,7 @@ Visual parity target:
 - `example-particle-variants`: first-pass attractor and impulse modes exist; next useful step is cohesion or optical-flow capture particle behavior.
 - `example-split-velocity`: based on ofxFlowTools split-velocity shaders and visualizers.
 - `example-softbody2d-playground`: first SoftBody2D parity target, based on PixelFlow `SoftBody2D_Playground` / `SoftBody2D_Cloth`.
-- `example-fluid-liquid-text` or `example-fluid-liquid-painting`: CFD parity target, based on PixelFlow `Fluid_LiquidText` / `Fluid_LiquidPainting`.
+- `example-fluid-liquid-painting`: next CFD texture-injection parity target after the first-pass `example-fluid-liquid-text`, based on PixelFlow `Fluid_LiquidPainting`.
 - `example-fluid-verlet-collision`: CFD/particle collision parity target, based on PixelFlow `Fluid_VerletParticleCollisionSystem`.
 - `example-skylight-basic`: first broader PixelFlow renderer target, based on PixelFlow `Skylight_Basic`.
 

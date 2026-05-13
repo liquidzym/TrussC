@@ -23,7 +23,7 @@ Implemented now:
 - Visualization helpers and mouse/particle extension scaffolding.
 - `ParticleFlow` defaults to GPU state textures, GPU update pass, and GPU particle drawing; CPU particles remain only as fallback. First-pass attractor and impulse variants are available through `ParticleFlowSettings::variant`.
 - `example-simple` with mouse injection and density/velocity/pressure/temperature view switching.
-- `example-core-pingpong`, `example-optical-flow`, `example-fluid-bridges`, `example-camera-fluid`, `example-particles`, `example-particle-variants`, `example-lic-streamlines`, `example-split-velocity`, `example-wind-tunnel`, and `example-hd`.
+- `example-core-pingpong`, `example-optical-flow`, `example-fluid-bridges`, `example-camera-fluid`, `example-particles`, `example-particle-variants`, `example-lic-streamlines`, `example-split-velocity`, `example-fluid-liquid-text`, `example-wind-tunnel`, and `example-hd`.
 - Basic tests for settings, resize, density injection, and procedural optical-flow state.
 
 Still limited:
@@ -146,6 +146,7 @@ Additional examples:
 - `example-particle-variants`: GPU particle flow, attractor, and impulse modes over GPU fluid; keys `1`, `2`, and `3` switch modes. `TCX_PARTICLE_VARIANT=attractor` or `impulse` can start a specific mode for automated visual checks.
 - `example-lic-streamlines`: GPU LIC texture over `Fluid2D::getVelocityTexture()`; density can be toggled separately.
 - `example-split-velocity`: GPU split-velocity helper output over GPU fluid; keys `1`, `2`, and `3` switch combined/positive/negative views.
+- `example-fluid-liquid-text`: PixelFlow `Fluid_LiquidText` parity example; a generated text FBO is injected into GPU fluid density and temperature, with procedural and mouse velocity disturbance.
 - `example-wind-tunnel`: GPU fluid obstacle/wind-tunnel example with texture inlet and debug views.
 - `example-hd`: GPU fluid with 1x / 0.5x / 0.25x simulation scale and independently toggled output resolution.
 
@@ -296,4 +297,22 @@ Result:
 - `example-split-velocity`: configure/build pass.
 - Settings and core-contract tests passed.
 - Visual check: `TCX_SPLIT_MODE=0`, `1`, and `2` each launched the GPU path and rendered combined, positive, and negative split-velocity views.
+- Known linker warning remains: duplicate `libTrussC.a` in the example link line.
+
+2026-05-13 PixelFlow liquid-text CFD audit:
+
+```bash
+cmake -S addons/tcxFlowTools/examples/example-fluid-liquid-text -B addons/tcxFlowTools/examples/example-fluid-liquid-text/build-macos
+cmake --build addons/tcxFlowTools/examples/example-fluid-liquid-text/build-macos --parallel 2
+cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings
+addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
+```
+
+Result:
+
+- `example-fluid-liquid-text`: configure/build pass.
+- Settings and core-contract tests passed.
+- Visual check: `TCX_LIQUID_TEXT_SOURCE=1` launched the GPU path, rendered the generated text source preview, and showed the same text being injected into the live fluid density/temperature field.
+- macOS keyboard event injection was blocked by system permissions during automation, so the source/combined toggles were verified through startup state plus visual inspection rather than synthetic keypresses.
 - Known linker warning remains: duplicate `libTrussC.a` in the example link line.
