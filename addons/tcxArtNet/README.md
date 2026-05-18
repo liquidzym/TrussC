@@ -45,9 +45,17 @@ while (running) {
 }
 ```
 
+## Runtime Helpers
+
+- `Controller` can auto-poll and prune stale discovered nodes using `ControllerSettings::autoPoll`, `pollInterval`, and `pollTimeout`.
+- `Node` can advertise configured IP/bind IP information, apply virtual `ArtAddress` name updates, and answer virtual `ArtIpProg` packets without changing the host network interface.
+- `DmxReceiverState` stores per-universe DMX frames, rejects duplicate non-zero sequences, and can buffer frames until `ArtSync`.
+- `PixelMapper` supports brightness, gamma, and RGBW/GRBW white extraction.
+- `PacketInspector` provides packet summaries, hex dumps, and hex byte parsing for diagnostics.
+
 ## Examples
 
-The `examples/` directory contains sender, receiver, discovery, node emulation, ArtSync, pixel mapping, address/input control, timecode, trigger, diagnostics, IP programming, and codec inspection examples. Each example README includes expected output, a network setup note, and the Wireshark filter `udp.port == 6454`.
+The `examples/` directory contains sender, receiver, discovery, node emulation, ArtSync, pixel mapping, address/input control, timecode, trigger, diagnostics, IP programming, packet inspection, and codec inspection examples. Each example README includes expected output, a network setup note, and the Wireshark filter `udp.port == 6454`.
 
 ## Tests
 

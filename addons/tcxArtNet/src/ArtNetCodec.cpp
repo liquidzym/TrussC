@@ -320,26 +320,30 @@ void encodePollReply(const ArtPollReply& reply, std::vector<uint8_t>& out) {
 }
 
 bool decodeDiagData(std::span<const uint8_t> bytes, ArtDiagData& diag, Error* error) {
-    if (bytes.size() < 15) {
+    if (bytes.size() < 18) {
         setError(error, ErrorCode::TruncatedPacket, "ArtDiagData packet is too short");
         return false;
     }
     diag.protocolVersion = readBe16(bytes, 10);
     if (!validateProtocol(diag.protocolVersion, error)) return false;
-    diag.priority = static_cast<DiagPriority>(bytes[12]);
-    const uint16_t length = readBe16(bytes, 13);
-    if (15 + length > bytes.size()) {
+    diag.priority = static_cast<DiagPriority>(bytes[13]);
+    diag.logicalPort = bytes[14];
+    const uint16_t length = readBe16(bytes, 16);
+    if (18 + length > bytes.size()) {
         setError(error, ErrorCode::TruncatedPacket, "ArtDiagData message is truncated");
         return false;
     }
-    diag.message.assign(reinterpret_cast<const char*>(bytes.data() + 15), length);
+    diag.message.assign(reinterpret_cast<const char*>(bytes.data() + 18), length);
     return true;
 }
 
 void encodeDiagData(const ArtDiagData& diag, std::vector<uint8_t>& out, Error* error) {
     appendHeader(out, OpCode::DiagData);
     appendProtocol(out, diag.protocolVersion);
+    out.push_back(0);
     out.push_back(static_cast<uint8_t>(diag.priority));
+    out.push_back(diag.logicalPort);
+    out.push_back(0);
     const size_t len = std::min<size_t>(diag.message.size(), 512);
     if (diag.message.size() > len) {
         setError(error, ErrorCode::InvalidLength, "diagnostic message truncated to 512 bytes");
@@ -374,7 +378,7 @@ void encodeCommand(const ArtCommand& command, std::vector<uint8_t>& out) {
 }
 
 bool decodeDataRequest(std::span<const uint8_t> bytes, ArtDataRequest& request, Error* error) {
-    if (bytes.size() < 17) {
+    if (bytes.size() < 18) {
         setError(error, ErrorCode::TruncatedPacket, "ArtDataRequest packet is too short");
         return false;
     }
@@ -382,7 +386,7 @@ bool decodeDataRequest(std::span<const uint8_t> bytes, ArtDataRequest& request, 
     if (!validateProtocol(request.protocolVersion, error)) return false;
     request.estaManufacturerCode = readBe16(bytes, 12);
     request.oemCode = readBe16(bytes, 14);
-    request.requestCode = bytes[16];
+    request.requestCode = readBe16(bytes, 16);
     return true;
 }
 
@@ -391,11 +395,12 @@ void encodeDataRequest(const ArtDataRequest& request, std::vector<uint8_t>& out)
     appendProtocol(out, request.protocolVersion);
     writeBe16(out, request.estaManufacturerCode);
     writeBe16(out, request.oemCode);
-    out.push_back(request.requestCode);
+    writeBe16(out, request.requestCode);
+    out.resize(out.size() + 22, 0);
 }
 
 bool decodeDataReply(std::span<const uint8_t> bytes, ArtDataReply& reply, Error* error) {
-    if (bytes.size() < 19) {
+    if (bytes.size() < 20) {
         setError(error, ErrorCode::TruncatedPacket, "ArtDataReply packet is too short");
         return false;
     }
@@ -403,13 +408,13 @@ bool decodeDataReply(std::span<const uint8_t> bytes, ArtDataReply& reply, Error*
     if (!validateProtocol(reply.protocolVersion, error)) return false;
     reply.estaManufacturerCode = readBe16(bytes, 12);
     reply.oemCode = readBe16(bytes, 14);
-    reply.requestCode = bytes[16];
-    const uint16_t length = readBe16(bytes, 17);
-    if (19 + length > bytes.size()) {
+    reply.requestCode = readBe16(bytes, 16);
+    const uint16_t length = readBe16(bytes, 18);
+    if (20 + length > bytes.size()) {
         setError(error, ErrorCode::TruncatedPacket, "ArtDataReply payload is truncated");
         return false;
     }
-    reply.data.assign(bytes.begin() + 19, bytes.begin() + 19 + length);
+    reply.data.assign(bytes.begin() + 20, bytes.begin() + 20 + length);
     return true;
 }
 
@@ -418,7 +423,7 @@ void encodeDataReply(const ArtDataReply& reply, std::vector<uint8_t>& out) {
     appendProtocol(out, reply.protocolVersion);
     writeBe16(out, reply.estaManufacturerCode);
     writeBe16(out, reply.oemCode);
-    out.push_back(reply.requestCode);
+    writeBe16(out, reply.requestCode);
     writeBe16(out, static_cast<uint16_t>(std::min<size_t>(reply.data.size(), 65535)));
     out.insert(out.end(), reply.data.begin(), reply.data.begin() + static_cast<std::ptrdiff_t>(std::min<size_t>(reply.data.size(), 65535)));
 }
@@ -455,51 +460,53 @@ void encodeAddress(const ArtAddress& address, std::vector<uint8_t>& out) {
 }
 
 bool decodeInput(std::span<const uint8_t> bytes, ArtInput& input, Error* error) {
-    if (bytes.size() < 18) {
+    if (bytes.size() < 20) {
         setError(error, ErrorCode::TruncatedPacket, "ArtInput packet is too short");
         return false;
     }
     input.protocolVersion = readBe16(bytes, 10);
     if (!validateProtocol(input.protocolVersion, error)) return false;
-    input.bindIndex = bytes[12];
-    input.numPorts = bytes[13];
-    std::copy(bytes.begin() + 14, bytes.begin() + 18, input.input.begin());
+    input.bindIndex = bytes[13];
+    input.numPorts = static_cast<uint8_t>(std::min<uint16_t>(readBe16(bytes, 14), 4));
+    std::copy(bytes.begin() + 16, bytes.begin() + 20, input.input.begin());
     return true;
 }
 
 void encodeInput(const ArtInput& input, std::vector<uint8_t>& out) {
     appendHeader(out, OpCode::Input);
     appendProtocol(out, input.protocolVersion);
+    out.push_back(0);
     out.push_back(input.bindIndex);
-    out.push_back(input.numPorts);
+    writeBe16(out, input.numPorts);
     out.insert(out.end(), input.input.begin(), input.input.end());
 }
 
 bool decodeTimeCode(std::span<const uint8_t> bytes, ArtTimeCode& timeCode, Error* error) {
-    if (bytes.size() < 18) {
+    if (bytes.size() < 19) {
         setError(error, ErrorCode::TruncatedPacket, "ArtTimeCode packet is too short");
         return false;
     }
     timeCode.protocolVersion = readBe16(bytes, 10);
     if (!validateProtocol(timeCode.protocolVersion, error)) return false;
-    timeCode.frames = bytes[12];
-    timeCode.seconds = bytes[13];
-    timeCode.minutes = bytes[14];
-    timeCode.hours = bytes[15];
-    timeCode.type = static_cast<TimeCodeType>(bytes[16]);
-    timeCode.streamId = bytes[17];
+    timeCode.streamId = bytes[13];
+    timeCode.frames = bytes[14];
+    timeCode.seconds = bytes[15];
+    timeCode.minutes = bytes[16];
+    timeCode.hours = bytes[17];
+    timeCode.type = static_cast<TimeCodeType>(bytes[18]);
     return true;
 }
 
 void encodeTimeCode(const ArtTimeCode& timeCode, std::vector<uint8_t>& out) {
     appendHeader(out, OpCode::TimeCode);
     appendProtocol(out, timeCode.protocolVersion);
+    out.push_back(0);
+    out.push_back(timeCode.streamId);
     out.push_back(timeCode.frames);
     out.push_back(timeCode.seconds);
     out.push_back(timeCode.minutes);
     out.push_back(timeCode.hours);
     out.push_back(static_cast<uint8_t>(timeCode.type));
-    out.push_back(timeCode.streamId);
 }
 
 bool decodeTimeSync(std::span<const uint8_t> bytes, ArtTimeSync& sync, Error* error) {
@@ -536,15 +543,11 @@ bool decodeTrigger(std::span<const uint8_t> bytes, ArtTrigger& trigger, Error* e
     }
     trigger.protocolVersion = readBe16(bytes, 10);
     if (!validateProtocol(trigger.protocolVersion, error)) return false;
-    trigger.oemCode = readBe16(bytes, 12);
-    trigger.key = bytes[14];
-    trigger.subKey = bytes[15];
-    const uint16_t length = readBe16(bytes, 16);
-    if (18 + length > bytes.size()) {
-        setError(error, ErrorCode::TruncatedPacket, "ArtTrigger payload is truncated");
-        return false;
-    }
-    trigger.payload.assign(bytes.begin() + 18, bytes.begin() + 18 + length);
+    trigger.oemCode = readBe16(bytes, 14);
+    trigger.key = bytes[16];
+    trigger.subKey = bytes[17];
+    const size_t length = std::min<size_t>(512, bytes.size() - 18);
+    trigger.payload.assign(bytes.begin() + 18, bytes.begin() + 18 + static_cast<std::ptrdiff_t>(length));
     return true;
 }
 
@@ -555,56 +558,71 @@ bool encodeTrigger(const ArtTrigger& trigger, std::vector<uint8_t>& out, Error* 
     }
     appendHeader(out, OpCode::Trigger);
     appendProtocol(out, trigger.protocolVersion);
+    out.push_back(0);
+    out.push_back(0);
     writeBe16(out, trigger.oemCode);
     out.push_back(trigger.key);
     out.push_back(trigger.subKey);
-    writeBe16(out, static_cast<uint16_t>(trigger.payload.size()));
     out.insert(out.end(), trigger.payload.begin(), trigger.payload.end());
+    out.resize(out.size() + (512 - trigger.payload.size()), 0);
     return true;
 }
 
 bool decodeIpProg(std::span<const uint8_t> bytes, ArtIpProg& ipProg, Error* error) {
-    if (bytes.size() < 25) {
+    if (bytes.size() < 34) {
         setError(error, ErrorCode::TruncatedPacket, "ArtIpProg packet is too short");
         return false;
     }
     ipProg.protocolVersion = readBe16(bytes, 10);
     if (!validateProtocol(ipProg.protocolVersion, error)) return false;
-    ipProg.command = bytes[12];
-    std::copy(bytes.begin() + 13, bytes.begin() + 17, ipProg.ip.begin());
-    std::copy(bytes.begin() + 17, bytes.begin() + 21, ipProg.subnetMask.begin());
-    std::copy(bytes.begin() + 21, bytes.begin() + 25, ipProg.defaultGateway.begin());
+    ipProg.command = bytes[14];
+    std::copy(bytes.begin() + 16, bytes.begin() + 20, ipProg.ip.begin());
+    std::copy(bytes.begin() + 20, bytes.begin() + 24, ipProg.subnetMask.begin());
+    ipProg.portAddress = readBe16(bytes, 24);
+    std::copy(bytes.begin() + 26, bytes.begin() + 30, ipProg.defaultGateway.begin());
     return true;
 }
 
 void encodeIpProg(const ArtIpProg& ipProg, std::vector<uint8_t>& out) {
     appendHeader(out, OpCode::IpProg);
     appendProtocol(out, ipProg.protocolVersion);
+    out.push_back(0);
+    out.push_back(0);
     out.push_back(ipProg.command);
+    out.push_back(0);
     out.insert(out.end(), ipProg.ip.begin(), ipProg.ip.end());
     out.insert(out.end(), ipProg.subnetMask.begin(), ipProg.subnetMask.end());
+    writeBe16(out, ipProg.portAddress);
     out.insert(out.end(), ipProg.defaultGateway.begin(), ipProg.defaultGateway.end());
+    out.resize(out.size() + 4, 0);
 }
 
 bool decodeIpProgReply(std::span<const uint8_t> bytes, ArtIpProgReply& reply, Error* error) {
-    if (bytes.size() < 24) {
+    if (bytes.size() < 34) {
         setError(error, ErrorCode::TruncatedPacket, "ArtIpProgReply packet is too short");
         return false;
     }
     reply.protocolVersion = readBe16(bytes, 10);
     if (!validateProtocol(reply.protocolVersion, error)) return false;
-    std::copy(bytes.begin() + 12, bytes.begin() + 16, reply.ip.begin());
-    std::copy(bytes.begin() + 16, bytes.begin() + 20, reply.subnetMask.begin());
-    std::copy(bytes.begin() + 20, bytes.begin() + 24, reply.defaultGateway.begin());
+    std::copy(bytes.begin() + 16, bytes.begin() + 20, reply.ip.begin());
+    std::copy(bytes.begin() + 20, bytes.begin() + 24, reply.subnetMask.begin());
+    reply.portAddress = readBe16(bytes, 24);
+    reply.status = bytes[26];
+    std::copy(bytes.begin() + 28, bytes.begin() + 32, reply.defaultGateway.begin());
     return true;
 }
 
 void encodeIpProgReply(const ArtIpProgReply& reply, std::vector<uint8_t>& out) {
     appendHeader(out, OpCode::IpProgReply);
     appendProtocol(out, reply.protocolVersion);
+    out.resize(out.size() + 4, 0);
     out.insert(out.end(), reply.ip.begin(), reply.ip.end());
     out.insert(out.end(), reply.subnetMask.begin(), reply.subnetMask.end());
+    writeBe16(out, reply.portAddress);
+    out.push_back(reply.status);
+    out.push_back(0);
     out.insert(out.end(), reply.defaultGateway.begin(), reply.defaultGateway.end());
+    out.resize(out.size() + 2, 0);
 }
 
 template <typename T>
@@ -709,7 +727,7 @@ bool Codec::decode(std::span<const uint8_t> bytes, Packet& outPacket, Error* err
             return true;
         }
         case OpCode::Sync: {
-            if (bytes.size() < 12) {
+            if (bytes.size() < 14) {
                 setError(error, ErrorCode::TruncatedPacket, "ArtSync packet is too short");
                 return false;
             }
@@ -837,6 +855,8 @@ bool Codec::encode(const Packet& packet, std::vector<uint8_t>& outBytes, Error* 
         } else if constexpr (std::is_same_v<T, ArtSync>) {
             appendHeader(outBytes, OpCode::Sync);
             appendProtocol(outBytes, value.protocolVersion);
+            outBytes.push_back(0);
+            outBytes.push_back(0);
             return true;
         } else if constexpr (std::is_same_v<T, ArtAddress>) {
             encodeAddress(value, outBytes);

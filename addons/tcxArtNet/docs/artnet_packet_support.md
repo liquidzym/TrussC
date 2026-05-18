@@ -4,7 +4,7 @@
 |---|---:|---|---|---|
 | ArtPoll | `0x2000` | Yes | Controller send, Node reply handling | Target fields supported |
 | ArtPollReply | `0x2100` | Yes | Controller discovery list, Node unicast reply | Decodes 207-byte minimum |
-| ArtDiagData | `0x2300` | Yes | Node diagnostics send | Priority stored |
+| ArtDiagData | `0x2300` | Yes | Node diagnostics send | Priority and logical port stored |
 | ArtCommand | `0x2400` | Yes | Codec/callback-ready | No device-specific command table |
 | ArtDataRequest | `0x2700` | Yes | Codec/callback-ready | No URL downloader |
 | ArtDataReply | `0x2800` | Yes | Codec/callback-ready | Raw data payload |
@@ -24,7 +24,7 @@
 | ArtMediaControlReply | `0x9300` | Yes | Codec only | No media-server business logic |
 | ArtTimeCode | `0x9700` | Yes | Controller send, Node callback | Stream ID supported |
 | ArtTimeSync | `0x9800` | Yes | Codec | Does not alter system time |
-| ArtTrigger | `0x9900` | Yes | Controller send, Node callback | Payload length checked |
+| ArtTrigger | `0x9900` | Yes | Controller send, Node callback | Fixed 512-byte wire payload |
 | ArtDirectory | `0x9a00` | Yes | Codec only | Raw payload |
 | ArtDirectoryReply | `0x9b00` | Yes | Codec only | Raw payload |
 | ArtVideoSetup | `0xa010` | Yes | Codec only | No video playback |
@@ -36,6 +36,6 @@
 | ArtFileFnMaster | `0xf500` | Yes | Codec only | No real transfer |
 | ArtFileFnReply | `0xf600` | Yes | Codec only | No real transfer |
 | ArtIpProg | `0xf800` | Yes | Controller send / virtual handling | Does not modify host IP |
-| ArtIpProgReply | `0xf900` | Yes | Codec | Virtual IP state only |
+| ArtIpProgReply | `0xf900` | Yes | Codec / virtual node reply | Virtual IP state only |
 
 ArtRdm, ArtRdmSub, sACN, and E1.31 are intentionally not implemented.

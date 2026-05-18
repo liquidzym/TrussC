@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <vector>
 
 namespace tcx::artnet {
 
@@ -27,6 +28,7 @@ bool sendEncoded(UdpSocket& socket, const Endpoint& endpoint, const Packet& pack
 bool Controller::setup(const ControllerSettings& settings, Error* error) {
     close();
     settings_ = settings;
+    lastPoll_ = {};
     if (!socket_.open(error)) return false;
     if (!socket_.setReuseAddress(true, error)) return false;
     if (!socket_.setBroadcast(settings.enableBroadcast, error)) return false;
@@ -54,8 +56,15 @@ bool Controller::pollNodes(Error* error) {
 
 void Controller::update() {
     Error error;
+    const auto now = std::chrono::steady_clock::now();
+    if (settings_.autoPoll &&
+        (lastPoll_ == std::chrono::steady_clock::time_point {} || now - lastPoll_ >= settings_.pollInterval)) {
+        pollNodes(&error);
+        lastPoll_ = now;
+    }
     while (receiveOne(&error)) {
     }
+    pruneExpiredNodes(std::chrono::steady_clock::now());
 }
 
 std::vector<NodeInfo> Controller::getDiscoveredNodes() const {
@@ -121,7 +130,7 @@ bool Controller::sendTimeCode(const Endpoint& endpoint, const ArtTimeCode& timec
 }
 
 bool Controller::receiveOne(Error* error) {
-    std::array<uint8_t, 1024> buffer {};
+    std::vector<uint8_t> buffer(65535);
     size_t bytesReceived = 0;
     Endpoint sender;
     Error receiveError;
@@ -153,7 +162,9 @@ void Controller::handlePacket(const Packet& packet, const Endpoint& sender) {
         statistics_.pollRepliesReceived++;
         std::lock_guard<std::mutex> lock(nodesMutex_);
         auto existing = std::find_if(nodes_.begin(), nodes_.end(), [&](const NodeInfo& info) {
-            return info.endpoint.ip == sender.ip && info.endpoint.port == sender.port;
+            return info.endpoint.ip == sender.ip &&
+                   info.endpoint.port == sender.port &&
+                   info.reply.bindIndex == reply->bindIndex;
         });
         if (existing == nodes_.end()) {
             nodes_.push_back(NodeInfo { sender, *reply, std::chrono::steady_clock::now() });
@@ -162,6 +173,19 @@ void Controller::handlePacket(const Packet& packet, const Endpoint& sender) {
             existing->lastSeen = std::chrono::steady_clock::now();
         }
     }
+}
+
+void Controller::pruneExpiredNodes(std::chrono::steady_clock::time_point now) {
+    if (settings_.pollTimeout <= std::chrono::milliseconds::zero()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(nodesMutex_);
+    nodes_.erase(
+        std::remove_if(nodes_.begin(), nodes_.end(), [&](const NodeInfo& info) {
+            return now - info.lastSeen > settings_.pollTimeout;
+        }),
+        nodes_.end()
+    );
 }
 
 } // namespace tcx::artnet

@@ -13,3 +13,5 @@ Useful checks:
 - Protocol version bytes are `00 0e`.
 - ArtDmx length is big-endian and must match the payload bytes.
 - Port-address is little-endian at the ArtDmx universe field.
+- `PacketInspector::bytesToHex()` prints the same byte order used on the wire.
+- Non-DMX packets such as ArtInput, ArtTimeCode, ArtTrigger, ArtDiagData, and ArtIpProg include fixed filler bytes; compare against the official Art-Net packet definition instead of round-trip output only.

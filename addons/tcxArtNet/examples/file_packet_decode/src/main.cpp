@@ -10,6 +10,7 @@ int main() {
     tcx::artnet::Error error;
     tcx::artnet::Codec::encode(tcx::artnet::Packet { file }, bytes, &error);
     tcx::artnet::Codec::decode(bytes, decodedPacket, &error);
-    std::cout << "decoded ArtFileFnReply payload bytes: " << std::get<tcx::artnet::ArtFileFnReply>(decodedPacket).payload.size() << "\n";
+    std::cout << tcx::artnet::PacketInspector::summarize(decodedPacket)
+              << " payload bytes: " << std::get<tcx::artnet::ArtFileFnReply>(decodedPacket).payload.size() << "\n";
     return 0;
 }

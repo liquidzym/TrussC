@@ -2,6 +2,7 @@
 
 #include <array>
 #include <chrono>
+#include <vector>
 
 namespace tcx::artnet {
 
@@ -68,7 +69,7 @@ void Receiver::threadLoop() {
 }
 
 bool Receiver::receiveOne(Error* error) {
-    std::array<uint8_t, 1024> buffer {};
+    std::vector<uint8_t> buffer(65535);
     size_t bytesReceived = 0;
     Endpoint sender;
     Error receiveError;

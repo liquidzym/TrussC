@@ -1,6 +1,8 @@
 #include "tcx/artnet/ArtNetTypes.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 
 namespace tcx::artnet {
 
@@ -56,7 +58,39 @@ size_t channelCount(PixelFormat format) {
     return 3;
 }
 
-void appendPixel(std::vector<uint8_t>& out, std::span<const uint8_t> pixel, PixelFormat format) {
+uint8_t applyLevel(uint8_t value, const PixelToDmxOptions& options) {
+    const float brightness = std::clamp(options.brightness, 0.0f, 1.0f);
+    const float gamma = options.gamma > 0.0f ? options.gamma : 1.0f;
+    const float normalized = static_cast<float>(value) / 255.0f;
+    const float corrected = std::pow(normalized, gamma) * brightness;
+    return static_cast<uint8_t>(std::clamp(std::lround(corrected * 255.0f), 0L, 255L));
+}
+
+std::array<uint8_t, 4> normalizedPixel(std::span<const uint8_t> pixel, PixelFormat format, const PixelToDmxOptions& options) {
+    std::array<uint8_t, 4> values {};
+    for (size_t i = 0; i < pixel.size() && i < values.size(); ++i) {
+        values[i] = pixel[i];
+    }
+
+    if (options.extractWhite && (format == PixelFormat::RGBW || format == PixelFormat::GRBW)) {
+        const size_t rIndex = format == PixelFormat::GRBW ? 1 : 0;
+        const size_t gIndex = format == PixelFormat::GRBW ? 0 : 1;
+        const size_t bIndex = 2;
+        const size_t wIndex = 3;
+        const uint8_t white = std::min({ values[rIndex], values[gIndex], values[bIndex] });
+        values[rIndex] = static_cast<uint8_t>(values[rIndex] - white);
+        values[gIndex] = static_cast<uint8_t>(values[gIndex] - white);
+        values[bIndex] = static_cast<uint8_t>(values[bIndex] - white);
+        values[wIndex] = static_cast<uint8_t>(std::min<int>(255, values[wIndex] + white));
+    }
+
+    for (auto& value : values) {
+        value = applyLevel(value, options);
+    }
+    return values;
+}
+
+void appendPixel(std::vector<uint8_t>& out, const std::array<uint8_t, 4>& pixel, PixelFormat format) {
     switch (format) {
         case PixelFormat::RGB:
             out.insert(out.end(), { pixel[0], pixel[1], pixel[2] });
@@ -125,7 +159,7 @@ bool PixelMapper::splitPixelsToUniverses(
     std::vector<uint8_t> stream;
     stream.reserve(pixels.size());
     for (size_t offset = 0; offset < pixels.size(); offset += pixelChannels) {
-        appendPixel(stream, pixels.subspan(offset, pixelChannels), options.format);
+        appendPixel(stream, normalizedPixel(pixels.subspan(offset, pixelChannels), options.format, options), options.format);
     }
 
     UniverseAddress universe = firstUniverse;

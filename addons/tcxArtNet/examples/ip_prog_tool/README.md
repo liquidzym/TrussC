@@ -5,7 +5,7 @@ Builds an ArtIpProg packet without changing the host machine IP.
 Expected output:
 
 ```text
-encoded ArtIpProg for 10.0.0.50
+encoded ArtIpProg for 10.0.0.50: 41 72 74 2d ...
 ```
 
 Network setup note: hardware IP programming should only be enabled by an application-level explicit user action.

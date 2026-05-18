@@ -5,6 +5,7 @@
 int main() {
     tcx::artnet::ArtDiagData diag;
     diag.priority = tcx::artnet::DiagPriority::High;
+    diag.logicalPort = 1;
     diag.message = "lamp online";
     std::vector<uint8_t> bytes;
     tcx::artnet::Packet packet { diag };
@@ -13,6 +14,8 @@ int main() {
     tcx::artnet::Codec::encode(packet, bytes, &error);
     tcx::artnet::Codec::decode(bytes, decodedPacket, &error);
     const auto& decoded = std::get<tcx::artnet::ArtDiagData>(decodedPacket);
-    std::cout << "diag priority " << static_cast<int>(decoded.priority) << ": " << decoded.message << "\n";
+    std::cout << "diag port " << static_cast<int>(decoded.logicalPort)
+              << " priority " << static_cast<int>(decoded.priority)
+              << ": " << decoded.message << "\n";
     return 0;
 }

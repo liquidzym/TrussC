@@ -1,5 +1,7 @@
 #include "test_common.h"
 
+#include <algorithm>
+
 void test_art_trigger() {
     using namespace tcx::artnet;
     ArtTrigger trigger;
@@ -10,7 +12,8 @@ void test_art_trigger() {
     auto decoded = roundTrip(trigger);
     require(decoded.oemCode == 0x1234, "ArtTrigger OEM survives round trip");
     require(decoded.key == 5 && decoded.subKey == 6, "ArtTrigger key fields survive round trip");
-    require(decoded.payload == trigger.payload, "ArtTrigger payload survives round trip");
+    require(decoded.payload.size() == 512, "ArtTrigger decodes the fixed 512-byte payload");
+    require(std::equal(trigger.payload.begin(), trigger.payload.end(), decoded.payload.begin()), "ArtTrigger payload prefix survives round trip");
 
     Error error;
     std::vector<uint8_t> bytes;

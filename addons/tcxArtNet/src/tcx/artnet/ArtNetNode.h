@@ -11,6 +11,10 @@ struct NodeSettings {
     std::string shortName = "tcxArtNet";
     std::string longName = "TrussC tcxArtNet Node";
     std::string manufacturer = "TrussC";
+    std::string ipAddress = "0.0.0.0";
+    std::string bindIpAddress = "0.0.0.0";
+    std::array<uint8_t, 4> subnetMask {};
+    std::array<uint8_t, 4> defaultGateway {};
     uint16_t oemCode = 0x0000;
     uint16_t estaManufacturerCode = 0x0000;
     uint16_t port = DefaultPort;
@@ -22,6 +26,7 @@ struct NodeSettings {
     bool enableArtAddress = true;
     bool enableArtInput = true;
     bool enableArtSync = true;
+    bool enableIpProg = false;
 };
 
 class Node {
@@ -35,6 +40,7 @@ public:
     void setNzsCallback(std::function<void(const ArtNzs&)> callback);
     void setSyncCallback(std::function<void(const ArtSync&)> callback);
     void setAddressCallback(std::function<void(const ArtAddress&)> callback);
+    void setInputCallback(std::function<void(const ArtInput&)> callback);
     void setTriggerCallback(std::function<void(const ArtTrigger&)> callback);
     void setTimeCodeCallback(std::function<void(const ArtTimeCode&)> callback);
 
@@ -56,6 +62,7 @@ private:
     std::function<void(const ArtNzs&)> nzsCallback_;
     std::function<void(const ArtSync&)> syncCallback_;
     std::function<void(const ArtAddress&)> addressCallback_;
+    std::function<void(const ArtInput&)> inputCallback_;
     std::function<void(const ArtTrigger&)> triggerCallback_;
     std::function<void(const ArtTimeCode&)> timeCodeCallback_;
 };

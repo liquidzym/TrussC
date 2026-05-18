@@ -17,6 +17,9 @@ int main() {
         test_art_diag_data();
         test_art_command_data();
         test_packet_validation();
+        test_protocol_fixtures();
+        test_node_controller_runtime();
+        test_feature_extensions();
         test_universe_address();
         test_pixel_mapper();
         test_public_include();

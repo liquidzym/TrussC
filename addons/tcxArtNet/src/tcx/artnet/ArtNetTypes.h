@@ -137,6 +137,7 @@ struct ArtPollReply {
 struct ArtDiagData {
     uint16_t protocolVersion = ProtocolVersion;
     DiagPriority priority = DiagPriority::Low;
+    uint8_t logicalPort = 0;
     std::string message;
 };
 
@@ -150,14 +151,14 @@ struct ArtDataRequest {
     uint16_t protocolVersion = ProtocolVersion;
     uint16_t estaManufacturerCode = 0;
     uint16_t oemCode = 0;
-    uint8_t requestCode = 0;
+    uint16_t requestCode = 0;
 };
 
 struct ArtDataReply {
     uint16_t protocolVersion = ProtocolVersion;
     uint16_t estaManufacturerCode = 0;
     uint16_t oemCode = 0;
-    uint8_t requestCode = 0;
+    uint16_t requestCode = 0;
     std::vector<uint8_t> data;
 };
 
@@ -320,6 +321,7 @@ struct ArtIpProg {
     uint8_t command = 0;
     std::array<uint8_t, 4> ip {};
     std::array<uint8_t, 4> subnetMask {};
+    uint16_t portAddress = 0;
     std::array<uint8_t, 4> defaultGateway {};
 };
 
@@ -327,6 +329,8 @@ struct ArtIpProgReply {
     uint16_t protocolVersion = ProtocolVersion;
     std::array<uint8_t, 4> ip {};
     std::array<uint8_t, 4> subnetMask {};
+    uint16_t portAddress = 0;
+    uint8_t status = 0;
     std::array<uint8_t, 4> defaultGateway {};
 };
 
@@ -366,6 +370,9 @@ struct PixelToDmxOptions {
     size_t channelsPerUniverse = 510;
     bool useArtSync = true;
     bool strict = true;
+    float brightness = 1.0f;
+    float gamma = 1.0f;
+    bool extractWhite = false;
 };
 
 class PixelMapper {

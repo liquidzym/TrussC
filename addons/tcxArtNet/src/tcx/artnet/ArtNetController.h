@@ -13,6 +13,7 @@ struct ControllerSettings {
     std::string directedBroadcastIp = "2.255.255.255";
     std::chrono::milliseconds pollInterval { 2500 };
     std::chrono::milliseconds pollTimeout { 3000 };
+    bool autoPoll = false;
     bool enableDiagnostics = false;
     bool enableTargetedPoll = false;
     uint16_t targetPortAddressBottom = 1;
@@ -48,12 +49,14 @@ public:
 private:
     bool receiveOne(Error* error);
     void handlePacket(const Packet& packet, const Endpoint& sender);
+    void pruneExpiredNodes(std::chrono::steady_clock::time_point now);
 
     ControllerSettings settings_;
     UdpSocket socket_;
     mutable std::mutex nodesMutex_;
     std::vector<NodeInfo> nodes_;
     Statistics statistics_;
+    std::chrono::steady_clock::time_point lastPoll_ {};
 };
 
 } // namespace tcx::artnet

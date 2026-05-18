@@ -7,6 +7,8 @@
 #include "ArtNetDiagnostics.h"
 #include "ArtNetDiscovery.h"
 #include "ArtNetDmx.h"
+#include "ArtNetDmxRuntime.h"
+#include "ArtNetDebug.h"
 #include "ArtNetFileTransfer.h"
 #include "ArtNetFirmware.h"
 #include "ArtNetInput.h"
