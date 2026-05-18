@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <span>
+#include <string>
 
 namespace tcx::artnet {
 
@@ -19,6 +20,7 @@ public:
 
     bool open(Error* error = nullptr);
     bool bind(uint16_t port, Error* error = nullptr);
+    bool bind(const std::string& localIp, uint16_t port, Error* error = nullptr);
     bool close();
 
     bool setNonBlocking(bool enabled, Error* error = nullptr);

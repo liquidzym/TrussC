@@ -130,13 +130,22 @@ bool UdpSocket::open(Error* error) {
 }
 
 bool UdpSocket::bind(uint16_t port, Error* error) {
+    return bind("", port, error);
+}
+
+bool UdpSocket::bind(const std::string& localIp, uint16_t port, Error* error) {
     if (!open(error)) {
         return false;
     }
     sockaddr_in address {};
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_ANY);
     address.sin_port = htons(port);
+    if (localIp.empty() || localIp == "0.0.0.0") {
+        address.sin_addr.s_addr = htonl(INADDR_ANY);
+    } else if (inet_pton(AF_INET, localIp.c_str(), &address.sin_addr) != 1) {
+        setError(error, ErrorCode::InvalidAddress, "invalid local bind IPv4 endpoint: " + localIp);
+        return false;
+    }
     if (::bind(impl_->handle, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
         setError(error, ErrorCode::BindFailed, socketErrorMessage());
         return false;

@@ -9,6 +9,7 @@ namespace tcx::artnet {
 
 struct ControllerSettings {
     uint16_t localPort = DefaultPort;
+    std::string localBindIp = "0.0.0.0";
     bool enableBroadcast = true;
     std::string directedBroadcastIp = "2.255.255.255";
     std::chrono::milliseconds pollInterval { 2500 };

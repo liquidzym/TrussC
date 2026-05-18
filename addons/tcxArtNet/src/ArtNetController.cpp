@@ -32,7 +32,7 @@ bool Controller::setup(const ControllerSettings& settings, Error* error) {
     if (!socket_.open(error)) return false;
     if (!socket_.setReuseAddress(true, error)) return false;
     if (!socket_.setBroadcast(settings.enableBroadcast, error)) return false;
-    if (!socket_.bind(settings.localPort, error)) return false;
+    if (!socket_.bind(settings.localBindIp, settings.localPort, error)) return false;
     if (!socket_.setNonBlocking(true, error)) return false;
     return true;
 }
