@@ -118,6 +118,9 @@ addons/*
 !addons/tcxCV
 !addons/tcxFlowTools
 !addons/tcxTraerPhysics
+!addons/tcxArtNet
+addons/tcxArtNet/ref/
+addons/tcxArtNet/tcxArtNet_addon_task_spec.md
 
 # =============================================================================
 # trusscli / Project Generator (built binary + build artifacts in tools/)

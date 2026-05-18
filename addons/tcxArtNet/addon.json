@@ -1,0 +1,14 @@
+{
+  "description": "Art-Net 4 protocol codec, UDP transport, controller, node, and LED pixel helpers for TrussC",
+  "author": "TrussC community / generated implementation",
+  "license": "MIT",
+  "category": "network",
+  "keywords": [
+    "artnet",
+    "art-net",
+    "dmx",
+    "lighting",
+    "led",
+    "network"
+  ]
+}
