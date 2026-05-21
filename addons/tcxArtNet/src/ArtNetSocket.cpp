@@ -99,7 +99,51 @@ bool fillAddress(const Endpoint& endpoint, sockaddr_in& address, Error* error) {
 struct UdpSocket::Impl {
     SocketHandle handle = InvalidSocket;
     bool nonBlocking = false;
+    bool reuseAddress = false;
+    bool broadcast = false;
+    std::string requestedBindIp = "0.0.0.0";
+    uint16_t requestedBindPort = 0;
+    Endpoint actualLocalEndpoint;
+    Error lastError;
 };
+
+namespace {
+
+void recordError(Error& lastError, Error* error, ErrorCode code, const std::string& message) {
+    lastError = Error { code, message };
+    setError(error, code, message);
+}
+
+void clearError(Error& lastError) {
+    lastError = {};
+}
+
+Endpoint queryLocalEndpoint(SocketHandle handle) {
+    Endpoint endpoint;
+    if (handle == InvalidSocket) {
+        return endpoint;
+    }
+
+    sockaddr_in local {};
+#if defined(_WIN32)
+    int localSize = sizeof(local);
+#else
+    socklen_t localSize = sizeof(local);
+#endif
+    if (getsockname(handle, reinterpret_cast<sockaddr*>(&local), &localSize) != 0) {
+        return endpoint;
+    }
+
+    std::array<char, INET_ADDRSTRLEN> ipBuffer {};
+    if (!inet_ntop(AF_INET, &local.sin_addr, ipBuffer.data(), static_cast<socklen_t>(ipBuffer.size()))) {
+        return endpoint;
+    }
+    endpoint.ip = ipBuffer.data();
+    endpoint.port = ntohs(local.sin_port);
+    return endpoint;
+}
+
+} // namespace
 
 UdpSocket::UdpSocket()
     : impl_(std::make_unique<Impl>()) {}
@@ -114,7 +158,7 @@ UdpSocket& UdpSocket::operator=(UdpSocket&&) noexcept = default;
 bool UdpSocket::open(Error* error) {
 #if defined(_WIN32)
     if (!winsockRuntime().ok()) {
-        setError(error, ErrorCode::SocketError, "WSAStartup failed");
+        recordError(impl_->lastError, error, ErrorCode::SocketError, "WSAStartup failed");
         return false;
     }
 #endif
@@ -123,9 +167,10 @@ bool UdpSocket::open(Error* error) {
     }
     impl_->handle = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (impl_->handle == InvalidSocket) {
-        setError(error, ErrorCode::SocketError, socketErrorMessage());
+        recordError(impl_->lastError, error, ErrorCode::SocketError, socketErrorMessage());
         return false;
     }
+    clearError(impl_->lastError);
     return true;
 }
 
@@ -143,13 +188,17 @@ bool UdpSocket::bind(const std::string& localIp, uint16_t port, Error* error) {
     if (localIp.empty() || localIp == "0.0.0.0") {
         address.sin_addr.s_addr = htonl(INADDR_ANY);
     } else if (inet_pton(AF_INET, localIp.c_str(), &address.sin_addr) != 1) {
-        setError(error, ErrorCode::InvalidAddress, "invalid local bind IPv4 endpoint: " + localIp);
+        recordError(impl_->lastError, error, ErrorCode::InvalidAddress, "invalid local bind IPv4 endpoint: " + localIp);
         return false;
     }
     if (::bind(impl_->handle, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
-        setError(error, ErrorCode::BindFailed, socketErrorMessage());
+        recordError(impl_->lastError, error, ErrorCode::BindFailed, socketErrorMessage());
         return false;
     }
+    impl_->requestedBindIp = (localIp.empty() || localIp == "0.0.0.0") ? "0.0.0.0" : localIp;
+    impl_->requestedBindPort = port;
+    impl_->actualLocalEndpoint = queryLocalEndpoint(impl_->handle);
+    clearError(impl_->lastError);
     return true;
 }
 
@@ -160,6 +209,7 @@ bool UdpSocket::close() {
     closeNative(impl_->handle);
     impl_->handle = InvalidSocket;
     impl_->nonBlocking = false;
+    impl_->actualLocalEndpoint = {};
     return true;
 }
 
@@ -170,22 +220,23 @@ bool UdpSocket::setNonBlocking(bool enabled, Error* error) {
 #if defined(_WIN32)
     u_long mode = enabled ? 1UL : 0UL;
     if (ioctlsocket(impl_->handle, FIONBIO, &mode) != 0) {
-        setError(error, ErrorCode::SocketError, socketErrorMessage());
+        recordError(impl_->lastError, error, ErrorCode::SocketError, socketErrorMessage());
         return false;
     }
 #else
     const int flags = fcntl(impl_->handle, F_GETFL, 0);
     if (flags < 0) {
-        setError(error, ErrorCode::SocketError, socketErrorMessage());
+        recordError(impl_->lastError, error, ErrorCode::SocketError, socketErrorMessage());
         return false;
     }
     const int nextFlags = enabled ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
     if (fcntl(impl_->handle, F_SETFL, nextFlags) != 0) {
-        setError(error, ErrorCode::SocketError, socketErrorMessage());
+        recordError(impl_->lastError, error, ErrorCode::SocketError, socketErrorMessage());
         return false;
     }
 #endif
     impl_->nonBlocking = enabled;
+    clearError(impl_->lastError);
     return true;
 }
 
@@ -195,9 +246,11 @@ bool UdpSocket::setReuseAddress(bool enabled, Error* error) {
     }
     int value = enabled ? 1 : 0;
     if (setsockopt(impl_->handle, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&value), sizeof(value)) != 0) {
-        setError(error, ErrorCode::SocketError, socketErrorMessage());
+        recordError(impl_->lastError, error, ErrorCode::SocketError, socketErrorMessage());
         return false;
     }
+    impl_->reuseAddress = enabled;
+    clearError(impl_->lastError);
     return true;
 }
 
@@ -207,9 +260,11 @@ bool UdpSocket::setBroadcast(bool enabled, Error* error) {
     }
     int value = enabled ? 1 : 0;
     if (setsockopt(impl_->handle, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&value), sizeof(value)) != 0) {
-        setError(error, ErrorCode::SocketError, socketErrorMessage());
+        recordError(impl_->lastError, error, ErrorCode::SocketError, socketErrorMessage());
         return false;
     }
+    impl_->broadcast = enabled;
+    clearError(impl_->lastError);
     return true;
 }
 
@@ -218,7 +273,9 @@ bool UdpSocket::sendTo(std::span<const uint8_t> data, const Endpoint& endpoint, 
         return false;
     }
     sockaddr_in address {};
-    if (!fillAddress(endpoint, address, error)) {
+    Error addressError;
+    if (!fillAddress(endpoint, address, &addressError)) {
+        recordError(impl_->lastError, error, addressError.code, addressError.message);
         return false;
     }
     const int sent = ::sendto(
@@ -230,16 +287,18 @@ bool UdpSocket::sendTo(std::span<const uint8_t> data, const Endpoint& endpoint, 
         sizeof(address)
     );
     if (sent < 0 || static_cast<size_t>(sent) != data.size()) {
-        setError(error, ErrorCode::SendFailed, socketErrorMessage());
+        recordError(impl_->lastError, error, ErrorCode::SendFailed, socketErrorMessage());
         return false;
     }
+    impl_->actualLocalEndpoint = queryLocalEndpoint(impl_->handle);
+    clearError(impl_->lastError);
     return true;
 }
 
 bool UdpSocket::receiveFrom(std::span<uint8_t> buffer, size_t& bytesReceived, Endpoint& sender, Error* error) {
     bytesReceived = 0;
     if (!isOpen()) {
-        setError(error, ErrorCode::NotOpen, "UDP socket is not open");
+        recordError(impl_->lastError, error, ErrorCode::NotOpen, "UDP socket is not open");
         return false;
     }
     sockaddr_in remote {};
@@ -260,7 +319,7 @@ bool UdpSocket::receiveFrom(std::span<uint8_t> buffer, size_t& bytesReceived, En
         if (wouldBlock()) {
             setError(error, ErrorCode::None, "no UDP packet available");
         } else {
-            setError(error, ErrorCode::ReceiveFailed, socketErrorMessage());
+            recordError(impl_->lastError, error, ErrorCode::ReceiveFailed, socketErrorMessage());
         }
         return false;
     }
@@ -275,6 +334,22 @@ bool UdpSocket::receiveFrom(std::span<uint8_t> buffer, size_t& bytesReceived, En
 
 bool UdpSocket::isOpen() const noexcept {
     return impl_ && impl_->handle != InvalidSocket;
+}
+
+SocketDiagnostics UdpSocket::diagnostics() const {
+    SocketDiagnostics diagnostics;
+    if (!impl_) {
+        return diagnostics;
+    }
+    diagnostics.open = isOpen();
+    diagnostics.reuseAddress = impl_->reuseAddress;
+    diagnostics.broadcast = impl_->broadcast;
+    diagnostics.nonBlocking = impl_->nonBlocking;
+    diagnostics.requestedBindIp = impl_->requestedBindIp;
+    diagnostics.requestedBindPort = impl_->requestedBindPort;
+    diagnostics.actualLocalEndpoint = diagnostics.open ? queryLocalEndpoint(impl_->handle) : impl_->actualLocalEndpoint;
+    diagnostics.lastError = impl_->lastError;
+    return diagnostics;
 }
 
 } // namespace tcx::artnet

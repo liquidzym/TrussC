@@ -13,10 +13,17 @@ Receiver::~Receiver() {
 }
 
 bool Receiver::setup(uint16_t port, Error* error) {
+    ReceiverSettings settings;
+    settings.port = port;
+    return setup(settings, error);
+}
+
+bool Receiver::setup(const ReceiverSettings& settings, Error* error) {
     close();
+    settings_ = settings;
     if (!socket_.open(error)) return false;
     if (!socket_.setReuseAddress(true, error)) return false;
-    if (!socket_.bind(port, error)) return false;
+    if (!socket_.bind(settings.localBindIp, settings.port, error)) return false;
     if (!socket_.setNonBlocking(true, error)) return false;
     return true;
 }

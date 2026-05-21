@@ -3,13 +3,24 @@
 namespace tcx::artnet {
 
 bool Sender::setup(bool enableBroadcast, Error* error) {
+    SenderSettings settings;
+    settings.enableBroadcast = enableBroadcast;
+    return setup(settings, error);
+}
+
+bool Sender::setup(const SenderSettings& settings, Error* error) {
+    settings_ = settings;
+    socket_.close();
     if (!socket_.open(error)) {
         return false;
     }
     if (!socket_.setReuseAddress(true, error)) {
         return false;
     }
-    if (!socket_.setBroadcast(enableBroadcast, error)) {
+    if (!socket_.setBroadcast(settings.enableBroadcast, error)) {
+        return false;
+    }
+    if (!socket_.bind(settings.localBindIp, settings.localPort, error)) {
         return false;
     }
     return true;
@@ -20,7 +31,7 @@ void Sender::close() {
 }
 
 bool Sender::sendPacket(const Endpoint& endpoint, const Packet& packet, Error* error) {
-    if (!socket_.isOpen() && !setup(false, error)) {
+    if (!socket_.isOpen() && !setup(settings_, error)) {
         return false;
     }
     std::vector<uint8_t> bytes;

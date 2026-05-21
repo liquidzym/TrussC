@@ -25,6 +25,7 @@ class Controller {
 public:
     bool setup(const ControllerSettings& settings, Error* error = nullptr);
     void close();
+    bool recover(Error* error = nullptr);
 
     bool pollNodes(Error* error = nullptr);
     void update();
@@ -45,6 +46,7 @@ public:
     bool sendTimeCode(const Endpoint& endpoint, const ArtTimeCode& timecode, Error* error = nullptr);
 
     [[nodiscard]] const Statistics& statistics() const noexcept { return statistics_; }
+    [[nodiscard]] ControllerNetworkDiagnostics networkDiagnostics() const;
     void resetStatistics() noexcept { statistics_ = {}; }
 
 private:
@@ -54,6 +56,7 @@ private:
 
     ControllerSettings settings_;
     UdpSocket socket_;
+    ControllerNetworkDiagnostics diagnostics_;
     mutable std::mutex nodesMutex_;
     std::vector<NodeInfo> nodes_;
     Statistics statistics_;

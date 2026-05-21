@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
-#include <sstream>
 #include <string_view>
 #include <vector>
 
@@ -24,41 +22,6 @@ bool sendPacket(UdpSocket& socket, const Endpoint& endpoint, const Packet& packe
         statistics.dmxFramesSent++;
     }
     return true;
-}
-
-std::array<uint8_t, 4> parseIpv4(std::string_view ip) {
-    std::array<uint8_t, 4> out {};
-    size_t offset = 0;
-    for (size_t i = 0; i < out.size(); ++i) {
-        const size_t dot = ip.find('.', offset);
-        const size_t end = dot == std::string_view::npos ? ip.size() : dot;
-        unsigned int value = 0;
-        const auto* first = ip.data() + offset;
-        const auto* last = ip.data() + end;
-        const auto result = std::from_chars(first, last, value);
-        if (result.ec != std::errc {} || result.ptr != last || value > 255) {
-            return {};
-        }
-        out[i] = static_cast<uint8_t>(value);
-        if (i < out.size() - 1) {
-            if (dot == std::string_view::npos) {
-                return {};
-            }
-            offset = dot + 1;
-        } else if (dot != std::string_view::npos) {
-            return {};
-        }
-    }
-    return out;
-}
-
-std::string ipv4ToString(const std::array<uint8_t, 4>& ip) {
-    std::ostringstream out;
-    out << static_cast<int>(ip[0]) << '.'
-        << static_cast<int>(ip[1]) << '.'
-        << static_cast<int>(ip[2]) << '.'
-        << static_cast<int>(ip[3]);
-    return out.str();
 }
 
 } // namespace
@@ -176,7 +139,7 @@ void Node::handlePacket(const Packet& packet, const Endpoint& sender) {
         if (settings_.enableArtInput && inputCallback_) inputCallback_(*input);
     } else if (const auto* ipProg = std::get_if<ArtIpProg>(&packet)) {
         if (settings_.enableIpProg) {
-            settings_.ipAddress = ipv4ToString(ipProg->ip);
+            settings_.ipAddress = ipv4AddressToString(ipProg->ip);
             settings_.bindIpAddress = settings_.ipAddress;
             settings_.subnetMask = ipProg->subnetMask;
             settings_.defaultGateway = ipProg->defaultGateway;
@@ -195,8 +158,8 @@ void Node::handlePacket(const Packet& packet, const Endpoint& sender) {
 ArtPollReply Node::makePollReply() const {
     ArtPollReply reply;
     reply.port = settings_.port;
-    reply.ipAddress = parseIpv4(settings_.ipAddress);
-    reply.bindIp = parseIpv4(settings_.bindIpAddress);
+    parseIpv4Address(settings_.ipAddress, reply.ipAddress);
+    parseIpv4Address(settings_.bindIpAddress, reply.bindIp);
     reply.shortName = settings_.shortName;
     reply.longName = settings_.longName;
     reply.nodeReport = "#0001 [0000] tcxArtNet ready";

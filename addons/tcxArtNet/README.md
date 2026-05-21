@@ -48,6 +48,10 @@ while (running) {
 ## Runtime Helpers
 
 - `Controller` can auto-poll and prune stale discovered nodes using `ControllerSettings::autoPoll`, `pollInterval`, and `pollTimeout`.
+- `Controller::networkDiagnostics()` reports the requested bind IP/port, actual local endpoint, last target endpoint, recent socket error, and recovery state. `Controller::recover()` rebuilds the socket from the last `ControllerSettings`.
+- `UdpSocket::diagnostics()` reports actual bind results after binding to a specific local interface or an ephemeral port.
+- `makeDirectedBroadcastIp()` and `makeDirectedBroadcastEndpoint()` construct subnet-aware broadcast targets without app-side `/24` string guessing.
+- `probeUdpOutput()` provides a reusable startup/site probe for checking whether a bind IP can send UDP to an Art-Net target.
 - `Node` can advertise configured IP/bind IP information, apply virtual `ArtAddress` name updates, and answer virtual `ArtIpProg` packets without changing the host network interface.
 - `DmxReceiverState` stores per-universe DMX frames, rejects duplicate non-zero sequences, and can buffer frames until `ArtSync`.
 - `PixelMapper` supports brightness, gamma, and RGBW/GRBW white extraction.
@@ -55,7 +59,7 @@ while (running) {
 
 ## Examples
 
-The `examples/` directory contains sender, receiver, discovery, node emulation, ArtSync, pixel mapping, address/input control, timecode, trigger, diagnostics, IP programming, packet inspection, and codec inspection examples. Each example README includes expected output, a network setup note, and the Wireshark filter `udp.port == 6454`.
+The `examples/` directory contains sender, receiver, discovery, node emulation, ArtSync, pixel mapping, address/input control, timecode, trigger, diagnostics, IP programming, packet inspection, codec inspection, and CLI site-probe tools. Each example README includes expected output, a network setup note, and the Wireshark filter `udp.port == 6454`.
 
 ## Tests
 

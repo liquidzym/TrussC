@@ -24,6 +24,7 @@ int main() {
         test_pixel_mapper();
         test_public_include();
         test_cross_platform_socket();
+        test_network_diagnostics();
     } catch (const std::exception& ex) {
         std::cerr << "tcxArtNet_tests failed: " << ex.what() << "\n";
         return 1;

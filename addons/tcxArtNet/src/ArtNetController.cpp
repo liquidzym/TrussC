@@ -8,13 +8,38 @@ namespace tcx::artnet {
 
 namespace {
 
-bool sendEncoded(UdpSocket& socket, const Endpoint& endpoint, const Packet& packet, Statistics& statistics, Error* error) {
+bool sendEncoded(
+    UdpSocket& socket,
+    const Endpoint& endpoint,
+    const Packet& packet,
+    Statistics& statistics,
+    ControllerNetworkDiagnostics* diagnostics,
+    Error* error
+) {
+    if (diagnostics) {
+        diagnostics->lastTarget = endpoint;
+    }
     std::vector<uint8_t> bytes;
-    if (!Codec::encode(packet, bytes, error)) {
+    Error localError;
+    if (!Codec::encode(packet, bytes, &localError)) {
+        if (diagnostics) {
+            diagnostics->lastError = localError;
+        }
+        setError(error, localError.code, localError.message);
         return false;
     }
-    if (!socket.sendTo(bytes, endpoint, error)) {
+    if (!socket.sendTo(bytes, endpoint, &localError)) {
+        if (diagnostics) {
+            diagnostics->socket = socket.diagnostics();
+            diagnostics->lastError = localError;
+            diagnostics->recoveryState = RecoveryState::Failed;
+        }
+        setError(error, localError.code, localError.message);
         return false;
+    }
+    if (diagnostics) {
+        diagnostics->socket = socket.diagnostics();
+        diagnostics->lastError = {};
     }
     statistics.packetsSent++;
     if (std::holds_alternative<ArtDmx>(packet)) {
@@ -29,18 +54,52 @@ bool Controller::setup(const ControllerSettings& settings, Error* error) {
     close();
     settings_ = settings;
     lastPoll_ = {};
-    if (!socket_.open(error)) return false;
-    if (!socket_.setReuseAddress(true, error)) return false;
-    if (!socket_.setBroadcast(settings.enableBroadcast, error)) return false;
-    if (!socket_.bind(settings.localBindIp, settings.localPort, error)) return false;
-    if (!socket_.setNonBlocking(true, error)) return false;
+    diagnostics_ = {};
+    diagnostics_.enableBroadcast = settings.enableBroadcast;
+    diagnostics_.directedBroadcastIp = settings.directedBroadcastIp;
+
+    Error localError;
+    if (!socket_.open(&localError) ||
+        !socket_.setReuseAddress(true, &localError) ||
+        !socket_.setBroadcast(settings.enableBroadcast, &localError) ||
+        !socket_.bind(settings.localBindIp, settings.localPort, &localError) ||
+        !socket_.setNonBlocking(true, &localError)) {
+        diagnostics_.socket = socket_.diagnostics();
+        diagnostics_.lastError = localError;
+        diagnostics_.recoveryState = RecoveryState::Failed;
+        setError(error, localError.code, localError.message);
+        return false;
+    }
+
+    diagnostics_.socket = socket_.diagnostics();
+    diagnostics_.lastError = {};
+    diagnostics_.recoveryState = RecoveryState::Idle;
     return true;
 }
 
 void Controller::close() {
     socket_.close();
+    diagnostics_.socket = socket_.diagnostics();
     std::lock_guard<std::mutex> lock(nodesMutex_);
     nodes_.clear();
+}
+
+bool Controller::recover(Error* error) {
+    const ControllerSettings settings = settings_;
+    const uint64_t nextAttempt = diagnostics_.recoveryAttempts + 1;
+    diagnostics_.recoveryState = RecoveryState::Recovering;
+    diagnostics_.recoveryAttempts = nextAttempt;
+
+    Error localError;
+    const bool ok = setup(settings, &localError);
+    diagnostics_.recoveryAttempts = nextAttempt;
+    diagnostics_.recoveryState = ok ? RecoveryState::Recovered : RecoveryState::Failed;
+    if (!ok) {
+        diagnostics_.lastError = localError;
+        setError(error, localError.code, localError.message);
+        return false;
+    }
+    return true;
 }
 
 bool Controller::pollNodes(Error* error) {
@@ -51,7 +110,7 @@ bool Controller::pollNodes(Error* error) {
     poll.targetPortAddressBottom = settings_.targetPortAddressBottom;
     poll.targetPortAddressTop = settings_.targetPortAddressTop;
     const Endpoint target { settings_.directedBroadcastIp, DefaultPort };
-    return sendEncoded(socket_, target, Packet { poll }, statistics_, error);
+    return sendEncoded(socket_, target, Packet { poll }, statistics_, &diagnostics_, error);
 }
 
 void Controller::update() {
@@ -76,7 +135,7 @@ bool Controller::sendDmx(const Endpoint& endpoint, const UniverseAddress& univer
     ArtDmx packet;
     packet.universe = universe;
     packet.data.assign(dmx.begin(), dmx.end());
-    return sendEncoded(socket_, endpoint, Packet { std::move(packet) }, statistics_, error);
+    return sendEncoded(socket_, endpoint, Packet { std::move(packet) }, statistics_, &diagnostics_, error);
 }
 
 bool Controller::sendMultiUniverseDmx(
@@ -114,19 +173,25 @@ bool Controller::sendMultiUniverseDmx(
 
 bool Controller::sendSync(const std::string& directedBroadcastIp, Error* error) {
     Endpoint target { directedBroadcastIp.empty() ? settings_.directedBroadcastIp : directedBroadcastIp, DefaultPort };
-    return sendEncoded(socket_, target, Packet { ArtSync {} }, statistics_, error);
+    return sendEncoded(socket_, target, Packet { ArtSync {} }, statistics_, &diagnostics_, error);
 }
 
 bool Controller::sendAddressCommand(const Endpoint& endpoint, const ArtAddressCommand& command, Error* error) {
-    return sendEncoded(socket_, endpoint, Packet { command }, statistics_, error);
+    return sendEncoded(socket_, endpoint, Packet { command }, statistics_, &diagnostics_, error);
 }
 
 bool Controller::sendTrigger(const Endpoint& endpoint, const ArtTrigger& trigger, Error* error) {
-    return sendEncoded(socket_, endpoint, Packet { trigger }, statistics_, error);
+    return sendEncoded(socket_, endpoint, Packet { trigger }, statistics_, &diagnostics_, error);
 }
 
 bool Controller::sendTimeCode(const Endpoint& endpoint, const ArtTimeCode& timecode, Error* error) {
-    return sendEncoded(socket_, endpoint, Packet { timecode }, statistics_, error);
+    return sendEncoded(socket_, endpoint, Packet { timecode }, statistics_, &diagnostics_, error);
+}
+
+ControllerNetworkDiagnostics Controller::networkDiagnostics() const {
+    ControllerNetworkDiagnostics diagnostics = diagnostics_;
+    diagnostics.socket = socket_.diagnostics();
+    return diagnostics;
 }
 
 bool Controller::receiveOne(Error* error) {

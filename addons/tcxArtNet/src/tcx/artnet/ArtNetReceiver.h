@@ -10,6 +10,11 @@
 
 namespace tcx::artnet {
 
+struct ReceiverSettings {
+    uint16_t port = DefaultPort;
+    std::string localBindIp = "0.0.0.0";
+};
+
 class Receiver {
 public:
     using PacketCallback = std::function<void(const Packet&, const Endpoint&)>;
@@ -21,6 +26,7 @@ public:
     Receiver& operator=(const Receiver&) = delete;
 
     bool setup(uint16_t port = DefaultPort, Error* error = nullptr);
+    bool setup(const ReceiverSettings& settings, Error* error = nullptr);
     void close();
     bool poll(Error* error = nullptr);
     bool startThread(Error* error = nullptr);
@@ -28,6 +34,7 @@ public:
 
     void setPacketCallback(PacketCallback callback);
     [[nodiscard]] const Statistics& statistics() const noexcept { return statistics_; }
+    [[nodiscard]] SocketDiagnostics diagnostics() const { return socket_.diagnostics(); }
     void resetStatistics() noexcept { statistics_ = {}; }
 
 private:
@@ -39,6 +46,7 @@ private:
     mutable std::mutex callbackMutex_;
     std::thread thread_;
     std::atomic<bool> running_ { false };
+    ReceiverSettings settings_;
     Statistics statistics_;
 };
 

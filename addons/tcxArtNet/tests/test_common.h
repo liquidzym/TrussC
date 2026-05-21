@@ -51,3 +51,4 @@ void test_universe_address();
 void test_pixel_mapper();
 void test_public_include();
 void test_cross_platform_socket();
+void test_network_diagnostics();

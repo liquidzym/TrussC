@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ArtNetTypes.h"
+#include "ArtNetDiagnostics.h"
 
 #include <memory>
 #include <span>
@@ -31,6 +31,7 @@ public:
     bool receiveFrom(std::span<uint8_t> buffer, size_t& bytesReceived, Endpoint& sender, Error* error = nullptr);
 
     [[nodiscard]] bool isOpen() const noexcept;
+    [[nodiscard]] SocketDiagnostics diagnostics() const;
 
 private:
     struct Impl;
