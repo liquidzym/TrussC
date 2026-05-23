@@ -170,6 +170,36 @@ public:
         return children_.size();
     }
 
+    // Reorder this node within its parent's child list.
+    //
+    // Children are drawn in vector order: the first child is drawn first
+    // (visually behind), the last child is drawn last (visually in front).
+    // moveToFront() puts this node at the end so it draws on top of its
+    // siblings; moveToBack() puts it at the beginning so it draws underneath.
+    //
+    // Both use std::rotate, so they don't change the vector's size and don't
+    // trigger reallocation. No-op if the node has no parent or is already at
+    // the requested position.
+    void moveToFront() {
+        auto p = getParent();
+        if (!p) return;
+        auto self = shared_from_this();
+        auto& sib = p->children_;
+        auto it = std::find(sib.begin(), sib.end(), self);
+        if (it == sib.end() || it + 1 == sib.end()) return;
+        std::rotate(it, it + 1, sib.end());
+    }
+
+    void moveToBack() {
+        auto p = getParent();
+        if (!p) return;
+        auto self = shared_from_this();
+        auto& sib = p->children_;
+        auto it = std::find(sib.begin(), sib.end(), self);
+        if (it == sib.end() || it == sib.begin()) return;
+        std::rotate(sib.begin(), it, it + 1);
+    }
+
     // -------------------------------------------------------------------------
     // State
     // -------------------------------------------------------------------------
@@ -452,9 +482,14 @@ private:
             mod->update();
         }
 
-        // Automatically update child nodes
-        for (auto& child : children_) {
-            child->updateTree();
+        // Iterate over a snapshot — a child's update() may add, remove, or
+        // reorder siblings (via addChild / removeChild / moveToFront / etc.),
+        // and we want those edits to take effect on the *next* frame rather
+        // than corrupt the in-flight iteration. The snapshot is a shallow
+        // shared_ptr copy so it's cheap and keeps the targets alive.
+        auto childrenSnapshot = children_;
+        for (auto& child : childrenSnapshot) {
+            if (!child->isDead()) child->updateTree();
         }
     }
 
@@ -679,8 +714,10 @@ private:
             return true;  // Consumed
         }
 
-        // Dispatch to child nodes
-        for (auto& child : children_) {
+        // Snapshot — handlers may mutate the tree.
+        auto childrenSnapshot = children_;
+        for (auto& child : childrenSnapshot) {
+            if (child->isDead()) continue;
             if (child->dispatchKeyPressRecursive(key)) {
                 return true;
             }
@@ -696,7 +733,9 @@ private:
             return true;
         }
 
-        for (auto& child : children_) {
+        auto childrenSnapshot = children_;
+        for (auto& child : childrenSnapshot) {
+            if (child->isDead()) continue;
             if (child->dispatchKeyReleaseRecursive(key)) {
                 return true;
             }
@@ -760,8 +799,10 @@ protected:
     // -------------------------------------------------------------------------
 
     virtual void drawChildren() {
-        for (auto& child : children_) {
-            child->drawTree();
+        // Snapshot — see updateTree() for rationale.
+        auto childrenSnapshot = children_;
+        for (auto& child : childrenSnapshot) {
+            if (!child->isDead()) child->drawTree();
         }
     }
 
@@ -953,25 +994,41 @@ protected:
     inline static uint64_t nextTimerId_ = 1;
 
     // Process timers (called within updateRecursive)
+    //
+    // Reentrancy-safe: a callback may invoke callAfter / callEvery / cancelTimer
+    // / cancelAllTimers on this same node. We snapshot the ready-timer IDs up
+    // front, then look each one up by ID before firing, copying out the
+    // callback and metadata so vector reallocation during the callback can't
+    // dangle the in-flight reference.
     void processTimers() {
         double currentTime = getElapsedTime();
-        std::vector<Timer> toRemove;
 
-        for (auto& timer : timers_) {
-            if (currentTime >= timer.triggerTime) {
-                timer.callback();
-
-                if (timer.repeating) {
-                    timer.triggerTime = currentTime + timer.interval;
-                } else {
-                    toRemove.push_back(timer);
-                }
+        std::vector<uint64_t> readyIds;
+        readyIds.reserve(timers_.size());
+        for (const auto& t : timers_) {
+            if (currentTime >= t.triggerTime) {
+                readyIds.push_back(t.id);
             }
         }
 
-        // Remove completed non-repeating timers
-        for (const auto& t : toRemove) {
-            cancelTimer(t.id);
+        for (uint64_t id : readyIds) {
+            auto it = std::find_if(timers_.begin(), timers_.end(),
+                [id](const Timer& t) { return t.id == id; });
+            if (it == timers_.end()) continue;  // cancelled by an earlier callback in this batch
+
+            std::function<void()> callback = it->callback;
+            bool   repeating = it->repeating;
+            double interval  = it->interval;
+
+            if (repeating) {
+                it->triggerTime = currentTime + interval;
+                callback();  // safe: we already captured what we need from `it`
+            } else {
+                // Remove before firing so the timer is gone even if the
+                // callback throws or registers a new timer that reallocates.
+                cancelTimer(id);
+                callback();
+            }
         }
     }
 };

@@ -19,6 +19,8 @@
 #include <signal.h>
 #else
 #include <process.h>
+#include <io.h>
+#include <windows.h>
 #endif
 
 using namespace std;
@@ -427,6 +429,90 @@ static CheckResult checkGit() {
         r.detail = (pos != string::npos) ? out.substr(pos + 12, end - pos - 12) : "(detected)";
     }
     return r;
+}
+
+// -----------------------------------------------------------------------------
+// Version helpers (used by --version and doctor)
+// -----------------------------------------------------------------------------
+
+struct SemverParts {
+    int major = -1, minor = -1, patch = -1;
+    bool ok = false;
+};
+
+static SemverParts parseSemver(const string& s) {
+    SemverParts p;
+    if (sscanf(s.c_str(), "v%d.%d.%d", &p.major, &p.minor, &p.patch) >= 2) {
+        p.ok = true;
+    }
+    return p;
+}
+
+// Run `git describe` against a TrussC root. Empty string on failure.
+static string queryTrussCVersion(const string& tcRoot) {
+    if (tcRoot.empty()) return "";
+    // Match only proper version tags (v1.2.3) to avoid stray tags
+    auto [code, out] = captureCommand(
+        "git -C \"" + tcRoot + "\" describe --tags --always --dirty --match \"v[0-9]*\" 2>"
+        TC_DEV_NULL);
+    if (code != 0) return "";
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
+    return out;
+}
+
+static CheckResult checkVersionMismatch(const string& tcRoot) {
+    CheckResult r{"Version sync", CheckStatus::OK, "", "", true};
+    const string built = TRUSSCLI_VERSION;
+    const string current = queryTrussCVersion(tcRoot);
+
+    if (current.empty()) {
+        r.status = CheckStatus::Warning;
+        r.detail = "could not query TrussC version";
+        return r;
+    }
+    if (built == current) {
+        r.detail = "trusscli " + built + " == TrussC " + current;
+        return r;
+    }
+
+    auto a = parseSemver(built);
+    auto b = parseSemver(current);
+
+    // Major or minor drift → hard error (ABI / API may have changed)
+    if (a.ok && b.ok && (a.major != b.major || a.minor != b.minor)) {
+        r.status = CheckStatus::Error;
+        r.detail = "trusscli " + built + " vs TrussC " + current;
+        r.hint = "Rebuild trusscli (cd tools && ./build_<platform>.{sh,command,bat})";
+        return r;
+    }
+
+    // Patch / commit drift only → soft warning
+    r.status = CheckStatus::Warning;
+    r.detail = "trusscli " + built + " vs TrussC " + current;
+    r.hint = "Rebuild trusscli to sync with the current TrussC";
+    return r;
+}
+
+static void printVersion() {
+    const string built = TRUSSCLI_VERSION;
+    cout << "trusscli " << built
+         << " (built " << TRUSSCLI_BUILD_DATE << ")\n";
+
+    const string tcRoot = autoDetectTcRoot();
+    if (tcRoot.empty()) {
+        cout << "TrussC   (not found)\n";
+        return;
+    }
+    const string current = queryTrussCVersion(tcRoot);
+    if (current.empty()) {
+        cout << "TrussC   (version unknown) at " << tcRoot << "\n";
+        return;
+    }
+    cout << "TrussC   " << current << " at " << tcRoot << "\n";
+    if (current != built) {
+        cout << "  note: TrussC has changed since trusscli was built — "
+             << "rebuild trusscli to sync\n";
+    }
 }
 
 // =============================================================================
@@ -1475,7 +1561,44 @@ struct AddonInfo {
     vector<string> platforms;
     string demoUrl;
     vector<AddonDep> dependencies;
+    int stars = 0;         // GitHub stargazers (0 for bundled / unknown)
 };
+
+// True when stdout is an interactive terminal (not a pipe / redirect).
+static bool stdoutIsTty() {
+#ifdef _WIN32
+    return _isatty(_fileno(stdout)) != 0;
+#else
+    return isatty(STDOUT_FILENO) != 0;
+#endif
+}
+
+// Whether the console can safely render the ★ glyph. POSIX terminals are
+// UTF-8 in practice; on Windows we only trust it when the output codepage is
+// UTF-8, otherwise ★ mojibakes (legacy cp932/cp437 consoles).
+static bool consoleSupportsUnicode() {
+#ifdef _WIN32
+    return GetConsoleOutputCP() == CP_UTF8;
+#else
+    return true;
+#endif
+}
+
+// Render a star count for the console. Empty when stars <= 0 so bundled /
+// unstarred addons stay clean (matches the website pill). On an interactive
+// terminal: a yellow ★ (U+2605 — a single-width BMP glyph that is reliable in
+// monospace, unlike the ⭐ emoji whose width is ambiguous and which mojibakes
+// on legacy Windows consoles). Falls back to a plain "*N" for pipes,
+// redirects, NO_COLOR, or non-UTF-8 consoles.
+static string formatStars(int stars) {
+    if (stars <= 0) return "";
+    bool tty = stdoutIsTty();
+    bool color = tty && !getenv("NO_COLOR");
+    string glyph = (tty && consoleSupportsUnicode()) ? "★" : "*";
+    string sep = (glyph == "*") ? "" : " ";
+    if (color) return "\033[33m" + glyph + "\033[0m" + sep + to_string(stars);
+    return glyph + sep + to_string(stars);
+}
 
 // Format an addon for display:
 //   bundled         -> "tcxFoo"
@@ -1602,6 +1725,7 @@ static vector<AddonInfo> fetchRegistry(bool allowStaleCache = false) {
             info.author      = a.value("author", "");
             info.license     = a.value("license", "");
             info.demoUrl     = a.value("demo_url", "");
+            info.stars       = a.value("stars", 0);
             if (a.contains("platforms") && a["platforms"].is_array()) {
                 for (const auto& p : a["platforms"]) {
                     if (p.is_string()) info.platforms.push_back(p.get<string>());
@@ -1749,6 +1873,8 @@ static int cmdAddonList(const vector<string>& args) {
             }
             const string& lic = addon.license.empty() ? "Unknown" : addon.license;
             cout << "  [" << lic << "]";
+            string starStr = formatStars(addon.stars);
+            if (!starStr.empty()) cout << "  " << starStr;
             if (!addon.description.empty()) {
                 cout << "  " << addon.description;
             }
@@ -1814,16 +1940,39 @@ static string promptString(const string& msg) {
     return line;
 }
 
+// Reject strings git would parse as an option. URLs, refs, branch
+// names, etc. legitimately never start with '-'. A registry entry
+// or addon.json dependency claiming url="--upload-pack=..." would
+// otherwise be passed to git verbatim and run as a flag.
+static bool isSafeGitArg(const string& s) {
+    return !s.empty() && s.front() != '-';
+}
+
 // Run git clone with optional ref pinning.
-//   refKind=branch/tag → `git clone -b <ref> ...`
-//   refKind=commit     → clone, then `git checkout <ref>`
+//   refKind=branch/tag → `git clone -b <ref> -- <url> <dir>`
+//   refKind=commit     → clone, then `git checkout <ref>`  (ref validated)
 //   refKind=""         → plain clone (default branch)
+//
+// All forms use `--` to terminate options before the positional URL so
+// that a registry-supplied URL starting with '-' cannot be smuggled in
+// as a git flag (e.g., --upload-pack=cmd → arbitrary command exec).
+// Refs are validated up front since `git checkout` interprets `--` as
+// a pathspec separator, not an end-of-options marker, so we cannot use
+// the same trick there.
 static int gitCloneWithRef(const string& url, const string& ref,
                             const string& refKind, const string& targetDir) {
-    if ((refKind == "branch" || refKind == "tag") && !ref.empty()) {
-        return runProcess({"git", "clone", "-b", ref, url, targetDir});
+    if (!isSafeGitArg(url)) {
+        cerr << "Error: refusing git clone with unsafe URL: " << url << "\n";
+        return 1;
     }
-    int rc = runProcess({"git", "clone", url, targetDir});
+    if (!ref.empty() && !isSafeGitArg(ref)) {
+        cerr << "Error: refusing git operation with unsafe ref: " << ref << "\n";
+        return 1;
+    }
+    if ((refKind == "branch" || refKind == "tag") && !ref.empty()) {
+        return runProcess({"git", "clone", "-b", ref, "--", url, targetDir});
+    }
+    int rc = runProcess({"git", "clone", "--", url, targetDir});
     if (rc != 0) return rc;
     if (refKind == "commit" && !ref.empty()) {
         return runProcess({"git", "-C", targetDir, "checkout", ref});
@@ -2005,8 +2154,13 @@ static int cmdAddonClone(const vector<string>& args) {
                 cout << "  (already exists) " << repo << "\n";
                 processed.insert(repo);
             } else {
+                if (!isSafeGitArg(query)) {
+                    cerr << "Error: refusing git clone with unsafe URL: " << query << "\n";
+                    failures++;
+                    continue;
+                }
                 cout << "Cloning " << query << " ...\n";
-                int rc = runProcess({"git", "clone", query, targetDir});
+                int rc = runProcess({"git", "clone", "--", query, targetDir});
                 if (rc != 0) {
                     cerr << "Error: git clone failed for " << query << "\n";
                     failures++;
@@ -2082,8 +2236,13 @@ static int cmdAddonClone(const vector<string>& args) {
             cout << "  (already exists) " << targetName << " → " << targetDir << "\n";
             processed.insert(targetName);
         } else {
+            if (!isSafeGitArg(cloneUrl)) {
+                cerr << "Error: refusing git clone with unsafe URL: " << cloneUrl << "\n";
+                failures++;
+                continue;
+            }
             cout << "Cloning " << (picked ? displayName(*picked) : cloneUrl) << " ...\n";
-            int rc = runProcess({"git", "clone", cloneUrl, targetDir});
+            int rc = runProcess({"git", "clone", "--", cloneUrl, targetDir});
             if (rc != 0) {
                 cerr << "Error: git clone failed for " << targetName << "\n";
                 failures++;
@@ -2253,6 +2412,8 @@ static int cmdAddonSearch(const vector<string>& args) {
         if (!a->version.empty() && a->version != "unknown") cout << "  " << a->version;
         const string& lic = a->license.empty() ? "Unknown" : a->license;
         cout << "  [" << lic << "]";
+        string starStr = formatStars(a->stars);
+        if (!starStr.empty()) cout << "  " << starStr;
         if (a->bundled) cout << "  (bundled)";
         cout << "\n";
         if (!a->description.empty()) cout << "    " << a->description << "\n";
@@ -2655,6 +2816,7 @@ static int cmdDoctor(const vector<string>& args) {
     results.push_back(checkCMake());
     results.push_back(checkCompiler());
     results.push_back(checkTrussCCore(resolvedTcRoot));
+    results.push_back(checkVersionMismatch(resolvedTcRoot));
     results.push_back(checkPlatformSDK());
 
     // Cross-compile checks: only run if the project targets them
@@ -3251,6 +3413,7 @@ _trusscli() {
         'clean:Delete build directories'
         'build:Build the project'
         'run:Build and launch the project'
+        'version:Show version (trusscli + current TrussC)'
         'completion:Generate shell completion script'
     )
     addon_commands=(
@@ -3343,7 +3506,7 @@ _trusscli() {
     }
 
     if [[ $cword -eq 1 ]]; then
-        COMPREPLY=($(compgen -W "new cp update upgrade addon info doctor clean build run completion" -- "$cur"))
+        COMPREPLY=($(compgen -W "new cp update upgrade addon info doctor clean build run version completion" -- "$cur"))
         return
     fi
 
@@ -3463,11 +3626,13 @@ static void printTopHelp() {
          << "  clean                          Delete build directories\n"
          << "  build                          Build the project\n"
          << "  run                            Build and launch the project\n"
+         << "  version                        Show version (trusscli + current TrussC)\n"
          << "\n"
          << "Common options (per subcommand):\n"
          << "  -p, --path <path>              Operate on a specific project path\n"
          << "      --tc-root <path>           Path to TrussC root directory\n"
          << "  -h, --help                     Show command-specific help\n"
+         << "  -v, --version                  Show version (trusscli + current TrussC)\n"
          << "\n"
          << "Examples:\n"
          << "  trusscli new myApp                        Create ./myApp\n"
@@ -3512,6 +3677,10 @@ int main(int argc, char* argv[]) {
     const string& first = args[0];
     if (first == "-h" || first == "--help" || first == "help") {
         printTopHelp();
+        return 0;
+    }
+    if (first == "-v" || first == "--version" || first == "version") {
+        printVersion();
         return 0;
     }
 
