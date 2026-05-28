@@ -680,13 +680,6 @@ public:
     static constexpr int DEFAULT_MAX_PLAYING_SOUNDS = 32;
     static constexpr int DEFAULT_BUFFER_SIZE = 0;  // 0 = let miniaudio choose
 
-    // TrussC local extension, 2026-05-09:
-    // Minimal realtime output hook added for addons/tcxPDSP. It lets addon DSP
-    // code render into TrussC's existing miniaudio device callback instead of
-    // embedding another cross-platform audio backend in the addon. Preserve this
-    // small bridge when merging upstream if tcxPDSP should remain backend-free.
-    using OutputCallback = void (*)(float* output, int numFrames, int numChannels, void* userData);
-
     static AudioEngine& getInstance() {
         static AudioEngine instance;
         return instance;
@@ -781,20 +774,6 @@ public:
 
     // Called from audio callback (internal use)
     void mixAudio(float* buffer, int num_frames, int num_channels);
-
-    // TrussC local extension, 2026-05-09:
-    // Optional realtime output hook for addons. Called after built-in Sound
-    // mixing and before clipping/analysis so tcxPDSP can either generate audio
-    // alone or layer DSP output over regular Sound playback.
-    void setOutputCallback(OutputCallback callback, void* userData = nullptr) {
-        outputCallbackUserData_.store(userData, std::memory_order_release);
-        outputCallback_.store(callback, std::memory_order_release);
-    }
-
-    void clearOutputCallback() {
-        outputCallback_.store(nullptr, std::memory_order_release);
-        outputCallbackUserData_.store(nullptr, std::memory_order_release);
-    }
 
 private:
     AudioEngine() {
@@ -969,16 +948,6 @@ private:
             }
         }
 
-        // TrussC local extension, 2026-05-09:
-        // Invoke addon DSP on the audio thread after the built-in mixer has
-        // filled the buffer. The callback must be allocation-free and realtime
-        // safe; ownership/lifetime is managed by setOutputCallback().
-        OutputCallback callback = outputCallback_.load(std::memory_order_acquire);
-        if (callback) {
-            void* userData = outputCallbackUserData_.load(std::memory_order_acquire);
-            callback(buffer, num_frames, num_channels, userData);
-        }
-
         // audioOut listeners run AFTER Sound voices and OUTSIDE the lock.
         // The lock is released first so a listener that calls
         // engine.play() doesn't deadlock — that's a discouraged but
@@ -1024,8 +993,6 @@ private:
     bool initialized_ = false;
     std::vector<std::shared_ptr<PlayingSound>> playingSounds_;
     std::mutex mutex_;
-    std::atomic<OutputCallback> outputCallback_{nullptr};
-    std::atomic<void*> outputCallbackUserData_{nullptr};
 
     // Runtime engine configuration. Initialized to defaults; replaced when
     // init(AudioSettings) succeeds. Reading these before init() returns the

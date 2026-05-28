@@ -2,7 +2,7 @@
 // =============================================================================
 // tcxPDSP AudioStream — Minimal output wrapper for TrussC AudioEngine
 // =============================================================================
-// Reuses TrussC's global audio device through AudioEngine's output callback.
+// Reuses TrussC's global audio device through AudioEngine::audioOut.
 // Usage:
 //   tcx::pdsp::AudioStream stream;
 //   stream.setup({ .sampleRate=48000, .bufferSize=256, .outputChannels=2 });

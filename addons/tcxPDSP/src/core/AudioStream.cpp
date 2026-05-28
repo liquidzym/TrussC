@@ -13,24 +13,24 @@ struct AudioStream::Impl {
     AudioCallback callback;
     AudioStreamSettings settings;
     AudioContext ctx;
+    tc::EventListener outputListener;
     bool running = false;
     bool initialized = false;
 
-    static void outputCallback(float* output, int frameCount, int channels, void* userData) {
-        auto* impl = static_cast<Impl*>(userData);
-        if (impl && impl->callback && output) {
-            const int blockSize = std::max(1, impl->ctx.bufferSize);
-            int processed = 0;
-            while (processed < frameCount) {
-                const int blockFrames = std::min(blockSize, frameCount - processed);
-                impl->callback(
-                    output + processed * channels,
-                    blockFrames,
-                    channels
-                );
-                impl->ctx.advance(static_cast<uint64_t>(blockFrames));
-                processed += blockFrames;
-            }
+    void process(tc::AudioOutBuffer& buffer) {
+        if (!callback || !buffer.data) return;
+
+        const int blockSize = std::max(1, ctx.bufferSize > 0 ? ctx.bufferSize : buffer.frameCount);
+        int processed = 0;
+        while (processed < buffer.frameCount) {
+            const int blockFrames = std::min(blockSize, buffer.frameCount - processed);
+            callback(
+                buffer.data + processed * buffer.channels,
+                blockFrames,
+                buffer.channels
+            );
+            ctx.advance(static_cast<uint64_t>(blockFrames));
+            processed += blockFrames;
         }
     }
 };
@@ -45,15 +45,23 @@ bool AudioStream::setup(const AudioStreamSettings& settings) {
     stop();
 
     impl_->settings = settings;
-    impl_->ctx.sampleRate = tc::AudioEngine::SAMPLE_RATE;
-    impl_->ctx.bufferSize = settings.bufferSize;
-    impl_->ctx.outputChannels = tc::AudioEngine::NUM_CHANNELS;
-    impl_->ctx.currentSample = 0;
+    impl_->initialized = false;
 
-    if (!tc::AudioEngine::getInstance().init()) {
+    tc::AudioSettings engineSettings;
+    engineSettings.sampleRate = settings.sampleRate;
+    engineSettings.channels = settings.outputChannels;
+    engineSettings.bufferSize = settings.bufferSize;
+
+    auto& engine = tc::AudioEngine::getInstance();
+    if (!engine.init(engineSettings)) {
         fprintf(stderr, "[tcxPDSP] AudioStream: TrussC AudioEngine init failed\n");
         return false;
     }
+
+    impl_->ctx.sampleRate = engine.getSampleRate();
+    impl_->ctx.bufferSize = settings.bufferSize > 0 ? settings.bufferSize : engine.getBufferSize();
+    impl_->ctx.outputChannels = engine.getChannels();
+    impl_->ctx.currentSample = 0;
 
     impl_->initialized = true;
     fprintf(stderr, "[tcxPDSP] AudioStream: attached to TrussC AudioEngine (%d Hz, %d ch)\n",
@@ -67,13 +75,21 @@ void AudioStream::setCallback(AudioCallback cb) {
 
 void AudioStream::start() {
     if (!impl_->initialized || impl_->running) return;
-    tc::AudioEngine::getInstance().setOutputCallback(&Impl::outputCallback, impl_.get());
+    auto* impl = impl_.get();
+    // Match the old tcxPDSP bridge order: after built-in Sound mixing, before
+    // the app-level audioOut() listener and before clipping/analysis.
+    impl_->outputListener = tc::AudioEngine::getInstance().audioOut.listen(
+        [impl](tc::AudioOutBuffer& buffer) {
+            impl->process(buffer);
+        },
+        tc::EventPriority::BeforeApp
+    );
     impl_->running = true;
 }
 
 void AudioStream::stop() {
     if (impl_->running) {
-        tc::AudioEngine::getInstance().clearOutputCallback();
+        impl_->outputListener.disconnect();
     }
     impl_->running = false;
 }
