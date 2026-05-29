@@ -1,6 +1,19 @@
 {
-  "description": "Real-time DSP graph, modular patch system, oscillators, filters, envelopes, delay, mixer, sample-accurate sequencer, synth modules, audio analysis. Based on ofxPDSP design.",
-  "author": "pi-coding-agent",
+  "description": "Real-time DSP and synthesis addon for TrussC with oscillators, filters, envelopes, sequencing, effects, and audio analysis",
+  "version": "1.0.0",
+  "author": "showlab",
   "license": "MIT",
-  "keywords": ["dsp", "audio", "synthesis", "oscillator", "filter", "envelope", "sequencer", "synth", "realtime"]
+  "trussc_version": ">=0.4.0",
+  "screenshot": "",
+  "keywords": [
+    "audio",
+    "dsp",
+    "synthesis",
+    "oscillator",
+    "filter",
+    "envelope",
+    "sequencer",
+    "effects",
+    "realtime"
+  ]
 }

@@ -1,13 +1,18 @@
 {
-  "description": "Fluid simulation, optical flow scaffolding, bridge flows and visualization helpers for TrussC",
-  "author": "TrussC community / generated implementation",
+  "description": "GPU-first fluid simulation, optical flow, particle flow, soft body, and flow visualization tools for TrussC",
+  "version": "1.0.0",
+  "author": "showlab",
   "license": "MIT",
+  "trussc_version": ">=0.4.0",
+  "screenshot": "",
   "keywords": [
     "fluid",
     "optical-flow",
     "flow-field",
+    "particles",
+    "softbody",
     "shader",
-    "visuals",
+    "visualization",
     "creative-coding"
   ]
 }

@@ -1,6 +1,17 @@
 {
-  "description": "Traer Physics particle system — springs, attractions, integrators (Euler, Modified Euler, RK4). Header-only, modern C++.",
-  "author": "pi-coding-agent",
+  "description": "Header-only Traer Physics particle system for TrussC with particles, springs, attractions, and multiple integrators",
+  "version": "1.0.0",
+  "author": "showlab",
   "license": "MIT",
-  "keywords": ["physics", "particle", "spring", "attraction", "simulation", "verlet"]
+  "trussc_version": ">=0.4.0",
+  "screenshot": "",
+  "keywords": [
+    "physics",
+    "particle",
+    "spring",
+    "attraction",
+    "simulation",
+    "integrator",
+    "rk4"
+  ]
 }

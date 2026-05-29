@@ -1,6 +1,18 @@
 {
-  "description": "Advanced text layout (HarfBuzz shaping + TrussC font rendering). Supports LTR/RTL/TTB/BTT directions, box layout, alignment, and CJK vertical text.",
-  "author": "TrussC",
+  "description": "HarfBuzz-based advanced text shaping and layout for TrussC fonts, including RTL, vertical text, fallback fonts, and glyph outlines",
+  "version": "1.0.0",
+  "author": "showlab",
   "license": "MIT",
-  "keywords": ["text", "font", "typography", "layout", "harfbuzz", "cjk", "vertical-text"]
+  "trussc_version": ">=0.4.0",
+  "screenshot": "",
+  "keywords": [
+    "typography",
+    "text",
+    "font",
+    "layout",
+    "harfbuzz",
+    "rtl",
+    "cjk",
+    "vertical-text"
+  ]
 }

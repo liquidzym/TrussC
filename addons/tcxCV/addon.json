@@ -1,6 +1,18 @@
 {
-  "description": "Computer vision utilities (port of ofxCv) with image processing, contour finding, optical flow, camera calibration, object detection, and more",
-  "author": "tettou771",
+  "description": "Computer vision addon for TrussC with OpenCV wrappers, image processing, contours, optical flow, calibration, and tracking",
+  "version": "1.0.0",
+  "author": "showlab",
   "license": "MIT",
-  "keywords": ["computer-vision", "opencv", "image-processing", "contour", "flow", "calibration", "tracking", "face-detection"]
+  "trussc_version": ">=0.4.0",
+  "screenshot": "",
+  "keywords": [
+    "computer-vision",
+    "opencv",
+    "image-processing",
+    "contour",
+    "optical-flow",
+    "calibration",
+    "tracking",
+    "object-detection"
+  ]
 }
