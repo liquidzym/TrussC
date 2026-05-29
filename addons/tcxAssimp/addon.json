@@ -1,0 +1,19 @@
+{
+  "description": "Assimp-based 3D asset loading for TrussC with models, materials, animations, skeletons, and skinning",
+  "version": "1.0.0",
+  "author": "showlab",
+  "license": "MIT",
+  "trussc_version": ">=0.4.0",
+  "screenshot": "",
+  "keywords": [
+    "3d",
+    "assimp",
+    "model",
+    "animation",
+    "gltf",
+    "glb",
+    "fbx",
+    "mesh",
+    "skinning"
+  ]
+}

@@ -1,0 +1,13 @@
+.DS_Store
+build-*/
+_fcache/
+bin/
+*.app
+*.xcodeproj/
+*.xcworkspace/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+_deps/

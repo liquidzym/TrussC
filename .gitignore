@@ -119,6 +119,7 @@ addons/*
 !addons/tcxFlowTools
 !addons/tcxTraerPhysics
 !addons/tcxArtNet
+!addons/tcxAssimp
 addons/tcxArtNet/ref/
 addons/tcxArtNet/tcxArtNet_addon_task_spec.md
 
@@ -160,6 +161,8 @@ addons/CMakeLists.txt
 # Addon-local AI handoff/planning notes should stay local.
 addons/**/HANDOFF*.md
 addons/**/*_Codex_Taskbook.md
+addons/**/ITERATION_STATUS.md
+addons/tcxAssimp/tcxAssimp_TrussC_移植任务书_v2.md
 
 # =============================================================================
 # Auto-generated Shader Headers (sokol-shdc output)
