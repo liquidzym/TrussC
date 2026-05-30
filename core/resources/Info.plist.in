@@ -26,8 +26,12 @@
 	<string></string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>This app uses the camera for video capture.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>This app uses the camera for video capture.</string>
+    <!-- 2026-05-30 WaterModernGPU camera fix:
+         Required on modern macOS when AVCaptureDeviceTypeContinuityCamera is listed. -->
+    <key>NSCameraUseContinuityCameraDeviceType</key>
+    <true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app uses the microphone for audio input.</string>
 	<key>NSLocationUsageDescription</key>

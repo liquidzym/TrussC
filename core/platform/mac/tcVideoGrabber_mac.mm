@@ -330,18 +330,29 @@ bool VideoGrabber::setupPlatform() {
                 NSArray* supportedFrameRates = data->device.activeFormat.videoSupportedFrameRateRanges;
 
                 for (AVFrameRateRange* range in supportedFrameRates) {
-                    if (std::floor(range.minFrameRate) <= desiredFrameRate_ &&
-                        std::ceil(range.maxFrameRate) >= desiredFrameRate_) {
+                    const double minRate = range.minFrameRate;
+                    const double maxRate = range.maxFrameRate;
+                    if ((double)desiredFrameRate_ >= minRate - 0.5 &&
+                        (double)desiredFrameRate_ <= maxRate + 0.5) {
                         desiredRange = range;
                         break;
                     }
                 }
 
                 if (desiredRange) {
-                    data->device.activeVideoMinFrameDuration = CMTimeMake(1, desiredFrameRate_);
-                    data->device.activeVideoMaxFrameDuration = CMTimeMake(1, desiredFrameRate_);
-                    if (verbose_) {
-                        NSLog(@"VideoGrabber: Set frame rate to %d fps", desiredFrameRate_);
+                    @try {
+                        // 2026-05-30 WaterModernGPU camera fix:
+                        // Use the device-provided duration instead of CMTimeMake(1, fps).
+                        // Some macOS cameras advertise NTSC-like values near 30fps and
+                        // throw when asked for the rounded 1/30 duration.
+                        data->device.activeVideoMinFrameDuration = desiredRange.minFrameDuration;
+                        data->device.activeVideoMaxFrameDuration = desiredRange.maxFrameDuration;
+                        if (verbose_) {
+                            NSLog(@"VideoGrabber: Set frame rate near %d fps", desiredFrameRate_);
+                        }
+                    } @catch (NSException* exception) {
+                        NSLog(@"VideoGrabber: Failed to set frame rate %d fps: %@",
+                              desiredFrameRate_, exception.reason);
                     }
                 } else if (verbose_) {
                     NSLog(@"VideoGrabber: Requested frame rate %d not supported", desiredFrameRate_);

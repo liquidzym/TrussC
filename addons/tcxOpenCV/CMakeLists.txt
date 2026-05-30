@@ -54,6 +54,14 @@ if(NOT _TCX_OPENCV_USING_SYSTEM)
     string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _TCX_OPENCV_ARCH)
     set(_TCX_OPENCV_CACHE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/_fcache")
     set(_TCX_OPENCV_BUILD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build-${_TCX_OPENCV_PLATFORM}-${_TCX_OPENCV_ARCH}")
+    # 2026-05-30 WaterModernGPU Xcode fix:
+    # keep Xcode and Unix Makefiles from sharing one OpenCV CMake cache.
+    if(NOT CMAKE_GENERATOR STREQUAL "Unix Makefiles")
+        string(TOLOWER "${CMAKE_GENERATOR}" _TCX_OPENCV_GENERATOR_ID)
+        string(REGEX REPLACE "[^a-z0-9_]+" "-" _TCX_OPENCV_GENERATOR_ID "${_TCX_OPENCV_GENERATOR_ID}")
+        string(REGEX REPLACE "^-|-$" "" _TCX_OPENCV_GENERATOR_ID "${_TCX_OPENCV_GENERATOR_ID}")
+        set(_TCX_OPENCV_BUILD_ROOT "${_TCX_OPENCV_BUILD_ROOT}-${_TCX_OPENCV_GENERATOR_ID}")
+    endif()
 
     # Build static libraries (no dylib dependencies for distribution)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
