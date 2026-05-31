@@ -92,17 +92,17 @@ private:Parameter freq_{440};PatchNode in_,out_;float sr_=48000,phase_=0;
 
 class Crossfader : public AudioNode {
 public:
-    Crossfader():out_{this,0}{outputBuffer.allocate(1,256);}
-    void prepare(AudioContext& ctx)override{outputBuffer.allocate(1,ctx.bufferSize);xfade_.prepare(ctx.sampleRate,10);prepared_=true;}
+    Crossfader():out_{this,0}{outputBuffer.allocate(1,256);bufB_.assign(256,0.0f);}
+    void prepare(AudioContext& ctx)override{outputBuffer.allocate(1,ctx.bufferSize);bufB_.assign(ctx.bufferSize,0.0f);xfade_.prepare(ctx.sampleRate,10);prepared_=true;}
     void process(AudioContext& ctx,int f)override{
         if(!prepared_||!active_)return;ensureBuf(f);copyConnectedInput(inA_,f);float*o=outputBuffer.channel(0);
         for(int i=0;i<f;i++){float x=xfade_.next();o[i]=o[i]*x+bufB_[i]*(1-x);}
     }
     PatchNode& inA(){return inA_;} PatchNode& out(){return out_;}
     void setFade(float v){xfade_.set(v);}//0=all B,1=all A
-    float* inputB(){return bufB_;}//direct B input
-private:Parameter xfade_{0.5f};PatchNode inA_{this,0},out_{this,0};float bufB_[4096]={};
-    void ensureBuf(int f){if(outputBuffer.frames()<f)outputBuffer.allocate(1,f);}
+    float* inputB(){return bufB_.data();}//direct B input
+private:Parameter xfade_{0.5f};PatchNode inA_{this,0},out_{this,0};std::vector<float> bufB_;
+    void ensureBuf(int f){if(outputBuffer.frames()<f)outputBuffer.allocate(1,f);if((int)bufB_.size()<f)bufB_.resize(f,0.0f);}
 };
 
 }

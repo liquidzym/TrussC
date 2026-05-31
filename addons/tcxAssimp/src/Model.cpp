@@ -491,6 +491,11 @@ void Model::applySkinning() {
             meshNodeInv = nodeGlobals[rm.nodeIndex].inverted();
         }
 
+        std::vector<tc::Mat4> boneMatrices(sceneData_.skeleton.bones.size(), tc::Mat4::identity());
+        for (size_t bi = 0; bi < sceneData_.skeleton.bones.size(); ++bi) {
+            boneMatrices[bi] = meshNodeInv * sceneData_.skeleton.bones[bi].finalMatrix;
+        }
+
         for (size_t vi = 0; vi < mesh.vertices.size() && vi < verts.size(); vi++) {
             auto& bd = mesh.boneData[vi];
             tc::Vec3 pos(0,0,0);
@@ -498,8 +503,8 @@ void Model::applySkinning() {
             float totalWeight = 0.0f;
             for (int s = 0; s < 4 && bd.weights[s] > 0.0f; s++) {
                 int bi = bd.indices[s];
-                if (bi >= 0 && bi < (int)sceneData_.skeleton.bones.size()) {
-                    tc::Mat4 bm = meshNodeInv * sceneData_.skeleton.bones[bi].finalMatrix;
+                if (bi >= 0 && bi < (int)boneMatrices.size()) {
+                    const tc::Mat4& bm = boneMatrices[bi];
                     tc::Vec4 tp = bm * tc::Vec4(mesh.vertices[vi].position, 1.0f);
                     pos.x += tp.x * bd.weights[s];
                     pos.y += tp.y * bd.weights[s];

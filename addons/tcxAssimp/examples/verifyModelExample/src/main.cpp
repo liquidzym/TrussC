@@ -41,6 +41,10 @@ bool nearVec(const tc::Vec3& a, const tc::Vec3& b, float eps = 0.001f) {
     return near(a.x, b.x, eps) && near(a.y, b.y, eps) && near(a.z, b.z, eps);
 }
 
+fs::path exampleRoot() {
+    return fs::path(__FILE__).parent_path().parent_path();
+}
+
 bool nearMat(const tc::Mat4& a, const tc::Mat4& b, float eps = 0.001f) {
     for (int i = 0; i < 16; ++i) {
         if (!near(a.m[i], b.m[i], eps)) return false;
@@ -157,7 +161,7 @@ void testModelTransform(TestRunner& t) {
 }
 
 void testSimpleObjLoad(TestRunner& t) {
-    fs::path objPath = fs::path(TCX_ASSIMP_VERIFY_DATA_DIR) / "simple.obj";
+    fs::path objPath = exampleRoot() / "data" / "simple.obj";
     Model model;
     bool loaded = model.load(objPath.string());
     t.expect(loaded, "Model loads bundled simple OBJ");
@@ -172,7 +176,7 @@ void testSimpleObjLoad(TestRunner& t) {
 }
 
 void testOptionalSampleAssets(TestRunner& t) {
-    fs::path sampleRoot = TCX_ASSIMP_SAMPLE_DATA_DIR;
+    fs::path sampleRoot = exampleRoot().parent_path() / "staticModelExample" / "bin" / "data";
 
     fs::path foxPath = sampleRoot / "Fox" / "Fox_05.fbx";
     if (fs::exists(foxPath)) {

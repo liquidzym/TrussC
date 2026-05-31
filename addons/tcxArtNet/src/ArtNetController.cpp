@@ -8,6 +8,12 @@ namespace tcx::artnet {
 
 namespace {
 
+uint8_t takeNextSequence(uint8_t& nextSequence) noexcept {
+    const uint8_t sequence = nextSequence;
+    nextSequence = (nextSequence == 255) ? 1 : static_cast<uint8_t>(nextSequence + 1);
+    return sequence;
+}
+
 bool sendEncoded(
     UdpSocket& socket,
     const Endpoint& endpoint,
@@ -57,6 +63,8 @@ bool Controller::setup(const ControllerSettings& settings, Error* error) {
     diagnostics_ = {};
     diagnostics_.enableBroadcast = settings.enableBroadcast;
     diagnostics_.directedBroadcastIp = settings.directedBroadcastIp;
+    recvBuffer_.resize(65535);
+    nextDmxSequence_ = 1;
 
     Error localError;
     if (!socket_.open(&localError) ||
@@ -133,6 +141,7 @@ std::vector<NodeInfo> Controller::getDiscoveredNodes() const {
 
 bool Controller::sendDmx(const Endpoint& endpoint, const UniverseAddress& universe, std::span<const uint8_t> dmx, Error* error) {
     ArtDmx packet;
+    packet.sequence = takeNextSequence(nextDmxSequence_);
     packet.universe = universe;
     packet.data.assign(dmx.begin(), dmx.end());
     return sendEncoded(socket_, endpoint, Packet { std::move(packet) }, statistics_, &diagnostics_, error);
@@ -195,11 +204,13 @@ ControllerNetworkDiagnostics Controller::networkDiagnostics() const {
 }
 
 bool Controller::receiveOne(Error* error) {
-    std::vector<uint8_t> buffer(65535);
+    if (recvBuffer_.empty()) {
+        recvBuffer_.resize(65535);
+    }
     size_t bytesReceived = 0;
     Endpoint sender;
     Error receiveError;
-    if (!socket_.receiveFrom(buffer, bytesReceived, sender, &receiveError)) {
+    if (!socket_.receiveFrom(recvBuffer_, bytesReceived, sender, &receiveError)) {
         if (receiveError.code != ErrorCode::None) {
             setError(error, receiveError.code, receiveError.message);
         }
@@ -208,7 +219,7 @@ bool Controller::receiveOne(Error* error) {
 
     Packet packet;
     Error decodeError;
-    if (!Codec::decode(std::span<const uint8_t>(buffer.data(), bytesReceived), packet, &decodeError)) {
+    if (!Codec::decode(std::span<const uint8_t>(recvBuffer_.data(), bytesReceived), packet, &decodeError)) {
         statistics_.invalidPackets++;
         setError(error, decodeError.code, decodeError.message);
         return false;

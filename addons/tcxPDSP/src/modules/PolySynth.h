@@ -34,8 +34,8 @@ public:
         }
     }
     void noteOn(int note,float vel=1.0f){
-        Voice*target=nullptr;uint64_t oldest=~0ULL;
-        for(auto&v:voices_){if(!v->active){target=v.get();break;}if(v->note==note){target=v.get();break;}if(v->age>oldest){oldest=v->age;target=v.get();}}
+        Voice*target=nullptr;uint64_t oldest=0;
+        for(auto&v:voices_){if(!v->active){target=v.get();break;}if(v->note==note){target=v.get();break;}if(!target||v->age>oldest){oldest=v->age;target=v.get();}}
         if(!target)return;
         target->note=note;target->active=true;target->age=0;
         float f=440.0f*std::pow(2.0f,(note-69)/12.0f);

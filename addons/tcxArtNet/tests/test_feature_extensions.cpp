@@ -48,7 +48,11 @@ void test_feature_extensions() {
         reply.bindIp = reply.ipAddress;
         reply.bindIndex = 1;
         sendPacketBytes(sender, { "127.0.0.1", 64628 }, Packet { reply }, error);
-        controller.update();
+        for (int i = 0; i < 50; ++i) {
+            controller.update();
+            if (controller.getDiscoveredNodes().size() == 1) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
         require(controller.getDiscoveredNodes().size() == 1, "Controller records discovered nodes");
         std::this_thread::sleep_for(std::chrono::milliseconds(25));
         controller.update();
@@ -64,6 +68,10 @@ void test_feature_extensions() {
         settings.bindIpAddress = "2.0.0.20";
         settings.enableIpProg = true;
         require(node.setup(settings, &error), error.message.c_str());
+        bool sawAddress = false;
+        node.setAddressCallback([&](const ArtAddress& address) {
+            sawAddress = address.shortName == "renamed";
+        });
         bool sawInput = false;
         node.setInputCallback([&](const ArtInput& input) {
             sawInput = input.bindIndex == 2 && input.input[0] == 1;
@@ -78,7 +86,11 @@ void test_feature_extensions() {
         ArtAddress address;
         address.shortName = "renamed";
         sendPacketBytes(controller, { "127.0.0.1", 64629 }, Packet { address }, error);
-        node.update();
+        for (int i = 0; i < 50 && !sawAddress; ++i) {
+            node.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        require(sawAddress, "Node emulator dispatches ArtAddress when enabled");
         require(node.sendPollReply({ "127.0.0.1", 64630 }, &error), error.message.c_str());
         auto maybeReply = receivePacket(controller);
         require(maybeReply.has_value(), "Node replies after ArtAddress update");
@@ -91,9 +103,15 @@ void test_feature_extensions() {
         ipProg.portAddress = 0x2345;
         ipProg.defaultGateway = { 2, 0, 0, 1 };
         sendPacketBytes(controller, { "127.0.0.1", 64629 }, Packet { ipProg }, error);
-        node.update();
-        auto maybeIpReply = receivePacket(controller);
+        std::optional<Packet> maybeIpReply;
+        for (int i = 0; i < 50; ++i) {
+            node.update();
+            maybeIpReply = receivePacket(controller);
+            if (maybeIpReply && std::holds_alternative<ArtIpProgReply>(*maybeIpReply)) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
         require(maybeIpReply.has_value(), "Node sends ArtIpProgReply for virtual IP programming");
+        require(std::holds_alternative<ArtIpProgReply>(*maybeIpReply), "Node response decodes as ArtIpProgReply");
         const auto& ipReply = std::get<ArtIpProgReply>(*maybeIpReply);
         require(ipReply.ip == ipProg.ip, "Node ArtIpProgReply reports programmed IP");
         require(ipReply.portAddress == 0x2345, "Node ArtIpProgReply reports programmed port address");
@@ -103,7 +121,10 @@ void test_feature_extensions() {
         input.numPorts = 1;
         input.input[0] = 1;
         sendPacketBytes(controller, { "127.0.0.1", 64629 }, Packet { input }, error);
-        node.update();
+        for (int i = 0; i < 50 && !sawInput; ++i) {
+            node.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
         require(sawInput, "Node emulator dispatches ArtInput when enabled");
     }
 
@@ -118,6 +139,13 @@ void test_feature_extensions() {
         require(state.processSync(ArtSync {}) == 1, "ArtSync commits one pending universe");
         require(state.getUniverseData(dmx.universe).value() == dmx.data, "DMX runtime returns committed universe data");
         require(!state.processDmx(dmx, false), "DMX runtime drops duplicate non-zero sequence");
+
+        DmxReceiverState staleState;
+        staleState.setPendingTimeout(std::chrono::milliseconds(1));
+        require(staleState.processDmx(dmx, true), "DMX runtime buffers synced frame with timeout");
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+        require(staleState.processSync(ArtSync {}) == 0, "ArtSync does not commit expired pending universe");
+        require(!staleState.getUniverseData(dmx.universe).has_value(), "expired pending universe is not visible as committed data");
     }
 
     {

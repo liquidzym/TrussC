@@ -45,6 +45,8 @@ struct AnimationClip {
 
 class Animator {
 public:
+    // clips must outlive the Animator; Model owns both and resets this pointer
+    // after load() / clear().
     void setClips(const std::vector<AnimationClip>* clips) { clips_ = clips; }
 
     void play(const std::string& name);

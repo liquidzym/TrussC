@@ -16,6 +16,7 @@ public:
     bool setup(bool enableBroadcast = false, Error* error = nullptr);
     bool setup(const SenderSettings& settings, Error* error = nullptr);
     void close();
+    bool recover(Error* error = nullptr);
 
     bool sendPacket(const Endpoint& endpoint, const Packet& packet, Error* error = nullptr);
     bool sendDmx(const Endpoint& endpoint, const UniverseAddress& universe, std::span<const uint8_t> dmx, Error* error = nullptr);
@@ -29,6 +30,7 @@ private:
     UdpSocket socket_;
     SenderSettings settings_;
     Statistics statistics_;
+    uint8_t nextDmxSequence_ = 1;
 };
 
 } // namespace tcx::artnet

@@ -7,6 +7,8 @@ namespace tcx::assimp {
 
 class Node {
 public:
+    // Lightweight handle into a Model's SceneData. Keep it only while that
+    // Model is alive and has not been clear()ed or reloaded.
     Node() = default;
     Node(SceneData* scene, int index) : scene_(scene), index_(index) {}
 

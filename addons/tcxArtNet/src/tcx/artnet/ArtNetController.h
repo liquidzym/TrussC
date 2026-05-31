@@ -61,6 +61,8 @@ private:
     std::vector<NodeInfo> nodes_;
     Statistics statistics_;
     std::chrono::steady_clock::time_point lastPoll_ {};
+    std::vector<uint8_t> recvBuffer_;
+    uint8_t nextDmxSequence_ = 1;
 };
 
 } // namespace tcx::artnet

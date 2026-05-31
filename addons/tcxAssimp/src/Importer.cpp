@@ -227,7 +227,7 @@ void importEmbeddedTexture(const aiScene* scene, int idx, SceneData& out) {
 // =========================================================================
 
 void importSkeleton(const aiScene* scene, SceneData& out) {
-    out.skeleton.bones.clear();
+    out.skeleton.clear();
     // Collect all bones from all meshes
     for (unsigned int mi = 0; mi < scene->mNumMeshes; mi++) {
         auto* aiMesh = scene->mMeshes[mi];
@@ -248,6 +248,7 @@ void importSkeleton(const aiScene* scene, SceneData& out) {
                 }
             }
             out.skeleton.bones.push_back(std::move(bone));
+            out.skeleton.boneIndex[out.skeleton.bones.back().name] = (int)out.skeleton.bones.size() - 1;
         }
     }
 }

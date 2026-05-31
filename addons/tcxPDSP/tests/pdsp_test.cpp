@@ -249,6 +249,16 @@ void test_patch_node() {
     CHECK(src.destinations().size() == 1, "Connection established");
     CHECK(src.destinations()[0] == &dst, "Destination correct");
 
+    PatchNode replacement(nullptr, 0);
+    replacement >> dst;
+    CHECK(dst.source() == &replacement, "Reconnect updates destination source");
+    CHECK(src.destinations().size() == 0, "Reconnect removes old destination edge");
+    CHECK(replacement.destinations().size() == 1, "Reconnect adds replacement edge");
+
+    replacement.disconnect(dst);
+    CHECK(replacement.destinations().size() == 0, "Replacement disconnected");
+
+    src >> dst;
     src.disconnect(dst);
     CHECK(src.destinations().size() == 0, "Disconnected");
 }

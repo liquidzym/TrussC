@@ -3,8 +3,9 @@
 #include "core/AudioContext.h"
 #include "sequencer/Transport.h"
 #include "sequencer/EventQueue.h"
+#include "utils/Random.h"
 #include <vector>
-#include <cstdlib>
+#include <algorithm>
 namespace tcx::pdsp {
 
 class EuclideanSequencer {
@@ -56,9 +57,9 @@ public:
             uint64_t abs=t.currentSample()+f;int step=(int)((abs/sps)%steps_.size());
             if(step!=currentStep_&&(abs%sps)==0){
                 currentStep_=step;auto&s=steps_[step];
-                if(s.active&&(float)rand()/2147483647.0f<s.prob){
+                if(s.active&&rng_.next()<s.prob){
                     // Maybe follow with conditional step
-                    if((float)rand()/2147483647.0f<s.nextProb&&step+1<(int)steps_.size()){
+                    if(rng_.next()<s.nextProb&&step+1<(int)steps_.size()){
                         auto&ns=steps_[step+1];if(ns.active){
                             SequenceEvent ev;ev.type=EventType::NoteOn;ev.sampleTime=abs+sps;ev.sampleOffsetInBlock=f+(int)sps;ev.note=ns.note;ev.value0=ns.vel;q.push(ev);
                         }
@@ -68,7 +69,7 @@ public:
             }
         }
     }
-private:int sampleRate_=48000,currentStep_=-1;std::vector<ProbStep> steps_;
+private:int sampleRate_=48000,currentStep_=-1;std::vector<ProbStep> steps_;Random rng_{0x31415926u};
 };
 
 class Arpeggiator {
@@ -90,7 +91,7 @@ public:
                 case Up:idx_++;if(idx_>=totalNotes)idx_=0;break;
                 case Down:idx_--;if(idx_<0)idx_=totalNotes-1;break;
                 case UpDown:idx_+=dir_;if(idx_>=totalNotes-1||idx_<=0)dir_=-dir_;break;
-                case Random:idx_=rand()%totalNotes;break;
+                case Random:idx_=std::min(totalNotes-1,(int)(rng_.next()*totalNotes));break;
                 }
                 int oct=nidx/(int)notes_.size(),ni=nidx%(int)notes_.size();
                 int note=notes_[ni]+oct*12;
@@ -98,7 +99,7 @@ public:
             }
         }
     }
-private:int sampleRate_=48000,idx_=0,dir_=1,octaves_=1;Mode mode_=Up;std::vector<int> notes_;uint64_t lastSample_=~0ULL;
+private:int sampleRate_=48000,idx_=0,dir_=1,octaves_=1;Mode mode_=Up;std::vector<int> notes_;uint64_t lastSample_=~0ULL;tcx::pdsp::Random rng_{0x27182818u};
 };
 
 class PatternChain {

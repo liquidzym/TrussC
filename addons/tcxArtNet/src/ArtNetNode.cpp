@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <string_view>
-#include <vector>
 
 namespace tcx::artnet {
 
@@ -33,6 +32,7 @@ bool Node::setup(const NodeSettings& settings, Error* error) {
     if (!socket_.setReuseAddress(true, error)) return false;
     if (!socket_.bind(settings.port, error)) return false;
     if (!socket_.setNonBlocking(true, error)) return false;
+    recvBuffer_.resize(65535);
     return true;
 }
 
@@ -86,11 +86,13 @@ bool Node::sendDiagnostics(const Endpoint& controller, std::string_view message,
 }
 
 bool Node::receiveOne(Error* error) {
-    std::vector<uint8_t> buffer(65535);
+    if (recvBuffer_.empty()) {
+        recvBuffer_.resize(65535);
+    }
     size_t bytesReceived = 0;
     Endpoint sender;
     Error receiveError;
-    if (!socket_.receiveFrom(buffer, bytesReceived, sender, &receiveError)) {
+    if (!socket_.receiveFrom(recvBuffer_, bytesReceived, sender, &receiveError)) {
         if (receiveError.code != ErrorCode::None) {
             setError(error, receiveError.code, receiveError.message);
         }
@@ -98,7 +100,7 @@ bool Node::receiveOne(Error* error) {
     }
     Packet packet;
     Error decodeError;
-    if (!Codec::decode(std::span<const uint8_t>(buffer.data(), bytesReceived), packet, &decodeError)) {
+    if (!Codec::decode(std::span<const uint8_t>(recvBuffer_.data(), bytesReceived), packet, &decodeError)) {
         statistics_.invalidPackets++;
         setError(error, decodeError.code, decodeError.message);
         return false;

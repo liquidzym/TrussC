@@ -39,6 +39,7 @@ public:
 
         // Allocate mix buffer (2 extra channels for stereo mixdown)
         mixBuffer_.allocate(settings.outputChannels, settings.bufferSize);
+        graphGeneration_ = PatchNode::graphGeneration();
 
         return true;
     }
@@ -59,11 +60,13 @@ public:
 
     void rebuildGraph() {
         orderedNodes_.clear();
+        const uint64_t generation = PatchNode::graphGeneration();
+        const auto connections = PatchNode::allConnections();
 
         for (auto& outNode : outputNodes_) {
             if (auto* src = outNode.source()) {
                 if (auto* owner = src->owner()) {
-                    visitNode(owner);
+                    visitNode(owner, connections);
                 }
             }
         }
@@ -73,6 +76,7 @@ public:
         }
 
         graphDirty_ = false;
+        graphGeneration_ = generation;
     }
 
     // Process one audio block → interleaved output
@@ -86,7 +90,7 @@ public:
             interleavedOutput[i] = 0.0f;
         }
 
-        if (graphDirty_) {
+        if (graphDirty_ || graphGeneration_ != PatchNode::graphGeneration()) {
             rebuildGraph();
         }
 
@@ -130,7 +134,7 @@ public:
                 }
             }
 
-            for (auto* src : pn.destinations()) {
+            for (auto* src : pn.destinationSnapshot()) {
                 if (!src || !src->owner()) continue;
                 auto& buf = src->owner()->output();
                 if (buf.empty()) continue;
@@ -165,15 +169,15 @@ private:
         return containsNode(activeNodes_, node);
     }
 
-    void visitNode(AudioNode* node) {
+    void visitNode(AudioNode* node, const std::vector<PatchNode::Connection>& connections) {
         if (!node || !isRegistered(node) || containsNode(orderedNodes_, node)) return;
 
-        for (const auto& edge : PatchNode::allConnections()) {
+        for (const auto& edge : connections) {
             if (!edge.source || !edge.destination) continue;
             AudioNode* dstOwner = edge.destination->owner();
             AudioNode* srcOwner = edge.source->owner();
             if (dstOwner == node && srcOwner && srcOwner != node) {
-                visitNode(srcOwner);
+                visitNode(srcOwner, connections);
             }
         }
 
@@ -186,6 +190,7 @@ private:
     std::vector<AudioNode*> orderedNodes_;
     AudioBuffer mixBuffer_;
     bool graphDirty_ = true;
+    uint64_t graphGeneration_ = 0;
 };
 
 } // namespace tcx::pdsp

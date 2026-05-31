@@ -6,10 +6,12 @@
 #include "modules/DrumVoice.h"
 #include "sequencer/Transport.h"
 #include "sequencer/EventQueue.h"
+#include "utils/Random.h"
+#include <algorithm>
+#include <array>
 #include <vector>
 #include <map>
 #include <cmath>
-#include <cstdlib>
 namespace tcx::pdsp {
 
 class GranularSynth : public AudioNode {
@@ -20,24 +22,29 @@ public:
     void process(AudioContext& ctx,int f)override{
         if(!prepared_||!active_||sample_.empty())return;ensureBuf(f);float*o=outputBuffer.channel(0);
         for(int i=0;i<f;i++){o[i]=0;float d=density_.next(),sz=size_.next(),pt=pitch_.next();
-            if((float)rand()/2147483647.0f<d*sr_*0.0001f){
-                int start=rand()%(int)(sample_.size()*0.9f);
-                grains_.push_back({start,0.0f,sz,pt});
+            if(rng_.next()<std::min(1.0f,d*sr_*0.0001f)&&activeGrains_<(int)grains_.size()){
+                int maxStart=std::max(1,(int)(sample_.size()*0.9f));
+                int start=std::min(maxStart-1,(int)(rng_.next()*maxStart));
+                grains_[activeGrains_++]={start,0.0f,sz,pt};
             }
-            for(auto&g:grains_){
+            int gidx=0;
+            while(gidx<activeGrains_){
+                auto&g=grains_[gidx];
                 if(g.pos<g.size&&g.start+(int)g.pos<(int)sample_.size()){
                     float env=1-g.pos/g.size;
                     float s=sample_[g.start+(int)g.pos]*env*0.3f;
                     o[i]+=s;g.pos+=g.pitch;
                 }
+                if(g.pos>=g.size){grains_[gidx]=grains_[--activeGrains_];}
+                else{gidx++;}
             }
-            grains_.erase(std::remove_if(grains_.begin(),grains_.end(),[](auto&g){return g.pos>=g.size;}),grains_.end());
         }
     }
     PatchNode& out(){return out_;}
     void setDensity(float d){density_.set(d);}void setGrainSize(float s){size_.set(s);}void setPitch(float p){pitch_.set(p);}
-private:struct Grain{int start;float pos,size,pitch;};std::vector<Grain> grains_;std::vector<float> sample_;
+private:struct Grain{int start;float pos,size,pitch;};std::array<Grain,128> grains_{};int activeGrains_=0;std::vector<float> sample_;
     Parameter density_{10},size_{0.1f},pitch_{1};PatchNode out_;float sr_=48000;
+    Random rng_{0x13579bdfu};
     void ensureBuf(int f){if(outputBuffer.frames()<f)outputBuffer.allocate(1,f);}
 };
 
@@ -56,13 +63,13 @@ public:
     }
     void pluck(float amplitude=1){
         int len=(int)delay_.size()/4;
-        for(int i=0;i<len;i++)delay_[i]=(rand()%2000-1000)/1000.0f*amplitude;
+        for(int i=0;i<len;i++)delay_[i]=(rng_.next()*2.0f-1.0f)*amplitude;
         // Advance writePos_ past pluck so read position lands in the excitation
         writePos_=len;
     }
     PatchNode& out(){return out_;}
     void setFrequency(float hz){freq_.set(hz);}void setDecay(float d){decay_.set(d);}
-private:Parameter freq_{220},decay_{0.99f};PatchNode out_;float sr_=48000;std::vector<float> delay_;int writePos_=0;
+private:Parameter freq_{220},decay_{0.99f};PatchNode out_;float sr_=48000;std::vector<float> delay_;int writePos_=0;Random rng_{0x2468ace1u};
     void ensureBuf(int f){if(outputBuffer.frames()<f)outputBuffer.allocate(1,f);}
 };
 

@@ -1,5 +1,8 @@
 #include "tcxCvDistance.h"
 
+#include <algorithm>
+#include <limits>
+
 namespace tcx {
 
 using namespace std;
@@ -55,9 +58,9 @@ const string& mostRepresentative(const vector<string>& strs) {
         int curScore = 0;
         for (int j = 0; j < n; j++) {
             int curEdit = editDistance(strs[i], strs[j]);
-            if (curEdit < curScore) {
-                // overflow guard
-                curScore = numeric_limits<int>::max() / 2;
+            if (curScore > numeric_limits<int>::max() - curEdit) {
+                curScore = numeric_limits<int>::max();
+                break;
             }
             curScore += curEdit;
         }

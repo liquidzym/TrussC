@@ -13,7 +13,7 @@ class Transport {
 public:
     void prepare(int sampleRate) {
         sampleRate_ = sampleRate;
-        samplePosition_ = 0;
+        samplePosition_.store(0, std::memory_order_relaxed);
     }
 
     void setBpm(double bpm) {
@@ -27,24 +27,26 @@ public:
     void play()  { playing_.store(true, std::memory_order_relaxed); }
     void stop()  { playing_.store(false, std::memory_order_relaxed); }
     // Call reset() only when stopped (no concurrent advance)
-    void reset() { samplePosition_ = 0; }
-    void reset(uint64_t sample) { samplePosition_ = sample; }
+    void reset() { samplePosition_.store(0, std::memory_order_relaxed); }
+    void reset(uint64_t sample) { samplePosition_.store(sample, std::memory_order_relaxed); }
 
     bool isPlaying() const { return playing_.load(std::memory_order_relaxed); }
 
-    uint64_t currentSample() const { return samplePosition_; }
+    uint64_t currentSample() const { return samplePosition_.load(std::memory_order_relaxed); }
 
     void advance(int frames) {
         if (playing_.load(std::memory_order_relaxed)) {
-            samplePosition_ += static_cast<uint64_t>(frames);
+            uint64_t samplePosition = samplePosition_.load(std::memory_order_relaxed)
+                + static_cast<uint64_t>(frames);
             if (loopEnabled_.load(std::memory_order_relaxed)) {
                 uint64_t start = loopStartSample_.load(std::memory_order_relaxed);
                 uint64_t end = loopEndSample_.load(std::memory_order_relaxed);
-                if (end > start && samplePosition_ >= end) {
+                if (end > start && samplePosition >= end) {
                     uint64_t length = end - start;
-                    samplePosition_ = start + ((samplePosition_ - start) % length);
+                    samplePosition = start + ((samplePosition - start) % length);
                 }
             }
+            samplePosition_.store(samplePosition, std::memory_order_relaxed);
         }
     }
 
@@ -87,7 +89,7 @@ private:
     std::atomic<bool> loopEnabled_{false};
     std::atomic<uint64_t> loopStartSample_{0};
     std::atomic<uint64_t> loopEndSample_{0};
-    uint64_t samplePosition_ = 0;
+    std::atomic<uint64_t> samplePosition_{0};
 };
 
 } // namespace tcx::pdsp

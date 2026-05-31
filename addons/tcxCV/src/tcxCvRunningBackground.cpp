@@ -31,14 +31,14 @@ void RunningBackground::update(Mat frame, Mat& thresholded) {
         bitwise_not(thresholded, notForeground);
         Mat backgroundUpdate;
         if (useLearningTime) {
-            addWeighted(accumulator, learningTime, frame, 1.0, 0.0, backgroundUpdate);
+            addWeighted(accumulator, 1.0 - learningTime, frame, learningTime, 0.0, backgroundUpdate);
         } else {
             addWeighted(accumulator, 1.0 - learningRate, frame, learningRate, 0.0, backgroundUpdate);
         }
         backgroundUpdate.copyTo(accumulator, notForeground);
     } else {
         if (useLearningTime) {
-            addWeighted(accumulator, learningTime, frame, 1.0, 0.0, accumulator);
+            addWeighted(accumulator, 1.0 - learningTime, frame, learningTime, 0.0, accumulator);
         } else {
             accumulateWeighted(frame, accumulator, learningRate);
         }
@@ -88,7 +88,7 @@ void RunningBackground::setLearningRate(double learningRate_) {
 }
 
 void RunningBackground::setLearningTime(double learningTime_) {
-    this->learningTime = 1.0 / learningTime_;
+    this->learningTime = learningTime_ > 0.0 ? 1.0 / learningTime_ : 1.0;
     useLearningTime = true;
 }
 

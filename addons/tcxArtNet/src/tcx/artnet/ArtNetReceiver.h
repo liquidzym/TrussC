@@ -7,6 +7,7 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 namespace tcx::artnet {
 
@@ -48,6 +49,7 @@ private:
     std::atomic<bool> running_ { false };
     ReceiverSettings settings_;
     Statistics statistics_;
+    std::vector<uint8_t> recvBuffer_;
 };
 
 } // namespace tcx::artnet

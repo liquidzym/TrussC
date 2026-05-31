@@ -28,13 +28,15 @@ void DmxReceiverState::commit(const ArtDmx& dmx) {
 }
 
 bool DmxReceiverState::processDmx(const ArtDmx& dmx, bool requireSync) {
+    const auto now = std::chrono::steady_clock::now();
+    prunePending(now);
     auto& state = universes_[keyFor(dmx.universe)];
     state.universe = dmx.universe;
     if (!sequenceAccepted(state, dmx)) {
         return false;
     }
     if (requireSync) {
-        pending_[keyFor(dmx.universe)] = dmx;
+        pending_[keyFor(dmx.universe)] = PendingDmx { dmx, now };
     } else {
         commit(dmx);
     }
@@ -42,12 +44,28 @@ bool DmxReceiverState::processDmx(const ArtDmx& dmx, bool requireSync) {
 }
 
 size_t DmxReceiverState::processSync(const ArtSync&) {
+    prunePending();
     const size_t committed = pending_.size();
-    for (const auto& [_, dmx] : pending_) {
-        commit(dmx);
+    for (const auto& [_, pending] : pending_) {
+        commit(pending.dmx);
     }
     pending_.clear();
     return committed;
+}
+
+size_t DmxReceiverState::prunePending(std::chrono::steady_clock::time_point now) {
+    if (pendingTimeout_ <= std::chrono::milliseconds::zero()) {
+        return 0;
+    }
+    const size_t before = pending_.size();
+    for (auto it = pending_.begin(); it != pending_.end();) {
+        if (now - it->second.receivedAt > pendingTimeout_) {
+            it = pending_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    return before - pending_.size();
 }
 
 std::optional<std::vector<uint8_t>> DmxReceiverState::getUniverseData(const UniverseAddress& universe) const {

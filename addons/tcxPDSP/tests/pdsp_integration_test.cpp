@@ -23,9 +23,14 @@
 #include "core/AudioBufferPool.h"
 #include "core/ControlRate.h"
 #include "dsp/SIMD.h"
+#include "dsp/Effects2.h"
 #include "modules/DrumSynth.h"
 #include "utils/OnePole.h"
 #include "utils/SmoothRandom.h"
+
+#define private public
+#include "modules/PolySynth.h"
+#undef private
 
 using namespace tcx::pdsp;
 
@@ -187,6 +192,31 @@ static void test_pool_and_drumsynth() {
     CHECK(peak > 0.01f, "DrumSynth trigger produces audio");
 }
 
+static void test_poly_synth_voice_stealing() {
+    std::printf("\n--- PolySynth voice stealing ---\n");
+    AudioContext ctx; ctx.sampleRate = 48000; ctx.bufferSize = 64; ctx.outputChannels = 2;
+    PolySynth synth(1);
+    synth.prepare(ctx);
+    synth.noteOn(60, 1.0f);
+    CHECK(synth.voices_[0]->active && synth.voices_[0]->note == 60, "first note claims only voice");
+    synth.process(ctx, 64);
+    synth.noteOn(72, 1.0f);
+    CHECK(synth.voices_[0]->active && synth.voices_[0]->note == 72, "full voice pool steals oldest voice");
+}
+
+static void test_crossfader_large_block() {
+    std::printf("\n--- Crossfader large block ---\n");
+    AudioContext ctx; ctx.sampleRate = 48000; ctx.bufferSize = 8192; ctx.outputChannels = 2;
+    Crossfader xfade;
+    xfade.setFade(0.0f);
+    xfade.prepare(ctx);
+    float* b = xfade.inputB();
+    for (int i = 0; i < ctx.bufferSize; i++) b[i] = 1.0f;
+    xfade.process(ctx, ctx.bufferSize);
+    CHECK(std::fabs(xfade.output().sample(0, ctx.bufferSize - 1) - 1.0f) < 0.001f,
+          "B input supports blocks larger than 4096 frames");
+}
+
 int main() {
     std::printf("=== tcxPDSP Integration Verification ===\n");
     test_lazy_graph();
@@ -194,6 +224,8 @@ int main() {
     test_step_gate();
     test_analysis_and_utils();
     test_pool_and_drumsynth();
+    test_poly_synth_voice_stealing();
+    test_crossfader_large_block();
     std::printf("\n=== %d failures ===\n", failures);
     return failures ? 1 : 0;
 }

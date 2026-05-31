@@ -65,6 +65,7 @@ private:
     std::function<void(const ArtInput&)> inputCallback_;
     std::function<void(const ArtTrigger&)> triggerCallback_;
     std::function<void(const ArtTimeCode&)> timeCodeCallback_;
+    std::vector<uint8_t> recvBuffer_;
 };
 
 } // namespace tcx::artnet

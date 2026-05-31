@@ -111,4 +111,65 @@ void test_node_controller_runtime() {
         require(std::holds_alternative<ArtDataReply>(*receivedPacket), "large packet decodes as ArtDataReply");
         require(std::get<ArtDataReply>(*receivedPacket).data.size() == 1400, "large packet payload is not truncated by UDP receive buffer");
     }
+
+    {
+        Error error;
+        UdpSocket receiver;
+        require(receiver.open(&error), error.message.c_str());
+        require(receiver.setReuseAddress(true, &error), error.message.c_str());
+        require(receiver.bind(64631, &error), error.message.c_str());
+        require(receiver.setNonBlocking(true, &error), error.message.c_str());
+
+        Sender sender;
+        require(sender.setup(false, &error), error.message.c_str());
+        const UniverseAddress universe { 0, 0, 1 };
+        const std::array<uint8_t, 2> dmx { 1, 2 };
+        require(sender.sendDmx({ "127.0.0.1", 64631 }, universe, dmx, &error), error.message.c_str());
+        require(sender.sendDmx({ "127.0.0.1", 64631 }, universe, dmx, &error), error.message.c_str());
+
+        Packet first;
+        Packet second;
+        Endpoint endpoint;
+        require(receiveDecoded(receiver, first, endpoint, &error), error.message.c_str());
+        require(receiveDecoded(receiver, second, endpoint, &error), error.message.c_str());
+        require(std::get<ArtDmx>(first).sequence == 1, "Sender assigns first ArtDmx sequence");
+        require(std::get<ArtDmx>(second).sequence == 2, "Sender increments ArtDmx sequence");
+
+        sender.close();
+        Error sendAfterClose;
+        require(!sender.sendSync({ "127.0.0.1", 64631 }, &sendAfterClose), "Sender does not silently recover after close");
+        require(sendAfterClose.code == ErrorCode::NotOpen, "closed Sender reports NotOpen");
+
+        require(sender.recover(&error), error.message.c_str());
+        require(sender.sendSync({ "127.0.0.1", 64631 }, &error), error.message.c_str());
+        Packet sync;
+        require(receiveDecoded(receiver, sync, endpoint, &error), error.message.c_str());
+        require(std::holds_alternative<ArtSync>(sync), "Sender recover explicitly reopens socket for sends");
+    }
+
+    {
+        Error error;
+        UdpSocket receiver;
+        require(receiver.open(&error), error.message.c_str());
+        require(receiver.setReuseAddress(true, &error), error.message.c_str());
+        require(receiver.bind(64632, &error), error.message.c_str());
+        require(receiver.setNonBlocking(true, &error), error.message.c_str());
+
+        Controller controller;
+        ControllerSettings settings;
+        settings.localPort = 64633;
+        require(controller.setup(settings, &error), error.message.c_str());
+        const UniverseAddress universe { 0, 0, 2 };
+        const std::array<uint8_t, 2> dmx { 3, 4 };
+        require(controller.sendDmx({ "127.0.0.1", 64632 }, universe, dmx, &error), error.message.c_str());
+        require(controller.sendDmx({ "127.0.0.1", 64632 }, universe, dmx, &error), error.message.c_str());
+
+        Packet first;
+        Packet second;
+        Endpoint endpoint;
+        require(receiveDecoded(receiver, first, endpoint, &error), error.message.c_str());
+        require(receiveDecoded(receiver, second, endpoint, &error), error.message.c_str());
+        require(std::get<ArtDmx>(first).sequence == 1, "Controller assigns first ArtDmx sequence");
+        require(std::get<ArtDmx>(second).sequence == 2, "Controller increments ArtDmx sequence");
+    }
 }
