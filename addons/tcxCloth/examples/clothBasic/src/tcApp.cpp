@@ -69,7 +69,7 @@ void tcApp::rebuild() {
     settings.height = std::min(h * 0.48f, 330.0f);
     settings.origin = tc::Vec3((w - settings.width) * 0.5f, 138.0f, 0.0f);
     settings.constraintIterations = iterations_;
-    settings.damping = 0.018f;
+    settings.damping = 0.66f;
     settings.structuralStiffness = 0.88f;
     settings.shearStiffness = 0.58f;
     settings.bendStiffness = 0.18f;

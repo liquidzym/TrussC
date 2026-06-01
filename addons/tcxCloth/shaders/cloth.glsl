@@ -30,7 +30,7 @@ layout(binding=0) uniform cloth_step_params {
     vec4 forces;       // gravity + global force xyz
     vec4 stiffness;    // structural, shear, bend
     vec4 collider;     // sphere center xyz, radius
-    vec4 options;      // enable shear, enable bend, enable wind, max grid step
+    vec4 options;      // enable shear, enable bend, enable wind, constraint relaxation
 };
 
 in vec2 uv;
@@ -107,10 +107,6 @@ void applyNeighbor(inout vec3 correction, vec3 pos, vec2 coord, vec2 offset, flo
     correction += delta * ((len - restLen) / len) * (0.5 * k);
 }
 
-float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-}
-
 void main() {
     int mode = int(timing.w + 0.5);
     vec4 pin = samplePin(uv);
@@ -141,7 +137,7 @@ void main() {
             float flutter = sin(timing.z * (1.8 + wind.w * 0.04) + uv.x * 10.0 + uv.y * 6.0) * 0.35;
             accel += n * projection * wind.w * (85.0 + flutter * 35.0) * freeEdge;
         }
-        vec3 velocity = (pos - prev) * (1.0 - timing.y);
+        vec3 velocity = (pos - prev) * timing.y;
         vec3 next = pos + velocity + accel * timing.x * timing.x;
         frag_color = vec4(next, pin.r);
         return;

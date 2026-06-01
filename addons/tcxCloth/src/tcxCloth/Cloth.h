@@ -91,6 +91,7 @@ private:
     void integrateCpu(float dt);
     void solveConstraintsCpu();
     void collideCpu();
+    float dampingFactorForStep(float dt) const;
     void recomputeNormalsCpu();
     void rebuildMeshes();
     tc::Color shadedColor(const tc::Vec3& normal, const tc::Vec2& uv) const;

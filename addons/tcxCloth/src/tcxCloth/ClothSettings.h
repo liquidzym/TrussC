@@ -22,7 +22,7 @@ struct ClothSettings {
     float height = 400.0f;
     tc::Vec3 origin {0.0f, 0.0f, 0.0f};
 
-    float damping = 0.01f;
+    float damping = 0.45f;
     float fixedTimeStep = 1.0f / 60.0f;
     int substeps = 1;
 

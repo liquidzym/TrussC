@@ -63,14 +63,30 @@ int main(int argc, char** argv) {
                     "README documents collision example backend");
     requireContains(readme, "`examples/clothWind`: GPU-first Auto",
                     "README documents wind example backend");
+    requireContains(readme, "damping is interpreted as the fraction of velocity removed over one second",
+                    "README documents time-based damping units");
+    requireContains(readme, "Collider setters replace their full collider lists",
+                    "README documents collider replacement semantics");
 
     const auto clothSource = readText(root / "src" / "Cloth.cpp");
     requireContains(clothSource, "void Cloth::solveGpuConstraints(float dt)",
                     "GPU solver has a named constraint phase");
-    require(countOccurrences(clothSource, "solveGpuConstraints(dt);") >= 2,
-            "GPU step runs constraint phases before and after Verlet integration");
-    requireContains(clothSource, "uniforms.options[3] = 0.30f;",
-                    "GPU constraint pass uses explicit relaxation for stable stiffness");
+    require(countOccurrences(clothSource, "solveConstraintsCpu();") == 1,
+            "CPU step solves constraints once after Verlet integration");
+    require(countOccurrences(clothSource, "solveGpuConstraints(dt);") == 1,
+            "GPU step solves constraints once after Verlet integration");
+    requireContains(clothSource, "float Cloth::dampingFactorForStep(float dt) const",
+                    "CPU and GPU paths share time-based damping");
+    requireContains(clothSource, "uniforms.timing[1] = dampingFactorForStep(dt);",
+                    "GPU receives a per-step damping factor");
+    requireContains(clothSource, "uniforms.stiffness[0] = settings_.structuralStiffness;",
+                    "GPU receives authored stiffness values");
+    requireNotContains(clothSource, "constraintStiffnessForIteration",
+                       "solver does not weaken stiffness before each iteration");
+    requireContains(clothSource, "kGpuConstraintRelaxation",
+                    "GPU constraint relaxation is named");
+    requireContains(clothSource, "accumulator_ = fixedStep;",
+                    "fixed-step accumulator drops excessive backlog after the step cap");
     requireNotContains(clothSource, "gpu y=",
                        "temporary GPU bounds diagnostics are not shipped");
     requireNotContains(clothSource, "collision minDist=",
@@ -79,8 +95,14 @@ int main(int argc, char** argv) {
     const auto shader = readText(root / "shaders" / "cloth.glsl");
     requireContains(shader, "correction += delta * ((len - restLen) / len) * (0.5 * k);",
                     "GPU constraints accumulate pair corrections before relaxation");
+    requireContains(shader, "constraint relaxation",
+                    "shader names options.w as a relaxation factor");
+    requireContains(shader, "vec3 velocity = (pos - prev) * timing.y;",
+                    "shader applies the precomputed per-step damping factor");
     requireContains(shader, "vec3 corrected = pos + correction * options.w;",
                     "GPU constraints apply an explicit relaxation value");
+    requireNotContains(shader, "float hash(",
+                       "shader does not ship unused hash helper");
     requireNotContains(shader, "correction / max(weight",
                        "GPU constraints do not dilute stiffness by neighbor count");
 

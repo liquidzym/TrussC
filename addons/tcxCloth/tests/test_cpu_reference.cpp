@@ -103,8 +103,8 @@ int main() {
     const float pushedY = collisionVelocity.particlePosition(4, 3).y;
     collisionVelocity.clearColliders();
     collisionVelocity.update(1.0f / 60.0f);
-    require(collisionVelocity.particlePosition(4, 3).y > pushedY + 0.001f,
-            "sphere collision displacement remains as Verlet velocity for natural cloth response");
+    requireNear(collisionVelocity.particlePosition(4, 3).y, pushedY, 0.001f,
+                "sphere collision projection does not become Verlet velocity");
 
     falling.update(0.5f);
     for (const auto& particle : falling.particles()) {
@@ -143,6 +143,33 @@ int main() {
     const float viewW = 960.0f;
     const float viewH = 640.0f;
 
+    tcxCloth::Cloth basicLayout;
+    tcxCloth::ClothSettings basicSettings;
+    basicSettings.columns = 64;
+    basicSettings.rows = 64;
+    basicSettings.width = std::min(viewW * 0.64f, 620.0f);
+    basicSettings.height = std::min(viewH * 0.48f, 330.0f);
+    basicSettings.origin = tc::Vec3((viewW - basicSettings.width) * 0.5f, 138.0f, 0.0f);
+    basicSettings.constraintIterations = 8;
+    basicSettings.damping = 0.66f;
+    basicSettings.structuralStiffness = 0.88f;
+    basicSettings.shearStiffness = 0.58f;
+    basicSettings.bendStiffness = 0.18f;
+    basicSettings.backend = tcxCloth::ClothSettings::SolverBackend::CpuReference;
+    basicLayout.setup(basicSettings);
+    basicLayout.pinParticle(0, 0, true);
+    basicLayout.pinParticle(basicSettings.columns - 1, 0, true);
+    basicLayout.setGravity(tc::Vec3(0.0f, 560.0f, 0.0f));
+    basicLayout.setWind(tc::Vec3(0.0f, 0.0f, 1.0f), 1.8f);
+    for (int i = 0; i < 120; ++i) {
+        basicLayout.update(1.0f / 60.0f);
+    }
+    const Bounds basicBounds = particleBounds(basicLayout);
+    requireBounds(basicBounds.minX > 40.0f && basicBounds.maxX < viewW - 40.0f &&
+                      basicBounds.minY > 100.0f && basicBounds.maxY < viewH - 20.0f,
+                  basicBounds,
+                  "basic example warmup keeps cloth visible");
+
     tcxCloth::Cloth windLayout;
     tcxCloth::ClothSettings windSettings;
     windSettings.columns = 96;
@@ -151,7 +178,7 @@ int main() {
     windSettings.height = std::min(viewH * 0.48f, 340.0f);
     windSettings.origin = tc::Vec3((viewW - windSettings.width) * 0.5f, 138.0f, 0.0f);
     windSettings.constraintIterations = 12;
-    windSettings.damping = 0.022f;
+    windSettings.damping = 0.74f;
     windSettings.structuralStiffness = 0.86f;
     windSettings.shearStiffness = 0.54f;
     windSettings.bendStiffness = 0.16f;
@@ -182,7 +209,7 @@ int main() {
     collisionSettings.height = std::min(viewH * 0.46f, 320.0f);
     collisionSettings.origin = tc::Vec3((viewW - collisionSettings.width) * 0.5f, 140.0f, 0.0f);
     collisionSettings.constraintIterations = 18;
-    collisionSettings.damping = 0.014f;
+    collisionSettings.damping = 0.57f;
     collisionSettings.structuralStiffness = 0.96f;
     collisionSettings.shearStiffness = 0.86f;
     collisionSettings.bendStiffness = 0.42f;

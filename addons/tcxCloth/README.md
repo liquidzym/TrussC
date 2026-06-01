@@ -79,6 +79,13 @@ void draw() {
 }
 ```
 
+## Simulation Notes
+
+- `ClothSettings::damping` controls damping. The damping is interpreted as the fraction of velocity removed over one second. The solver converts it to a per-step factor so changing `substeps` does not change the effective damping.
+- `structuralStiffness`, `shearStiffness`, and `bendStiffness` are applied on each constraint iteration. Raising `constraintIterations` improves convergence and also increases effective stiffness, so examples tune stiffness and iteration count together.
+- `ClothSettings::columns` and `rows` are clamped to `[2, 256]` during `setup()` to keep topology allocation bounded.
+- Collider setters replace their full collider lists. Use `clearColliders()` before switching collision modes, or pass the complete current list to `setSphereColliders()` / `setPlaneColliders()`.
+
 ## Examples
 
 - `examples/clothBasic`: GPU-first Auto, pinned cloth, gravity, light wind, fill and wire.

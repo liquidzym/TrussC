@@ -11,6 +11,9 @@ namespace tcxCloth {
 namespace {
 
 constexpr float kEpsilon = 0.000001f;
+constexpr int kMinGridResolution = 2;
+constexpr int kMaxGridResolution = 256;
+constexpr float kGpuConstraintRelaxation = 0.30f;
 
 float clamp01(float v) {
     return std::clamp(v, 0.0f, 1.0f);
@@ -34,6 +37,19 @@ tc::Vec3 safeNormal(const tc::Vec3& v, const tc::Vec3& fallback = tc::Vec3(0.0f,
         return fallback;
     }
     return v / len;
+}
+
+void projectParticleToCollision(CpuParticle& particle, const tc::Vec3& correctedPosition, const tc::Vec3& normal) {
+    const tc::Vec3 correction = correctedPosition - particle.position;
+    particle.position = correctedPosition;
+    particle.previousPosition += correction;
+
+    tc::Vec3 velocity = particle.position - particle.previousPosition;
+    const float inwardSpeed = velocity.dot(normal);
+    if (inwardSpeed < 0.0f) {
+        velocity -= normal * inwardSpeed;
+        particle.previousPosition = particle.position - velocity;
+    }
 }
 
 } // namespace
@@ -191,6 +207,9 @@ void Cloth::update(float dt) {
         accumulator_ -= fixedStep;
         ++stepCount;
     }
+    if (accumulator_ > fixedStep) {
+        accumulator_ = fixedStep;
+    }
 
     if (settings_.recomputeNormals) {
         recomputeNormalsCpu();
@@ -318,8 +337,8 @@ bool Cloth::validCoord(int x, int y) const {
 
 void Cloth::validateAndStoreSettings(const ClothSettings& settings) {
     settings_ = settings;
-    settings_.columns = std::max(2, settings_.columns);
-    settings_.rows = std::max(2, settings_.rows);
+    settings_.columns = std::clamp(settings_.columns, kMinGridResolution, kMaxGridResolution);
+    settings_.rows = std::clamp(settings_.rows, kMinGridResolution, kMaxGridResolution);
     settings_.width = std::max(1.0f, settings_.width);
     settings_.height = std::max(1.0f, settings_.height);
     settings_.damping = std::clamp(settings_.damping, 0.0f, 0.999f);
@@ -630,6 +649,9 @@ void Cloth::updateGpu(float dt) {
         accumulator_ -= fixedStep;
         ++stepCount;
     }
+    if (accumulator_ > fixedStep) {
+        accumulator_ = fixedStep;
+    }
 
     syncParticlesFromGpu();
     if (activeBackend_ != ClothSettings::SolverBackend::TexturePingPong) {
@@ -643,8 +665,6 @@ void Cloth::updateGpu(float dt) {
 
 void Cloth::stepGpu(float dt) {
     if (!gpu_ || !gpu_->ready) return;
-
-    solveGpuConstraints(dt);
 
     renderGpuPass(gpu_->positionWrite(),
                   &gpu_->positionRead().getTexture(),
@@ -718,7 +738,7 @@ void Cloth::renderGpuPass(tc::Fbo& target,
     uniforms.simSize[2] = 1.0f / static_cast<float>(std::max(1, settings_.columns));
     uniforms.simSize[3] = 1.0f / static_cast<float>(std::max(1, settings_.rows));
     uniforms.timing[0] = std::max(0.0f, dt);
-    uniforms.timing[1] = settings_.damping;
+    uniforms.timing[1] = dampingFactorForStep(dt);
     uniforms.timing[2] = gpu_->elapsed;
     uniforms.timing[3] = static_cast<float>(mode);
     uniforms.wind[0] = windDirection_.x;
@@ -744,7 +764,7 @@ void Cloth::renderGpuPass(tc::Fbo& target,
     uniforms.options[0] = settings_.enableShearConstraints ? 1.0f : 0.0f;
     uniforms.options[1] = settings_.enableBendConstraints ? 1.0f : 0.0f;
     uniforms.options[2] = settings_.enableWind ? 1.0f : 0.0f;
-    uniforms.options[3] = 0.30f;
+    uniforms.options[3] = kGpuConstraintRelaxation;
 
     gpu_->stepShader.setInput(0, position);
     gpu_->stepShader.setInput(1, previous);
@@ -789,11 +809,11 @@ void Cloth::syncParticlesFromGpu() {
 }
 
 void Cloth::stepCpu(float dt) {
+    accumulateForcesCpu();
+    integrateCpu(dt);
     for (int i = 0; i < settings_.constraintIterations; ++i) {
         solveConstraintsCpu();
     }
-    accumulateForcesCpu();
-    integrateCpu(dt);
     collideCpu();
 }
 
@@ -840,6 +860,7 @@ void Cloth::addWindForTriangleCpu(int a, int b, int c) {
 
 void Cloth::integrateCpu(float dt) {
     const float dtSq = dt * dt;
+    const float dampingFactor = dampingFactorForStep(dt);
 
     for (auto& particle : particles_) {
         if (particle.pinned || particle.inverseMass <= 0.0f) {
@@ -849,14 +870,11 @@ void Cloth::integrateCpu(float dt) {
             continue;
         }
 
-        const tc::Vec3 velocity = (particle.position - particle.previousPosition) * (1.0f - settings_.damping);
+        const tc::Vec3 velocity = (particle.position - particle.previousPosition) * dampingFactor;
         const tc::Vec3 next = particle.position + velocity + particle.acceleration * dtSq;
         particle.previousPosition = particle.position;
         particle.position = finite(next) ? next : particle.initialPosition;
         particle.acceleration = tc::Vec3(0.0f);
-    }
-    for (int i = 0; i < settings_.constraintIterations; ++i) {
-        solveConstraintsCpu();
     }
 }
 
@@ -902,7 +920,7 @@ void Cloth::collideCpu() {
             const float dist = delta.length();
             if (dist < radius) {
                 const tc::Vec3 dir = dist > kEpsilon ? delta / dist : tc::Vec3(0.0f, 1.0f, 0.0f);
-                particle.position = sphere.center + dir * radius;
+                projectParticleToCollision(particle, sphere.center + dir * radius, dir);
             }
         }
 
@@ -910,10 +928,15 @@ void Cloth::collideCpu() {
             const tc::Vec3 n = safeNormal(plane.normal, tc::Vec3(0.0f, 1.0f, 0.0f));
             const float signedDistance = particle.position.dot(n) + plane.distance;
             if (signedDistance < 0.0f) {
-                particle.position += -n * signedDistance;
+                projectParticleToCollision(particle, particle.position - n * signedDistance, n);
             }
         }
     }
+}
+
+float Cloth::dampingFactorForStep(float dt) const {
+    const float base = std::clamp(1.0f - settings_.damping, 0.0f, 1.0f);
+    return std::pow(base, std::max(0.0f, dt));
 }
 
 void Cloth::recomputeNormalsCpu() {

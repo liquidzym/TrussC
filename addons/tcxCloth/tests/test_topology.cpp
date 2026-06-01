@@ -32,6 +32,24 @@ int main() {
     require(std::string(gpuRequested.backendReason()).find("GPU unavailable") != std::string::npos,
             "TexturePingPong fallback explains that GPU is unavailable");
 
+    tcxCloth::ClothSettings tinySettings = settings;
+    tinySettings.columns = 0;
+    tinySettings.rows = -8;
+    tcxCloth::Cloth tiny;
+    tiny.setup(tinySettings);
+    require(tiny.columns() == 2, "columns clamp to the minimum supported grid");
+    require(tiny.rows() == 2, "rows clamp to the minimum supported grid");
+
+    tcxCloth::ClothSettings hugeSettings = settings;
+    hugeSettings.columns = 300;
+    hugeSettings.rows = 300;
+    hugeSettings.enableShearConstraints = false;
+    hugeSettings.enableBendConstraints = false;
+    tcxCloth::Cloth huge;
+    huge.setup(hugeSettings);
+    require(huge.columns() == 256, "columns clamp to the maximum supported grid");
+    require(huge.rows() == 256, "rows clamp to the maximum supported grid");
+
     const auto particles = cloth.particles();
     require(particles.size() == 20, "particle span exposes topology");
     for (const auto& particle : particles) {
