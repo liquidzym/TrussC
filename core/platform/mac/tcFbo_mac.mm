@@ -42,10 +42,13 @@ static MTLPixelFormat toMTLPixelFormat(sg_pixel_format fmt) {
     }
 }
 
-// Internal helper: blit GPU texture to CPU-readable staging and copy bytes
+// Internal helper: blit GPU texture to a CPU-readable buffer and copy bytes.
+// Metal texture-to-buffer copies require a 256-byte row alignment, so rows are
+// copied out compactly after the GPU blit completes.
 static bool readPixelsInternal(sg_image srcImage, int width, int height,
                                MTLPixelFormat mtlFormat, size_t bytesPerRow,
                                void* dstBuffer) {
+    (void)mtlFormat;
     id<MTLCommandQueue> cmdQueue = (__bridge id<MTLCommandQueue>)sg_mtl_command_queue();
     if (!cmdQueue) {
         tc::logError() << "[FBO] Failed to get Metal command queue";
@@ -63,17 +66,12 @@ static bool readPixelsInternal(sg_image srcImage, int width, int height,
     sg_commit();
 
     id<MTLDevice> device = cmdQueue.device;
-
-    MTLTextureDescriptor* desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:mtlFormat
-                                                                                    width:width
-                                                                                   height:height
-                                                                                mipmapped:NO];
-    desc.storageMode = MTLStorageModeShared;
-    desc.usage = MTLTextureUsageShaderRead;
-
-    id<MTLTexture> dstTexture = [device newTextureWithDescriptor:desc];
-    if (!dstTexture) {
-        tc::logError() << "[FBO] Failed to create staging texture";
+    const size_t alignedBytesPerRow = (bytesPerRow + 255u) & ~255u;
+    const size_t stagingSize = alignedBytesPerRow * static_cast<size_t>(height);
+    id<MTLBuffer> dstBufferMetal = [device newBufferWithLength:stagingSize
+                                                       options:MTLResourceStorageModeShared];
+    if (!dstBufferMetal) {
+        tc::logError() << "[FBO] Failed to create staging buffer";
         return false;
     }
 
@@ -81,24 +79,26 @@ static bool readPixelsInternal(sg_image srcImage, int width, int height,
     id<MTLBlitCommandEncoder> blitEncoder = [cmdBuffer blitCommandEncoder];
 
     [blitEncoder copyFromTexture:srcTexture
-                     sourceSlice:0
+                    sourceSlice:0
                      sourceLevel:0
                     sourceOrigin:MTLOriginMake(0, 0, 0)
                       sourceSize:MTLSizeMake(width, height, 1)
-                       toTexture:dstTexture
-                destinationSlice:0
-                destinationLevel:0
-               destinationOrigin:MTLOriginMake(0, 0, 0)];
+                       toBuffer:dstBufferMetal
+              destinationOffset:0
+         destinationBytesPerRow:alignedBytesPerRow
+       destinationBytesPerImage:stagingSize];
 
     [blitEncoder endEncoding];
     [cmdBuffer commit];
     [cmdBuffer waitUntilCompleted];
 
-    MTLRegion region = MTLRegionMake2D(0, 0, width, height);
-    [dstTexture getBytes:dstBuffer
-             bytesPerRow:bytesPerRow
-              fromRegion:region
-             mipmapLevel:0];
+    const uint8_t* src = static_cast<const uint8_t*>([dstBufferMetal contents]);
+    uint8_t* dst = static_cast<uint8_t*>(dstBuffer);
+    for (int y = 0; y < height; ++y) {
+        std::memcpy(dst + static_cast<size_t>(y) * bytesPerRow,
+                    src + static_cast<size_t>(y) * alignedBytesPerRow,
+                    bytesPerRow);
+    }
 
     return true;
 }

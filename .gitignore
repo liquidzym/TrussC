@@ -120,6 +120,8 @@ addons/*
 !addons/tcxTraerPhysics
 !addons/tcxArtNet
 !addons/tcxAssimp
+!addons/tcxCloth
+addons/tcxCloth/*task*.md
 addons/tcxArtNet/ref/
 addons/tcxArtNet/tcxArtNet_addon_task_spec.md
 

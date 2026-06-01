@@ -1,0 +1,17 @@
+{
+  "description": "GPU-oriented cloth simulation API for TrussC with CPU reference fallback, topology helpers, pinning, wind, and sphere collision",
+  "version": "1.0.0",
+  "author": "showlab",
+  "license": "MIT",
+  "trussc_version": ">=0.4.0",
+  "screenshot": "screenshot.png",
+  "keywords": [
+    "physics",
+    "2d",
+    "cloth",
+    "simulation",
+    "verlet",
+    "gpu",
+    "mesh"
+  ]
+}
