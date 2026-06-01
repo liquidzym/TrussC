@@ -102,6 +102,7 @@ addons/**/*.vcxproj
 
 addons/*
 !addons/tcxBox2d
+!addons/tcxMidi
 !addons/tcxCurl
 !addons/tcxImGui
 !addons/tcxHap
@@ -121,6 +122,8 @@ addons/*
 !addons/tcxArtNet
 !addons/tcxAssimp
 !addons/tcxCloth
+!addons/tcxDepthCamera
+!addons/tcxDepthRecord
 addons/tcxCloth/*task*.md
 addons/tcxArtNet/ref/
 addons/tcxArtNet/tcxArtNet_addon_task_spec.md
