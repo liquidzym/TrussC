@@ -124,6 +124,7 @@ addons/*
 !addons/tcxCloth
 !addons/tcxDepthCamera
 !addons/tcxDepthRecord
+!addons/tcxMapWrap
 addons/tcxCloth/*task*.md
 addons/tcxArtNet/ref/
 addons/tcxArtNet/tcxArtNet_addon_task_spec.md

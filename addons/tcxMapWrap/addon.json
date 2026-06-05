@@ -1,0 +1,21 @@
+{
+    "name": "tcxMapWrap",
+    "version": "0.1.0",
+    "author": "showlab",
+    "description": "Projection mapping addon for TrussC targeting macOS, iOS and Windows. Auto-detects system language (Chinese/English) with manual override.",
+    "license": "MIT",
+    "trussc_version": ">=0.4.0",
+    "screenshot": "",
+    "category": "graphics",
+    "namespace": "tcx::mapwrap",
+    "platforms": ["macos", "ios", "windows"],
+    "dependencies": [],
+    "keywords": [
+        "projection",
+        "mapping",
+        "warp",
+        "mask",
+        "calibration",
+        "i18n"
+    ]
+}

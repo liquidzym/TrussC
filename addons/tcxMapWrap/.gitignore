@@ -1,0 +1,58 @@
+# =============================================================================
+# tcxMapWrap local .gitignore
+# =============================================================================
+# Build artifacts — keep locally but exclude from remote
+build/
+build-*/
+bin/
+*.app
+*.exe
+*.dll
+*.dylib
+*.so
+*.a
+*.o
+*.lib
+*.obj
+*.pdb
+*.dSYM/
+
+# CMake generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+_fcache/
+
+# IDE
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.suo
+
+# macOS
+.DS_Store
+
+# Auto-generated project files
+CMakePresets.json
+
+# AI task planning docs (local only)
+*_Codex_Taskbook.md
+HANDOFF*.md
+ITERATION_STATUS.md
