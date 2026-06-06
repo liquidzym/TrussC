@@ -118,6 +118,7 @@ addons/*
 !addons/tcxOpenCV
 !addons/tcxCV
 !addons/tcxFlowTools
+!addons/tcxIOS
 !addons/tcxTraerPhysics
 !addons/tcxArtNet
 !addons/tcxAssimp
@@ -169,6 +170,30 @@ addons/**/HANDOFF*.md
 addons/**/*_Codex_Taskbook.md
 addons/**/ITERATION_STATUS.md
 addons/tcxAssimp/tcxAssimp_TrussC_移植任务书_v2.md
+
+# =============================================================================
+# AI generated audits, reviews, checklists, task specs (keep local only)
+# =============================================================================
+addons/**/*audit*
+addons/**/*Audit*
+addons/**/*review*
+addons/**/*Review*
+addons/**/*checklist*
+addons/**/*Checklist*
+addons/**/*任务书*
+addons/**/*_建议*
+addons/**/*_task_spec*
+addons/**/*_Code_Review*
+addons/**/*_code_review*
+addons/**/*_audit*
+addons/**/docs/final_checklist.md
+addons/**/docs/platform_notes.md
+addons/**/*_TrussC_Modern*
+
+# Tests directories in addons (local dev only)
+addons/**/tests/
+addons/**/tests/*
+addons/**/test/
 
 # =============================================================================
 # Auto-generated Shader Headers (sokol-shdc output)

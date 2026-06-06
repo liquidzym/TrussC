@@ -1,0 +1,29 @@
+{
+  "name": "tcxIOS",
+  "version": "0.3.0",
+  "description": "Modern iOS and iPadOS system integration layer for TrussC.",
+  "author": "showlab",
+  "license": "MIT",
+  "category": "utilities",
+  "platforms": ["ios", "ipados"],
+  "keywords": [
+    "ios",
+    "ipados",
+    "mobile",
+    "system",
+    "camera",
+    "photos",
+    "permissions",
+    "native-ui",
+    "location",
+    "network",
+    "background-tasks",
+    "bluetooth",
+    "multipeer",
+    "pencilkit",
+    "arkit",
+    "vision",
+    "coreml"
+  ],
+  "dependencies": []
+}
