@@ -1,5 +1,4 @@
-#include "TCXIOSPlatform.h"
-#include "tcx/ios/EventQueue.h"
+#include "TCXIOSBridgeSupport.h"
 
 #import <ARKit/ARKit.h>
 #import <Contacts/Contacts.h>
@@ -20,168 +19,6 @@
 #include <memory>
 #include <mutex>
 #include <utility>
-
-namespace {
-
-NSString* TCXIOSV03Ns(const std::string& value) {
-    return [NSString stringWithUTF8String:value.c_str()];
-}
-
-std::string TCXIOSV03Str(NSString* value) {
-    return value ? std::string(value.UTF8String) : std::string();
-}
-
-tcx::ios::Error TCXIOSV03NativeError(NSError* error, const std::string& fallback) {
-    tcx::ios::Error mapped = !error ? tcx::ios::Error{tcx::ios::ErrorCode::NativeError, fallback, 0}
-        : tcx::ios::Error{
-        tcx::ios::ErrorCode::NativeError,
-        TCXIOSV03Str(error.localizedDescription),
-        static_cast<int>(error.code)
-    };
-    tcx::ios::logger().error("tcxIOS.native", fallback, mapped);
-    return mapped;
-}
-
-template <typename T>
-void TCXIOSV03Finish(tcx::ios::Completion<T> done, tcx::ios::Result<T> result) {
-    if (!done) return;
-    tcx::ios::eventQueue().post([done = std::move(done), result = std::move(result)]() mutable {
-        done(std::move(result));
-    });
-}
-
-void TCXIOSV03FinishVoid(tcx::ios::Completion<void> done, tcx::ios::Result<void> result) {
-    if (!done) return;
-    tcx::ios::eventQueue().post([done = std::move(done), result = std::move(result)]() mutable {
-        done(std::move(result));
-    });
-}
-
-NSMutableSet* TCXIOSV03Delegates() {
-    static NSMutableSet* delegates = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        delegates = [NSMutableSet set];
-    });
-    return delegates;
-}
-
-void TCXIOSV03Retain(id delegate) {
-    @synchronized (TCXIOSV03Delegates()) {
-        [TCXIOSV03Delegates() addObject:delegate];
-    }
-}
-
-void TCXIOSV03Release(id delegate) {
-    @synchronized (TCXIOSV03Delegates()) {
-        [TCXIOSV03Delegates() removeObject:delegate];
-    }
-}
-
-UIViewController* TCXIOSV03TopViewController(UIViewController* root) {
-    UIViewController* current = root;
-    while (current.presentedViewController) current = current.presentedViewController;
-    if ([current isKindOfClass:UINavigationController.class]) {
-        UIViewController* visible = ((UINavigationController*)current).visibleViewController;
-        if (visible) return TCXIOSV03TopViewController(visible);
-    }
-    if ([current isKindOfClass:UITabBarController.class]) {
-        UIViewController* selected = ((UITabBarController*)current).selectedViewController;
-        if (selected) return TCXIOSV03TopViewController(selected);
-    }
-    return current;
-}
-
-UIViewController* TCXIOSV03Presenter() {
-    for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        UIWindowScene* windowScene = (UIWindowScene*)scene;
-        if (windowScene.activationState != UISceneActivationStateForegroundActive) continue;
-        for (UIWindow* window in windowScene.windows) {
-            if (window.isKeyWindow && window.rootViewController) {
-                return TCXIOSV03TopViewController(window.rootViewController);
-            }
-        }
-    }
-    return nil;
-}
-
-NSArray<CBUUID*>* TCXIOSV03CBUUIDs(const std::vector<std::string>& uuids) {
-    NSMutableArray<CBUUID*>* out = [NSMutableArray array];
-    for (const auto& uuid : uuids) {
-        [out addObject:[CBUUID UUIDWithString:TCXIOSV03Ns(uuid)]];
-    }
-    return out.count > 0 ? out : nil;
-}
-
-std::string TCXIOSV03PeripheralIdentifier(CBPeripheral* peripheral) {
-    return TCXIOSV03Str(peripheral.identifier.UUIDString);
-}
-
-std::string TCXIOSV03CharacteristicKey(const tcx::ios::BLECharacteristicRef& ref) {
-    return ref.peripheralIdentifier + "|" + ref.serviceUUID + "|" + ref.characteristicUUID;
-}
-
-std::string TCXIOSV03CharacteristicKey(CBPeripheral* peripheral, CBCharacteristic* characteristic) {
-    return TCXIOSV03PeripheralIdentifier(peripheral) + "|" +
-           TCXIOSV03Str(characteristic.service.UUID.UUIDString) + "|" +
-           TCXIOSV03Str(characteristic.UUID.UUIDString);
-}
-
-tcx::ios::BluetoothState TCXIOSV03BluetoothState(CBManagerState state) {
-    switch (state) {
-        case CBManagerStateUnsupported: return tcx::ios::BluetoothState::Unsupported;
-        case CBManagerStateUnauthorized: return tcx::ios::BluetoothState::Unauthorized;
-        case CBManagerStatePoweredOff: return tcx::ios::BluetoothState::PoweredOff;
-        case CBManagerStatePoweredOn: return tcx::ios::BluetoothState::PoweredOn;
-        case CBManagerStateResetting:
-        case CBManagerStateUnknown: return tcx::ios::BluetoothState::Unknown;
-    }
-    return tcx::ios::BluetoothState::Unknown;
-}
-
-tcx::ios::PermissionState TCXIOSV03BluetoothPermissionState(tcx::ios::BluetoothState state) {
-    switch (state) {
-        case tcx::ios::BluetoothState::Unsupported:
-            return tcx::ios::PermissionState::Restricted;
-        case tcx::ios::BluetoothState::Unauthorized:
-            return tcx::ios::PermissionState::Denied;
-        case tcx::ios::BluetoothState::PoweredOff:
-        case tcx::ios::BluetoothState::PoweredOn:
-            return tcx::ios::PermissionState::Authorized;
-        case tcx::ios::BluetoothState::Unknown:
-            return tcx::ios::PermissionState::Unknown;
-    }
-    return tcx::ios::PermissionState::Unknown;
-}
-
-tcx::ios::PermissionState TCXIOSV03ContactPermissionState(CNAuthorizationStatus status) {
-    switch (status) {
-        case CNAuthorizationStatusNotDetermined:
-            return tcx::ios::PermissionState::NotDetermined;
-        case CNAuthorizationStatusRestricted:
-            return tcx::ios::PermissionState::Restricted;
-        case CNAuthorizationStatusDenied:
-            return tcx::ios::PermissionState::Denied;
-        case CNAuthorizationStatusAuthorized:
-            return tcx::ios::PermissionState::Authorized;
-        case CNAuthorizationStatusLimited:
-            return tcx::ios::PermissionState::Limited;
-    }
-    return tcx::ios::PermissionState::Unknown;
-}
-
-std::vector<std::uint8_t> TCXIOSV03Bytes(NSData* data) {
-    std::vector<std::uint8_t> bytes(data.length);
-    if (data.length > 0) std::memcpy(bytes.data(), data.bytes, data.length);
-    return bytes;
-}
-
-NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
-    return [NSData dataWithBytes:bytes.data() length:bytes.size()];
-}
-
-} // namespace
 
 namespace {
 
@@ -207,10 +44,10 @@ tcx::ios::StoreTransactionState TCXIOSStoreTransactionState(SKPaymentTransaction
 
 tcx::ios::StoreTransactionUpdate TCXIOSStoreTransactionUpdate(SKPaymentTransaction* transaction) {
     tcx::ios::StoreTransactionUpdate update;
-    update.productIdentifier = TCXIOSV03Str(transaction.payment.productIdentifier);
-    update.transactionIdentifier = TCXIOSV03Str(transaction.transactionIdentifier);
+    update.productIdentifier = TCXIOSStr(transaction.payment.productIdentifier);
+    update.transactionIdentifier = TCXIOSStr(transaction.transactionIdentifier);
     update.state = TCXIOSStoreTransactionState(transaction.transactionState);
-    update.errorMessage = TCXIOSV03Str(transaction.error.localizedDescription);
+    update.errorMessage = TCXIOSStr(transaction.error.localizedDescription);
     return update;
 }
 
@@ -238,20 +75,20 @@ tcx::ios::StoreTransactionUpdate TCXIOSStoreTransactionUpdate(SKPaymentTransacti
         TCXIOSStoreProductCache()[product.productIdentifier] = product;
         formatter.locale = product.priceLocale;
         products.push_back({
-            TCXIOSV03Str(product.productIdentifier),
-            TCXIOSV03Str(product.localizedTitle),
-            TCXIOSV03Str(product.localizedDescription),
-            TCXIOSV03Str([formatter stringFromNumber:product.price]),
-            TCXIOSV03Str([product.priceLocale objectForKey:NSLocaleCurrencyCode])
+            TCXIOSStr(product.productIdentifier),
+            TCXIOSStr(product.localizedTitle),
+            TCXIOSStr(product.localizedDescription),
+            TCXIOSStr([formatter stringFromNumber:product.price]),
+            TCXIOSStr([product.priceLocale objectForKey:NSLocaleCurrencyCode])
         });
     }
-    TCXIOSV03Release(self);
-    TCXIOSV03Finish(std::move(completion_), tcx::ios::Result<std::vector<tcx::ios::StoreProduct>>::success(std::move(products)));
+    TCXIOSReleaseDelegate(self);
+    TCXIOSFinish(std::move(completion_), tcx::ios::Result<std::vector<tcx::ios::StoreProduct>>::success(std::move(products)));
 }
 
 - (void)request:(SKRequest*)request didFailWithError:(NSError*)error {
-    TCXIOSV03Release(self);
-    TCXIOSV03Finish(std::move(completion_), tcx::ios::Result<std::vector<tcx::ios::StoreProduct>>::failure(TCXIOSV03NativeError(error, "StoreKit products request failed.")));
+    TCXIOSReleaseDelegate(self);
+    TCXIOSFinish(std::move(completion_), tcx::ios::Result<std::vector<tcx::ios::StoreProduct>>::failure(TCXIOSNativeError(error, "StoreKit products request failed.")));
 }
 
 @end
@@ -285,7 +122,7 @@ tcx::ios::StoreTransactionUpdate TCXIOSStoreTransactionUpdate(SKPaymentTransacti
 - (void)purchase:(NSString*)productIdentifier completion:(tcx::ios::Completion<tcx::ios::StorePurchaseResult>)completion {
     SKProduct* product = TCXIOSStoreProductCache()[productIdentifier];
     if (!product) {
-        TCXIOSV03Finish(std::move(completion), tcx::ios::Result<tcx::ios::StorePurchaseResult>::failure({
+        TCXIOSFinish(std::move(completion), tcx::ios::Result<tcx::ios::StorePurchaseResult>::failure({
             tcx::ios::ErrorCode::InvalidState,
             "Request StoreKit products before purchasing.",
             0
@@ -294,7 +131,7 @@ tcx::ios::StoreTransactionUpdate TCXIOSStoreTransactionUpdate(SKPaymentTransacti
     }
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        completions_[TCXIOSV03Str(productIdentifier)] = std::move(completion);
+        completions_[TCXIOSStr(productIdentifier)] = std::move(completion);
     }
     [SKPaymentQueue.defaultQueue addPayment:[SKPayment paymentWithProduct:product]];
 }
@@ -336,7 +173,7 @@ tcx::ios::StoreTransactionUpdate TCXIOSStoreTransactionUpdate(SKPaymentTransacti
         }
 
         if (transaction.transactionState == SKPaymentTransactionStatePurchasing) continue;
-        const std::string product = TCXIOSV03Str(transaction.payment.productIdentifier);
+        const std::string product = TCXIOSStr(transaction.payment.productIdentifier);
         tcx::ios::Completion<tcx::ios::StorePurchaseResult> done;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -349,10 +186,10 @@ tcx::ios::StoreTransactionUpdate TCXIOSStoreTransactionUpdate(SKPaymentTransacti
         }
         if (transaction.transactionState == SKPaymentTransactionStatePurchased ||
             transaction.transactionState == SKPaymentTransactionStateRestored) {
-            TCXIOSV03Finish(std::move(done), tcx::ios::Result<tcx::ios::StorePurchaseResult>::success({product, true}));
+            TCXIOSFinish(std::move(done), tcx::ios::Result<tcx::ios::StorePurchaseResult>::success({product, true}));
         } else {
-            TCXIOSV03Finish(std::move(done), tcx::ios::Result<tcx::ios::StorePurchaseResult>::failure(
-                TCXIOSV03NativeError(transaction.error, "StoreKit purchase failed.")));
+            TCXIOSFinish(std::move(done), tcx::ios::Result<tcx::ios::StorePurchaseResult>::failure(
+                TCXIOSNativeError(transaction.error, "StoreKit purchase failed.")));
         }
         [queue finishTransaction:transaction];
     }
@@ -369,7 +206,7 @@ tcx::ios::StoreTransactionUpdate TCXIOSStoreTransactionUpdate(SKPaymentTransacti
         restoredTransactions_.clear();
     }
     if (done) {
-        TCXIOSV03Finish(std::move(done), tcx::ios::Result<std::vector<tcx::ios::StoreTransactionUpdate>>::success(std::move(restored)));
+        TCXIOSFinish(std::move(done), tcx::ios::Result<std::vector<tcx::ios::StoreTransactionUpdate>>::success(std::move(restored)));
     }
 }
 
@@ -382,8 +219,8 @@ tcx::ios::StoreTransactionUpdate TCXIOSStoreTransactionUpdate(SKPaymentTransacti
         restoredTransactions_.clear();
     }
     if (done) {
-        TCXIOSV03Finish(std::move(done), tcx::ios::Result<std::vector<tcx::ios::StoreTransactionUpdate>>::failure(
-            TCXIOSV03NativeError(error, "StoreKit restore failed.")));
+        TCXIOSFinish(std::move(done), tcx::ios::Result<std::vector<tcx::ios::StoreTransactionUpdate>>::failure(
+            TCXIOSNativeError(error, "StoreKit restore failed.")));
     }
 }
 
@@ -398,14 +235,14 @@ void platformRequestStoreProducts(const std::vector<std::string>& productIdentif
                                   StoreProductsHandler done) {
     NSMutableSet<NSString*>* identifiers = [NSMutableSet set];
     for (const auto& identifier : productIdentifiers) {
-        [identifiers addObject:TCXIOSV03Ns(identifier)];
+        [identifiers addObject:TCXIOSNs(identifier)];
     }
     if (identifiers.count == 0) {
-        TCXIOSV03Finish(std::move(done), Result<std::vector<StoreProduct>>::failure({ErrorCode::InvalidArgument, "No product identifiers were provided.", 0}));
+        TCXIOSFinish(std::move(done), Result<std::vector<StoreProduct>>::failure({ErrorCode::InvalidArgument, "No product identifiers were provided.", 0}));
         return;
     }
     TCXIOSProductsDelegate* delegate = [[TCXIOSProductsDelegate alloc] initWithCompletion:std::move(done)];
-    TCXIOSV03Retain(delegate);
+    TCXIOSRetainDelegate(delegate);
     SKProductsRequest* request = [[SKProductsRequest alloc] initWithProductIdentifiers:identifiers];
     request.delegate = delegate;
     [request start];
@@ -414,10 +251,10 @@ void platformRequestStoreProducts(const std::vector<std::string>& productIdentif
 void platformPurchaseStoreProduct(const std::string& productIdentifier,
                                   Completion<StorePurchaseResult> done) {
     if (productIdentifier.empty()) {
-        TCXIOSV03Finish(std::move(done), Result<StorePurchaseResult>::failure({ErrorCode::InvalidArgument, "Product identifier is empty.", 0}));
+        TCXIOSFinish(std::move(done), Result<StorePurchaseResult>::failure({ErrorCode::InvalidArgument, "Product identifier is empty.", 0}));
         return;
     }
-    [[TCXIOSPaymentObserver shared] purchase:TCXIOSV03Ns(productIdentifier) completion:std::move(done)];
+    [[TCXIOSPaymentObserver shared] purchase:TCXIOSNs(productIdentifier) completion:std::move(done)];
 }
 
 void platformRestoreStorePurchases(Completion<std::vector<StoreTransactionUpdate>> done) {

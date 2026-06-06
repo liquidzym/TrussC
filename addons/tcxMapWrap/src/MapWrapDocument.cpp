@@ -59,6 +59,24 @@ struct MapWrapDocument::Impl {
     // Cue counter
     int cueCounter = 0;
 
+    SurfaceId allocateSurfaceId(SurfaceKind kind) {
+        switch (kind) {
+            case SurfaceKind::Quad:
+                return "surface_quad_" + std::to_string(++quadCounter);
+            case SurfaceKind::Grid:
+                return "surface_grid_" + std::to_string(++gridCounter);
+            case SurfaceKind::Bezier:
+                return "surface_bezier_" + std::to_string(++bezierCounter);
+            case SurfaceKind::Triangle:
+                return "surface_triangle_" + std::to_string(++triangleCounter);
+            case SurfaceKind::Circle:
+                return "surface_circle_" + std::to_string(++circleCounter);
+            case SurfaceKind::Polygon:
+                return "surface_polygon_" + std::to_string(++polygonCounter);
+        }
+        return "surface_quad_" + std::to_string(++quadCounter);
+    }
+
     void reserveSurfaceId(const SurfaceId& id) {
         auto reserve = [&](const std::string& prefix, int& counter) {
             if (id.rfind(prefix, 0) != 0) return;
@@ -131,7 +149,7 @@ void MapWrapDocument::clear() {
 
 std::shared_ptr<SurfaceQuad> MapWrapDocument::createQuadSurface(const std::string& name) {
     auto surface = std::make_shared<SurfaceQuad>();
-    SurfaceId sid = "surface_quad_" + std::to_string(++impl_->quadCounter);
+    SurfaceId sid = impl_->allocateSurfaceId(SurfaceKind::Quad);
     surface->setId(sid);
     if (name.empty()) {
         surface->setName(tr("surface.quad") + " " + std::to_string(impl_->quadCounter));
@@ -143,7 +161,7 @@ std::shared_ptr<SurfaceQuad> MapWrapDocument::createQuadSurface(const std::strin
 
 std::shared_ptr<SurfaceGrid> MapWrapDocument::createGridSurface(int cols, int rows, const std::string& name) {
     auto surface = std::make_shared<SurfaceGrid>(cols, rows);
-    SurfaceId sid = "surface_grid_" + std::to_string(++impl_->gridCounter);
+    SurfaceId sid = impl_->allocateSurfaceId(SurfaceKind::Grid);
     surface->setId(sid);
     if (name.empty()) {
         surface->setName(tr("surface.grid") + " " + std::to_string(impl_->gridCounter));
@@ -155,7 +173,7 @@ std::shared_ptr<SurfaceGrid> MapWrapDocument::createGridSurface(int cols, int ro
 
 std::shared_ptr<SurfaceBezier> MapWrapDocument::createBezierSurface(int controlCols, int controlRows, const std::string& name) {
     auto surface = std::make_shared<SurfaceBezier>(controlCols, controlRows);
-    SurfaceId sid = "surface_bezier_" + std::to_string(++impl_->bezierCounter);
+    SurfaceId sid = impl_->allocateSurfaceId(SurfaceKind::Bezier);
     surface->setId(sid);
     if (name.empty()) {
         surface->setName(tr("surface.bezier") + " " + std::to_string(impl_->bezierCounter));
@@ -167,7 +185,7 @@ std::shared_ptr<SurfaceBezier> MapWrapDocument::createBezierSurface(int controlC
 
 std::shared_ptr<SurfaceTriangle> MapWrapDocument::createTriangleSurface(const std::string& name) {
     auto surface = std::make_shared<SurfaceTriangle>();
-    SurfaceId sid = "surface_triangle_" + std::to_string(++impl_->triangleCounter);
+    SurfaceId sid = impl_->allocateSurfaceId(SurfaceKind::Triangle);
     surface->setId(sid);
     if (name.empty()) {
         surface->setName(tr("surface.triangle") + " " + std::to_string(impl_->triangleCounter));
@@ -179,7 +197,7 @@ std::shared_ptr<SurfaceTriangle> MapWrapDocument::createTriangleSurface(const st
 
 std::shared_ptr<SurfaceCircle> MapWrapDocument::createCircleSurface(const std::string& name) {
     auto surface = std::make_shared<SurfaceCircle>();
-    SurfaceId sid = "surface_circle_" + std::to_string(++impl_->circleCounter);
+    SurfaceId sid = impl_->allocateSurfaceId(SurfaceKind::Circle);
     surface->setId(sid);
     if (name.empty()) {
         surface->setName(tr("surface.circle") + " " + std::to_string(impl_->circleCounter));
@@ -191,7 +209,7 @@ std::shared_ptr<SurfaceCircle> MapWrapDocument::createCircleSurface(const std::s
 
 std::shared_ptr<SurfacePolygon> MapWrapDocument::createPolygonSurface(const std::vector<Vec2>& points, const std::string& name) {
     auto surface = std::make_shared<SurfacePolygon>();
-    SurfaceId sid = "surface_polygon_" + std::to_string(++impl_->polygonCounter);
+    SurfaceId sid = impl_->allocateSurfaceId(SurfaceKind::Polygon);
     surface->setId(sid);
     if (name.empty()) {
         surface->setName(tr("surface.polygon") + " " + std::to_string(impl_->polygonCounter));
@@ -205,6 +223,10 @@ std::shared_ptr<SurfacePolygon> MapWrapDocument::createPolygonSurface(const std:
         }
     }
     return surface;
+}
+
+SurfaceId MapWrapDocument::allocateSurfaceId(SurfaceKind kind) {
+    return impl_->allocateSurfaceId(kind);
 }
 
 // ===========================================================================

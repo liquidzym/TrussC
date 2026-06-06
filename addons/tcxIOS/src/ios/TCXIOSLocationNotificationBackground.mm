@@ -1,4 +1,5 @@
 #include "TCXIOSBridgeSupport.h"
+#include "tcx/ios/native/TCXIOSBridgeObjC.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <BackgroundTasks/BackgroundTasks.h>
@@ -206,10 +207,13 @@ struct TCXIOSPendingDownload {
              progress:(tcx::ios::BackgroundDownloadProgressHandler)progress;
 - (void)cancelDownload:(NSString*)identifier;
 - (std::vector<tcx::ios::BackgroundDownloadRequest>)pendingRequests;
+- (void)handleEventsForBackgroundURLSession:(NSString*)identifier
+                          completionHandler:(void (^)(void))completionHandler;
 @end
 
 @implementation TCXIOSBackgroundDownloadCoordinator {
     NSMutableDictionary<NSString*, NSURLSession*>* sessions_;
+    NSMutableDictionary<NSString*, void (^)(void)>* backgroundCompletionHandlers_;
     std::mutex mutex_;
     std::map<NSUInteger, TCXIOSPendingDownload> pending_;
 }
@@ -227,6 +231,7 @@ struct TCXIOSPendingDownload {
     self = [super init];
     if (self) {
         sessions_ = [NSMutableDictionary dictionary];
+        backgroundCompletionHandlers_ = [NSMutableDictionary dictionary];
     }
     return self;
 }
@@ -276,6 +281,18 @@ struct TCXIOSPendingDownload {
     NSMutableDictionary* registry = [self downloadRegistry];
     [registry removeObjectForKey:identifier];
     [self saveDownloadRegistry:registry];
+}
+
+- (BOOL)loadStoredRequestWithIdentifier:(NSString*)identifier
+                                pending:(TCXIOSPendingDownload*)pending {
+    if (identifier.length == 0 || !pending) return NO;
+    NSDictionary* item = [self downloadRegistry][identifier];
+    if (![item isKindOfClass:NSDictionary.class]) return NO;
+
+    pending->identifier = TCXIOSStr(item[@"identifier"] ?: identifier);
+    pending->sourceURL = TCXIOSStr(item[@"url"]);
+    pending->destination = std::filesystem::path(TCXIOSStr(item[@"destination"]));
+    return !pending->identifier.empty() && !pending->destination.empty();
 }
 
 - (std::vector<tcx::ios::BackgroundDownloadRequest>)pendingRequests {
@@ -345,7 +362,17 @@ struct TCXIOSPendingDownload {
 }
 
 - (void)cancelDownload:(NSString*)identifier {
-    NSArray<NSURLSession*>* sessions = sessions_.allValues;
+    NSMutableArray<NSURLSession*>* sessions = [sessions_.allValues mutableCopy];
+    NSDictionary* stored = [self downloadRegistry][identifier];
+    if ([stored isKindOfClass:NSDictionary.class]) {
+        NSString* sessionIdentifier = stored[@"sessionIdentifier"];
+        NSNumber* allowsCellular = stored[@"allowsCellularAccess"];
+        if (sessionIdentifier.length > 0 && !sessions_[sessionIdentifier]) {
+            NSURLSession* session = [self sessionForIdentifier:sessionIdentifier
+                                                allowsCellular:allowsCellular ? allowsCellular.boolValue : YES];
+            if (session) [sessions addObject:session];
+        }
+    }
     for (NSURLSession* session in sessions) {
         [session getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask*>* tasks) {
             for (NSURLSessionTask* task in tasks) {
@@ -356,6 +383,16 @@ struct TCXIOSPendingDownload {
             }
         }];
     }
+}
+
+- (void)handleEventsForBackgroundURLSession:(NSString*)identifier
+                          completionHandler:(void (^)(void))completionHandler {
+    if (identifier.length == 0 || !completionHandler) return;
+    backgroundCompletionHandlers_[identifier] = [completionHandler copy];
+    NSURLSession* session = [self sessionForIdentifier:identifier allowsCellular:YES];
+    [session getAllTasksWithCompletionHandler:^(__unused NSArray<__kindof NSURLSessionTask*>* tasks) {
+        // Creating the session rebinds this coordinator as the delegate after relaunch.
+    }];
 }
 
 - (void)URLSession:(NSURLSession*)session
@@ -395,10 +432,15 @@ didFinishDownloadingToURL:(NSURL*)location {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = pending_.find(downloadTask.taskIdentifier);
-        if (it == pending_.end()) return;
-        pending = std::move(it->second);
-        pending_.erase(it);
+        if (it != pending_.end()) {
+            pending = std::move(it->second);
+            pending_.erase(it);
+        }
     }
+    if (pending.identifier.empty()) {
+        [self loadStoredRequestWithIdentifier:downloadTask.taskDescription pending:&pending];
+    }
+    if (pending.identifier.empty()) return;
     [self removeRequestWithIdentifier:TCXIOSNs(pending.identifier)];
 
     NSError* error = nil;
@@ -438,18 +480,50 @@ didCompleteWithError:(NSError*)error {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = pending_.find(task.taskIdentifier);
-        if (it == pending_.end()) return;
-        pending = std::move(it->second);
-        pending_.erase(it);
+        if (it != pending_.end()) {
+            pending = std::move(it->second);
+            pending_.erase(it);
+        }
     }
+    if (pending.identifier.empty()) {
+        [self loadStoredRequestWithIdentifier:task.taskDescription pending:&pending];
+    }
+    if (pending.identifier.empty()) return;
     [self removeRequestWithIdentifier:TCXIOSNs(pending.identifier)];
+
+    if (error.code == NSURLErrorCancelled) {
+        TCXIOSFinish(std::move(pending.completion),
+                     tcx::ios::Result<tcx::ios::BackgroundDownloadResult>::failure({
+                         tcx::ios::ErrorCode::Cancelled,
+                         "Background download was cancelled.",
+                         static_cast<int>(error.code),
+                         TCXIOSStr(error.domain)
+                     }));
+        return;
+    }
 
     TCXIOSFinish(std::move(pending.completion),
                  tcx::ios::Result<tcx::ios::BackgroundDownloadResult>::failure(
                      TCXIOSNativeError(error, "Background download failed.")));
 }
 
+- (void)URLSessionDidFinishEventsForBackgroundURLSession:(NSURLSession*)session {
+    NSString* identifier = session.configuration.identifier;
+    void (^completionHandler)(void) = backgroundCompletionHandlers_[identifier];
+    if (!completionHandler) return;
+    [backgroundCompletionHandlers_ removeObjectForKey:identifier];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        completionHandler();
+    });
+}
+
 @end
+
+void TCXIOSHandleBackgroundURLSessionEvents(NSString* identifier,
+                                            void (^completionHandler)(void)) {
+    [[TCXIOSBackgroundDownloadCoordinator shared] handleEventsForBackgroundURLSession:identifier
+                                                                   completionHandler:completionHandler];
+}
 
 
 namespace {

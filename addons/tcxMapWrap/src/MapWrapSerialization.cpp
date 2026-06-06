@@ -494,30 +494,63 @@ static MapWrapMask jsonToMask(const Json& j, std::vector<std::string>& warnings)
     MapWrapMask m;
     if (!j.is_object()) { warnings.push_back("Skipping non-object mask entry"); return m; }
 
-    if (j.contains("id"))    m.id   = j["id"].get<std::string>();
-    if (j.contains("name"))  m.name = j["name"].get<std::string>();
+    if (j.contains("id")) {
+        if (j["id"].is_string()) m.id = j["id"].get<std::string>();
+        else warnings.push_back("Mask id has invalid type");
+    }
+    if (j.contains("name")) {
+        if (j["name"].is_string()) m.name = j["name"].get<std::string>();
+        else warnings.push_back("Mask name has invalid type");
+    }
 
     if (j.contains("kind")) {
-        std::string ks = j["kind"].get<std::string>();
-        if (!stringToMaskKind(ks, m.kind))
-            warnings.push_back("Unknown mask kind: " + ks);
+        if (j["kind"].is_string()) {
+            std::string ks = j["kind"].get<std::string>();
+            if (!stringToMaskKind(ks, m.kind))
+                warnings.push_back("Unknown mask kind: " + ks);
+        } else {
+            warnings.push_back("Mask kind has invalid type");
+        }
     }
     if (j.contains("operation")) {
-        std::string os = j["operation"].get<std::string>();
-        if (!stringToMaskOperation(os, m.operation))
-            warnings.push_back("Unknown mask operation: " + os);
+        if (j["operation"].is_string()) {
+            std::string os = j["operation"].get<std::string>();
+            if (!stringToMaskOperation(os, m.operation))
+                warnings.push_back("Unknown mask operation: " + os);
+        } else {
+            warnings.push_back("Mask operation has invalid type");
+        }
     }
     if (j.contains("space")) {
-        std::string ss = j["space"].get<std::string>();
-        if (!stringToMaskSpace(ss, m.space))
-            warnings.push_back("Unknown mask space: " + ss);
+        if (j["space"].is_string()) {
+            std::string ss = j["space"].get<std::string>();
+            if (!stringToMaskSpace(ss, m.space))
+                warnings.push_back("Unknown mask space: " + ss);
+        } else {
+            warnings.push_back("Mask space has invalid type");
+        }
     }
 
-    if (j.contains("enabled"))    m.enabled    = j["enabled"].get<bool>();
-    if (j.contains("inverted"))   m.inverted   = j["inverted"].get<bool>();
-    if (j.contains("opacity"))    m.opacity    = j["opacity"].get<float>();
-    if (j.contains("featherPixels")) m.featherPixels = j["featherPixels"].get<float>();
-    if (j.contains("featherNorm"))   m.featherNorm   = j["featherNorm"].get<float>();
+    if (j.contains("enabled")) {
+        if (j["enabled"].is_boolean()) m.enabled = j["enabled"].get<bool>();
+        else warnings.push_back("Mask enabled has invalid type");
+    }
+    if (j.contains("inverted")) {
+        if (j["inverted"].is_boolean()) m.inverted = j["inverted"].get<bool>();
+        else warnings.push_back("Mask inverted has invalid type");
+    }
+    if (j.contains("opacity")) {
+        if (j["opacity"].is_number()) m.opacity = j["opacity"].get<float>();
+        else warnings.push_back("Mask opacity has invalid type");
+    }
+    if (j.contains("featherPixels")) {
+        if (j["featherPixels"].is_number()) m.featherPixels = j["featherPixels"].get<float>();
+        else warnings.push_back("Mask featherPixels has invalid type");
+    }
+    if (j.contains("featherNorm")) {
+        if (j["featherNorm"].is_number()) m.featherNorm = j["featherNorm"].get<float>();
+        else warnings.push_back("Mask featherNorm has invalid type");
+    }
 
     if (j.contains("points") && j["points"].is_array()) {
         for (const auto& pj : j["points"]) {
@@ -530,7 +563,11 @@ static MapWrapMask jsonToMask(const Json& j, std::vector<std::string>& warnings)
     }
 
     if (j.contains("alphaTextureSource")) {
-        m.alphaTextureSource = j["alphaTextureSource"].get<std::string>();
+        if (j["alphaTextureSource"].is_string()) {
+            m.alphaTextureSource = j["alphaTextureSource"].get<std::string>();
+        } else {
+            warnings.push_back("Mask alphaTextureSource has invalid type");
+        }
     }
 
     return m;
@@ -700,10 +737,15 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
 
     SurfaceKind kind = SurfaceKind::Quad;
     if (j.contains("kind")) {
-        std::string ks = j["kind"].get<std::string>();
-        if (!stringToSurfaceKind(ks, kind)) {
-            warnings.push_back("Unknown surface kind: " + ks + ", skipping");
+        if (!j["kind"].is_string()) {
+            warnings.push_back("Surface kind has invalid type, skipping");
             return nullptr;
+        } else {
+            std::string ks = j["kind"].get<std::string>();
+            if (!stringToSurfaceKind(ks, kind)) {
+                warnings.push_back("Unknown surface kind: " + ks + ", skipping");
+                return nullptr;
+            }
         }
     }
 
@@ -715,8 +757,14 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
             break;
         case SurfaceKind::Grid: {
             int cols = 3, rows = 3;
-            if (j.contains("cols")) cols = j["cols"].get<int>();
-            if (j.contains("rows")) rows = j["rows"].get<int>();
+            if (j.contains("cols")) {
+                if (j["cols"].is_number_integer()) cols = j["cols"].get<int>();
+                else warnings.push_back("Grid surface cols has invalid type");
+            }
+            if (j.contains("rows")) {
+                if (j["rows"].is_number_integer()) rows = j["rows"].get<int>();
+                else warnings.push_back("Grid surface rows has invalid type");
+            }
             cols = std::max(2, cols);
             rows = std::max(2, rows);
             surface = std::make_shared<SurfaceGrid>(cols, rows);
@@ -724,8 +772,14 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
         }
         case SurfaceKind::Bezier: {
             int controlCols = 4, controlRows = 4;
-            if (j.contains("controlCols")) controlCols = j["controlCols"].get<int>();
-            if (j.contains("controlRows")) controlRows = j["controlRows"].get<int>();
+            if (j.contains("controlCols")) {
+                if (j["controlCols"].is_number_integer()) controlCols = j["controlCols"].get<int>();
+                else warnings.push_back("Bezier surface controlCols has invalid type");
+            }
+            if (j.contains("controlRows")) {
+                if (j["controlRows"].is_number_integer()) controlRows = j["controlRows"].get<int>();
+                else warnings.push_back("Bezier surface controlRows has invalid type");
+            }
             controlCols = std::max(2, controlCols);
             controlRows = std::max(2, controlRows);
             surface = std::make_shared<SurfaceBezier>(controlCols, controlRows);
@@ -743,12 +797,30 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
     }
 
     // Common properties
-    if (j.contains("id"))     surface->setId(j["id"].get<std::string>());
-    if (j.contains("name"))   surface->setName(j["name"].get<std::string>());
-    if (j.contains("visible"))surface->setVisible(j["visible"].get<bool>());
-    if (j.contains("locked")) surface->setLocked(j["locked"].get<bool>());
-    if (j.contains("source")) surface->setSource(j["source"].get<std::string>());
-    if (j.contains("opacity"))surface->setOpacity(j["opacity"].get<float>());
+    if (j.contains("id")) {
+        if (j["id"].is_string()) surface->setId(j["id"].get<std::string>());
+        else warnings.push_back("Surface id has invalid type");
+    }
+    if (j.contains("name")) {
+        if (j["name"].is_string()) surface->setName(j["name"].get<std::string>());
+        else warnings.push_back("Surface " + surface->id() + ": name has invalid type");
+    }
+    if (j.contains("visible")) {
+        if (j["visible"].is_boolean()) surface->setVisible(j["visible"].get<bool>());
+        else warnings.push_back("Surface " + surface->id() + ": visible has invalid type");
+    }
+    if (j.contains("locked")) {
+        if (j["locked"].is_boolean()) surface->setLocked(j["locked"].get<bool>());
+        else warnings.push_back("Surface " + surface->id() + ": locked has invalid type");
+    }
+    if (j.contains("source")) {
+        if (j["source"].is_string()) surface->setSource(j["source"].get<std::string>());
+        else warnings.push_back("Surface " + surface->id() + ": source has invalid type");
+    }
+    if (j.contains("opacity")) {
+        if (j["opacity"].is_number()) surface->setOpacity(j["opacity"].get<float>());
+        else warnings.push_back("Surface " + surface->id() + ": opacity has invalid type");
+    }
     if (j.contains("sourceRect")) surface->setSourceRect(jsonToRect(j["sourceRect"], surface->sourceRect()));
     if (j.contains("blend"))  surface->setBlend(jsonToBlendSettings(j["blend"]));
     if (j.contains("colorCorrection")) surface->setColorCorrection(jsonToColorCorrection(j["colorCorrection"]));
@@ -757,7 +829,11 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
     if (j.contains("masks") && j["masks"].is_array()) {
         auto& masks = surface->masks();
         for (const auto& mj : j["masks"]) {
-            masks.push_back(jsonToMask(mj, warnings));
+            try {
+                masks.push_back(jsonToMask(mj, warnings));
+            } catch (const Json::exception& e) {
+                warnings.push_back("Surface " + surface->id() + ": skipping invalid mask entry: " + e.what());
+            }
         }
     }
 
@@ -780,10 +856,18 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
                 }
             }
             if (j.contains("perspectiveCorrection")) {
-                quad.setPerspectiveCorrection(j["perspectiveCorrection"].get<bool>());
+                if (j["perspectiveCorrection"].is_boolean()) {
+                    quad.setPerspectiveCorrection(j["perspectiveCorrection"].get<bool>());
+                } else {
+                    warnings.push_back("Surface " + surface->id() + ": perspectiveCorrection has invalid type");
+                }
             }
             if (j.contains("meshResolution")) {
-                quad.setMeshResolution(j["meshResolution"].get<int>());
+                if (j["meshResolution"].is_number_integer()) {
+                    quad.setMeshResolution(j["meshResolution"].get<int>());
+                } else {
+                    warnings.push_back("Surface " + surface->id() + ": meshResolution has invalid type");
+                }
             }
             break;
         }
@@ -802,10 +886,18 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
                 }
             }
             if (j.contains("curvedInterpolation")) {
-                grid.setCurvedInterpolation(j["curvedInterpolation"].get<bool>());
+                if (j["curvedInterpolation"].is_boolean()) {
+                    grid.setCurvedInterpolation(j["curvedInterpolation"].get<bool>());
+                } else {
+                    warnings.push_back("Surface " + surface->id() + ": curvedInterpolation has invalid type");
+                }
             }
             if (j.contains("meshResolution")) {
-                grid.setMeshResolution(j["meshResolution"].get<int>());
+                if (j["meshResolution"].is_number_integer()) {
+                    grid.setMeshResolution(j["meshResolution"].get<int>());
+                } else {
+                    warnings.push_back("Surface " + surface->id() + ": meshResolution has invalid type");
+                }
             }
             break;
         }
@@ -824,7 +916,11 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
                 }
             }
             if (j.contains("meshResolution")) {
-                bezier.setMeshResolution(j["meshResolution"].get<int>());
+                if (j["meshResolution"].is_number_integer()) {
+                    bezier.setMeshResolution(j["meshResolution"].get<int>());
+                } else {
+                    warnings.push_back("Surface " + surface->id() + ": meshResolution has invalid type");
+                }
             }
             break;
         }
@@ -849,10 +945,22 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
         case SurfaceKind::Circle: {
             auto& circ = static_cast<SurfaceCircle&>(*surface);
             if (j.contains("center"))  circ.setCenter(jsonToVec2(j["center"], circ.center()));
-            if (j.contains("radiusX")) circ.setRadiusX(j["radiusX"].get<float>());
-            if (j.contains("radiusY")) circ.setRadiusY(j["radiusY"].get<float>());
-            if (j.contains("rotation"))circ.setRotation(j["rotation"].get<float>());
-            if (j.contains("segments"))circ.setSegments(j["segments"].get<int>());
+            if (j.contains("radiusX")) {
+                if (j["radiusX"].is_number()) circ.setRadiusX(j["radiusX"].get<float>());
+                else warnings.push_back("Surface " + surface->id() + ": radiusX has invalid type");
+            }
+            if (j.contains("radiusY")) {
+                if (j["radiusY"].is_number()) circ.setRadiusY(j["radiusY"].get<float>());
+                else warnings.push_back("Surface " + surface->id() + ": radiusY has invalid type");
+            }
+            if (j.contains("rotation")) {
+                if (j["rotation"].is_number()) circ.setRotation(j["rotation"].get<float>());
+                else warnings.push_back("Surface " + surface->id() + ": rotation has invalid type");
+            }
+            if (j.contains("segments")) {
+                if (j["segments"].is_number_integer()) circ.setSegments(j["segments"].get<int>());
+                else warnings.push_back("Surface " + surface->id() + ": segments has invalid type");
+            }
             break;
         }
         case SurfaceKind::Polygon: {
@@ -872,7 +980,11 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
                 poly.setUvPoints(pts);
             }
             if (j.contains("closed")) {
-                poly.setClosed(j["closed"].get<bool>());
+                if (j["closed"].is_boolean()) {
+                    poly.setClosed(j["closed"].get<bool>());
+                } else {
+                    warnings.push_back("Surface " + surface->id() + ": closed has invalid type");
+                }
             }
             break;
         }
@@ -1066,7 +1178,11 @@ static void jsonToStage(MapWrapStage& stage, const Json& j, std::vector<std::str
         auto& outputs = stage.outputs();
         outputs.clear();
         for (const auto& oj : j["outputs"]) {
-            outputs.push_back(jsonToOutput(oj, warnings));
+            try {
+                outputs.push_back(jsonToOutput(oj, warnings));
+            } catch (const Json::exception& e) {
+                warnings.push_back(std::string("Skipping invalid output entry: ") + e.what());
+            }
         }
         stage.ensureDefaultOutput();
     }
@@ -1076,7 +1192,11 @@ static void jsonToStage(MapWrapStage& stage, const Json& j, std::vector<std::str
         auto& masks = stage.globalMasks();
         masks.clear();
         for (const auto& mj : j["globalMasks"]) {
-            masks.push_back(jsonToMask(mj, warnings));
+            try {
+                masks.push_back(jsonToMask(mj, warnings));
+            } catch (const Json::exception& e) {
+                warnings.push_back(std::string("Skipping invalid global mask entry: ") + e.what());
+            }
         }
     }
 }
@@ -1264,9 +1384,13 @@ LoadResult MapWrapSerialization::loadFromString(MapWrapDocument& document, const
     // Surfaces
     if (root.contains("surfaces") && root["surfaces"].is_array()) {
         for (const auto& sj : root["surfaces"]) {
-            auto surface = jsonToSurface(sj, warnings);
-            if (surface) {
-                document.addSurface(surface);
+            try {
+                auto surface = jsonToSurface(sj, warnings);
+                if (surface) {
+                    document.addSurface(surface);
+                }
+            } catch (const Json::exception& e) {
+                warnings.push_back(std::string("Skipping invalid surface entry: ") + e.what());
             }
         }
     } else {
@@ -1276,9 +1400,13 @@ LoadResult MapWrapSerialization::loadFromString(MapWrapDocument& document, const
     // Surface groups
     if (root.contains("surfaceGroups") && root["surfaceGroups"].is_array()) {
         for (const auto& gj : root["surfaceGroups"]) {
-            auto group = jsonToGroup(gj, warnings);
-            if (group) {
-                document.addGroup(group);
+            try {
+                auto group = jsonToGroup(gj, warnings);
+                if (group) {
+                    document.addGroup(group);
+                }
+            } catch (const Json::exception& e) {
+                warnings.push_back(std::string("Skipping invalid surface group entry: ") + e.what());
             }
         }
     }
@@ -1287,9 +1415,13 @@ LoadResult MapWrapSerialization::loadFromString(MapWrapDocument& document, const
     // Cues
     if (root.contains("cues") && root["cues"].is_array()) {
         for (const auto& cj : root["cues"]) {
-            auto cue = jsonToCue(cj, warnings);
-            if (cue) {
-                document.addCue(cue);
+            try {
+                auto cue = jsonToCue(cj, warnings);
+                if (cue) {
+                    document.addCue(cue);
+                }
+            } catch (const Json::exception& e) {
+                warnings.push_back(std::string("Skipping invalid cue entry: ") + e.what());
             }
         }
     }
@@ -1336,15 +1468,15 @@ LoadResult MapWrapSerialization::loadFromString(MapWrapDocument& document,
     } else if (!root["sources"].is_array()) {
         result.warnings.push_back("Invalid sources section");
     } else {
-        try {
-            for (const auto& sj : root["sources"]) {
+        for (const auto& sj : root["sources"]) {
+            try {
                 auto source = jsonToSource(sj, result.warnings);
                 if (source) {
                     sources.add(source);
                 }
+            } catch (const Json::exception& e) {
+                result.warnings.push_back(std::string("Skipping invalid source entry: ") + e.what());
             }
-        } catch (const Json::exception& e) {
-            return LoadResult::error(std::string("JSON conversion error: ") + e.what());
         }
     }
 

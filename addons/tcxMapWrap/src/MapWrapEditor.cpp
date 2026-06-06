@@ -1696,20 +1696,20 @@ void MapWrapEditor::duplicateSelected() {
             auto s = std::make_shared<SurfaceQuad>();
             auto& dp = s->destinationPoints();
             auto& uv = s->uvPoints();
-            auto& srcDp = static_cast<SurfaceQuad&>(*src).destinationPoints();
-            auto& srcUv = static_cast<SurfaceQuad&>(*src).uvPoints();
+            const auto& srcQuad = static_cast<const SurfaceQuad&>(*src);
+            const auto& srcDp = srcQuad.destinationPoints();
+            const auto& srcUv = srcQuad.uvPoints();
             for (int i = 0; i < 4; ++i) {
                 dp[i] = Vec2(srcDp[i].x + offset.x, srcDp[i].y + offset.y);
                 uv[i] = srcUv[i];
             }
-            s->setPerspectiveCorrection(
-                static_cast<SurfaceQuad&>(*src).perspectiveCorrection());
-            s->setMeshResolution(static_cast<SurfaceQuad&>(*src).meshResolution());
+            s->setPerspectiveCorrection(srcQuad.perspectiveCorrection());
+            s->setMeshResolution(srcQuad.meshResolution());
             dup = s;
             break;
         }
         case SurfaceKind::Grid: {
-            auto& sg = static_cast<SurfaceGrid&>(*src);
+            const auto& sg = static_cast<const SurfaceGrid&>(*src);
             auto s = std::make_shared<SurfaceGrid>(sg.cols(), sg.rows());
             for (int r = 0; r <= sg.rows(); ++r)
                 for (int c = 0; c <= sg.cols(); ++c) {
@@ -1722,7 +1722,7 @@ void MapWrapEditor::duplicateSelected() {
             break;
         }
         case SurfaceKind::Bezier: {
-            auto& sb = static_cast<SurfaceBezier&>(*src);
+            const auto& sb = static_cast<const SurfaceBezier&>(*src);
             auto s = std::make_shared<SurfaceBezier>(sb.controlCols(), sb.controlRows());
             for (int r = 0; r < sb.controlRows(); ++r)
                 for (int c = 0; c < sb.controlCols(); ++c) {
@@ -1737,8 +1737,9 @@ void MapWrapEditor::duplicateSelected() {
             auto s = std::make_shared<SurfaceTriangle>();
             auto& dp = s->destinationPoints();
             auto& uv = s->uvPoints();
-            auto& srcDp = static_cast<SurfaceTriangle&>(*src).destinationPoints();
-            auto& srcUv = static_cast<SurfaceTriangle&>(*src).uvPoints();
+            const auto& srcTri = static_cast<const SurfaceTriangle&>(*src);
+            const auto& srcDp = srcTri.destinationPoints();
+            const auto& srcUv = srcTri.uvPoints();
             for (int i = 0; i < 3; ++i) {
                 dp[i] = Vec2(srcDp[i].x + offset.x, srcDp[i].y + offset.y);
                 uv[i] = srcUv[i];
@@ -1747,7 +1748,7 @@ void MapWrapEditor::duplicateSelected() {
             break;
         }
         case SurfaceKind::Circle: {
-            auto& sc = static_cast<SurfaceCircle&>(*src);
+            const auto& sc = static_cast<const SurfaceCircle&>(*src);
             auto s = std::make_shared<SurfaceCircle>();
             s->setCenter(Vec2(sc.center().x + offset.x, sc.center().y + offset.y));
             s->setRadiusX(sc.radiusX());
@@ -1758,7 +1759,7 @@ void MapWrapEditor::duplicateSelected() {
             break;
         }
         case SurfaceKind::Polygon: {
-            auto& sp = static_cast<SurfacePolygon&>(*src);
+            const auto& sp = static_cast<const SurfacePolygon&>(*src);
             auto s = std::make_shared<SurfacePolygon>();
             s->setClosed(sp.closed());
             std::vector<Vec2> dest;
@@ -1776,13 +1777,16 @@ void MapWrapEditor::duplicateSelected() {
     if (!dup) return;
 
     // Copy common properties
+    dup->setId(impl_->document->allocateSurfaceId(src->kind()));
     dup->setName(src->name() + " copy");
     dup->setVisible(src->isVisible());
+    dup->setLocked(src->isLocked());
     dup->setOpacity(src->opacity());
     dup->setSource(src->source());
     dup->setSourceRect(src->sourceRect());
     dup->setBlend(src->blend());
     dup->setColorCorrection(src->colorCorrection());
+    dup->setMasks(static_cast<const Surface&>(*src).masks());
 
     int insertIndex = impl_->document->surfaceIndex(src->id()) + 1;
 
@@ -2901,8 +2905,9 @@ Result MapWrapEditor::setSelectedProperty(const std::string& path,
     else {
         // Type-specific — use applyProperty to both read old value and apply
         oldValue = applyProperty(*surface, path, jsonValue);
+        impl_->document->markDirty();
         if (impl_->undoStack) {
-            impl_->undoStack->push(std::make_unique<PropertyEditCommand>(
+            impl_->undoStack->pushAlreadyExecuted(std::make_unique<PropertyEditCommand>(
                 impl_->document, impl_->selectedSurface,
                 path, oldValue, jsonValue,
                 tr("command.edit_property")));
@@ -2911,10 +2916,11 @@ Result MapWrapEditor::setSelectedProperty(const std::string& path,
     }
 
     // Apply the change
-    std::string actualOld = applyProperty(*surface, path, jsonValue);
+    applyProperty(*surface, path, jsonValue);
+    impl_->document->markDirty();
 
     if (impl_->undoStack) {
-        impl_->undoStack->push(std::make_unique<PropertyEditCommand>(
+        impl_->undoStack->pushAlreadyExecuted(std::make_unique<PropertyEditCommand>(
             impl_->document, impl_->selectedSurface,
             path, oldValue, jsonValue,
             tr("command.edit_property")));

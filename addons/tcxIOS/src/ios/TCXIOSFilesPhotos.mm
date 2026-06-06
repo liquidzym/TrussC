@@ -1,10 +1,12 @@
 #include "TCXIOSBridgeSupport.h"
 
+#import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
 #import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <UIKit/UIKit.h>
 
+#include <cmath>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -121,19 +123,23 @@
 
 @interface TCXIOSPhotoPickerDelegate : NSObject <PHPickerViewControllerDelegate>
 - (instancetype)initWithMediaTypes:(tcx::ios::PhotoMediaType)mediaTypes
+                     limitedLibrary:(bool)limitedLibrary
                         completion:(tcx::ios::Completion<std::vector<tcx::ios::PickedPhoto>>)completion;
 @end
 
 @implementation TCXIOSPhotoPickerDelegate {
     tcx::ios::Completion<std::vector<tcx::ios::PickedPhoto>> completion_;
     tcx::ios::PhotoMediaType mediaTypes_;
+    bool limitedLibrary_;
 }
 
 - (instancetype)initWithMediaTypes:(tcx::ios::PhotoMediaType)mediaTypes
+                     limitedLibrary:(bool)limitedLibrary
                         completion:(tcx::ios::Completion<std::vector<tcx::ios::PickedPhoto>>)completion {
     self = [super init];
     if (self) {
         mediaTypes_ = mediaTypes;
+        limitedLibrary_ = limitedLibrary;
         completion_ = std::move(completion);
     }
     return self;
@@ -203,14 +209,26 @@
             int pixelHeight = image ? static_cast<int>(image.size.height * image.scale) : 0;
             NSString* copiedTypeIdentifier = nil;
             [copiedURL getResourceValue:&copiedTypeIdentifier forKey:NSURLTypeIdentifierKey error:nil];
+            NSNumber* fileSize = nil;
+            [copiedURL getResourceValue:&fileSize forKey:NSURLFileSizeKey error:nil];
+            double durationSeconds = 0.0;
+            if (pickedMediaType == tcx::ios::PhotoMediaType::Video) {
+                AVURLAsset* asset = [AVURLAsset URLAssetWithURL:copiedURL options:nil];
+                const double seconds = CMTimeGetSeconds(asset.duration);
+                durationSeconds = std::isfinite(seconds) && seconds > 0.0 ? seconds : 0.0;
+            }
 
             std::lock_guard<std::mutex> lock(*mutex);
             tcx::ios::PickedPhoto photo;
             photo.path = std::filesystem::path(TCXIOSStr(copiedURL.path));
             photo.typeIdentifier = TCXIOSStr(copiedTypeIdentifier.length > 0 ? copiedTypeIdentifier : typeIdentifier);
+            photo.filename = TCXIOSStr(copiedURL.lastPathComponent);
             photo.mediaType = pickedMediaType;
             photo.pixelWidth = pixelWidth;
             photo.pixelHeight = pixelHeight;
+            photo.fileSize = fileSize ? static_cast<std::uint64_t>(fileSize.unsignedLongLongValue) : 0;
+            photo.durationSeconds = durationSeconds;
+            photo.limitedLibrary = limitedLibrary_;
             photos->push_back(std::move(photo));
             dispatch_group_leave(group);
         }];
@@ -368,10 +386,13 @@ void platformPickPhotos(const PhotoPickerRequest& request, Completion<std::vecto
         configuration.preferredAssetRepresentationMode = request.preferCurrentRepresentation
             ? PHPickerConfigurationAssetRepresentationModeCurrent
             : PHPickerConfigurationAssetRepresentationModeAutomatic;
+        const bool limitedLibrary =
+            [PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelReadWrite] == PHAuthorizationStatusLimited;
 
         PHPickerViewController* picker = [[PHPickerViewController alloc] initWithConfiguration:configuration];
         TCXIOSPhotoPickerDelegate* delegate =
             [[TCXIOSPhotoPickerDelegate alloc] initWithMediaTypes:request.mediaTypes
+                                                   limitedLibrary:limitedLibrary
                                                        completion:std::move(done)];
         picker.delegate = delegate;
         TCXIOSRetainDelegate(delegate);

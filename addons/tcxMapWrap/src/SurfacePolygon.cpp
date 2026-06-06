@@ -314,20 +314,85 @@ MeshBuildResult SurfacePolygon::buildMesh(const MeshBuildContext& ctx) {
         return result;
     }
 
-    mesh.vertices.reserve(size_t(n) * 2);
-    mesh.uvs.reserve(size_t(n) * 2);
-    mesh.indices.reserve(size_t(std::max(0, n - 2)) * 3);
+    int subdiv = std::max(1, ctx.meshSubdivision);
+    if (subdiv <= 1) {
+        mesh.vertices.reserve(size_t(n) * 2);
+        mesh.uvs.reserve(size_t(n) * 2);
+        mesh.indices.reserve(size_t(std::max(0, n - 2)) * 3);
 
-    for (int i = 0; i < n; ++i) {
-        mesh.addVertex(destPoints_[i].x, destPoints_[i].y,
-                       uvPoints_[i].x, uvPoints_[i].y);
-    }
+        for (int i = 0; i < n; ++i) {
+            mesh.addVertex(destPoints_[i].x, destPoints_[i].y,
+                           uvPoints_[i].x, uvPoints_[i].y);
+        }
 
-    for (size_t i = 0; i + 2 < triangles_.size(); i += 3) {
-        if (!mesh.addTriangle(triangles_[i], triangles_[i + 1], triangles_[i + 2])) {
-            result.ok = false;
-            result.message = "Polygon triangulation produced out-of-range index";
-            return result;
+        for (size_t i = 0; i + 2 < triangles_.size(); i += 3) {
+            if (!mesh.addTriangle(triangles_[i], triangles_[i + 1], triangles_[i + 2])) {
+                result.ok = false;
+                result.message = "Polygon triangulation produced out-of-range index";
+                return result;
+            }
+        }
+    } else {
+        size_t sourceTriangleCount = triangles_.size() / 3;
+        size_t verticesPerTriangle = size_t(subdiv + 1) * size_t(subdiv + 2) / 2;
+        mesh.vertices.reserve(sourceTriangleCount * verticesPerTriangle * 2);
+        mesh.uvs.reserve(sourceTriangleCount * verticesPerTriangle * 2);
+        mesh.indices.reserve(sourceTriangleCount * size_t(subdiv) * size_t(subdiv) * 3);
+
+        for (size_t ti = 0; ti + 2 < triangles_.size(); ti += 3) {
+            uint32_t ia = triangles_[ti];
+            uint32_t ib = triangles_[ti + 1];
+            uint32_t ic = triangles_[ti + 2];
+            if (ia >= destPoints_.size() || ib >= destPoints_.size() || ic >= destPoints_.size()) {
+                result.ok = false;
+                result.message = "Polygon triangulation produced out-of-range index";
+                return result;
+            }
+
+            Vec2 pa = destPoints_[ia];
+            Vec2 pb = destPoints_[ib];
+            Vec2 pc = destPoints_[ic];
+            Vec2 ua = uvPoints_[ia];
+            Vec2 ub = uvPoints_[ib];
+            Vec2 uc = uvPoints_[ic];
+
+            std::vector<int> vertIndex((subdiv + 1) * (subdiv + 1), -1);
+            int localVertex = 0;
+            uint32_t base = static_cast<uint32_t>(mesh.vertexCount());
+            for (int i = 0; i <= subdiv; ++i) {
+                for (int j = 0; j <= subdiv - i; ++j) {
+                    int k = subdiv - i - j;
+                    float wa = float(i) / float(subdiv);
+                    float wb = float(j) / float(subdiv);
+                    float wc = float(k) / float(subdiv);
+
+                    Vec2 p(wa * pa.x + wb * pb.x + wc * pc.x,
+                           wa * pa.y + wb * pb.y + wc * pc.y);
+                    Vec2 uv(wa * ua.x + wb * ub.x + wc * uc.x,
+                            wa * ua.y + wb * ub.y + wc * uc.y);
+                    mesh.addVertex(p.x, p.y, uv.x, uv.y);
+                    vertIndex[i * (subdiv + 1) + j] = int(base) + localVertex++;
+                }
+            }
+
+            for (int i = 0; i <= subdiv; ++i) {
+                for (int j = 0; j <= subdiv - i - 1; ++j) {
+                    int idx00 = vertIndex[i * (subdiv + 1) + j];
+                    int idx10 = vertIndex[(i + 1) * (subdiv + 1) + j];
+                    int idx01 = vertIndex[i * (subdiv + 1) + (j + 1)];
+
+                    if (idx00 >= 0 && idx10 >= 0 && idx01 >= 0) {
+                        mesh.addTriangle(uint32_t(idx00), uint32_t(idx10), uint32_t(idx01));
+                    }
+
+                    if (i + j + 2 <= subdiv) {
+                        int idx11 = vertIndex[(i + 1) * (subdiv + 1) + (j + 1)];
+                        if (idx10 >= 0 && idx11 >= 0 && idx01 >= 0) {
+                            mesh.addTriangle(uint32_t(idx10), uint32_t(idx11), uint32_t(idx01));
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -25,11 +25,14 @@ This v0.3 implementation provides:
   ContactsUI, ARKit, Vision, and CoreML bridge facades
 - Feature configuration helpers for Info.plist keys, background modes,
   entitlements, BGTask identifiers, and PrivacyInfo fragments
+- Objective-C++ native integration header for scene presenters and background
+  URLSession relaunch handoff
 - Native bridge split into focused Objective-C++ modules under `src/ios/`
 - Non-iOS stub implementation with explicit unavailable errors
 - iOS bridge coverage for app/device info, lifecycle notifications,
   alert/share/openURL, selected permissions, document picker, PHPicker image
-  and video selection, Photos save, camera BGRA frames, camera device/format
+  and video selection with metadata, Photos save, camera BGRA frames,
+  camera device/format
   enumeration, no-copy frame views, audio session, haptics, motion, local
   notifications with categories/actions/response callbacks, background task
   expiration handling, persistent background download request metadata, and
@@ -71,8 +74,11 @@ must be called from the TrussC update/render side.
 safe-area values. The iOS bridge observes app state, orientation, and screen
 connect/disconnect notifications, then posts `App` callbacks through
 `eventQueue()`. Host shells that own a UIKit view controller can register it
-with the native `TCXIOSBridge` scene selectors so modal presentation can prefer
-the active scene before falling back to the foreground key window.
+with `#import <tcx/ios/native/TCXIOSBridgeObjC.h>` and
+`TCXIOSRegisterScenePresenter()` so modal presentation can prefer the active
+scene before falling back to the foreground key window. Use
+`TCXIOSSetActiveSceneIdentifier()` from scene activation callbacks when the host
+app owns multiple scenes.
 
 ## Info.plist
 
@@ -107,9 +113,11 @@ needs current notification authorization and per-channel settings.
 For app target setup, `FeatureConfiguration` and
 `configurationRequirementsFor()` return the Info.plist keys, background modes,
 entitlements, BGTask identifiers, and privacy manifest entries needed by a
-feature set. `scripts/tcxios_manifest_tool.py` exposes the same workflow as a
-command-line helper and can generate Info.plist / `PrivacyInfo.xcprivacy`
-fragments or check existing app plists.
+feature set. `configurationFragmentsFor()` exposes the same data split into
+Info.plist, background modes, entitlements, and privacy manifest fragments.
+`scripts/tcxios_manifest_tool.py` exposes the same workflow as a command-line
+helper and can generate Info.plist, background mode, entitlements, and
+`PrivacyInfo.xcprivacy` fragments or check existing app plists.
 
 ## Notifications
 
@@ -123,10 +131,12 @@ TrussC event queue.
 ## Photos
 
 `tcx::ios::photos()` can pick images, videos, or both through PHPicker and report
-the selected media type on each `PickedPhoto`. `Photos::save()` writes image or
-video files into the user's Photos library through PhotoKit. As with all Photos
-writes, apps must provide `NSPhotoLibraryAddUsageDescription` and handle denied
-or limited authorization.
+the selected media type on each `PickedPhoto`. Picked items include the copied
+filename, UTI/type identifier, file size, image dimensions, video duration when
+available, and whether the current Photos authorization is limited.
+`Photos::save()` writes image or video files into the user's Photos library
+through PhotoKit. As with all Photos writes, apps must provide
+`NSPhotoLibraryAddUsageDescription` and handle denied or limited authorization.
 
 ## Files
 
@@ -149,14 +159,28 @@ reserved for future compatible platforms and remains empty on iOS. Existing
 
 ## Camera
 
-The current camera path is CPU BGRA copy first. Each `CameraFrame` carries
-`frameId` and `droppedFrameCount` so apps can detect stalled consumers or late
-frame drops. `CameraConfig` supports front/back/external device preference,
-orientation, mirroring, and ring-buffer capacity. `Camera::availableDevices()`
-reports native devices and available format/fps ranges, and
-`Camera::latestFrameView()` exposes the latest frame without an additional
-`std::vector` copy while keeping the backing storage alive. Direct
-`CVPixelBuffer`/Metal texture bridging remains future work.
+The current camera path is CPU BGRA copy first. `CameraFrame` and
+`CameraFrameView` expose raw BGRA bytes from `AVCaptureVideoDataOutput`.
+`copyCameraFrameToPixels()`, `Camera::copyLatestFrameToPixels()`, and
+`Camera::uploadLatestFrameToTexture()` convert BGRA to TrussC's normal RGBA
+`Pixels`/`Texture` path. Each `CameraFrame` carries `frameId` and
+`droppedFrameCount` so apps can detect stalled consumers or late frame drops.
+`CameraConfig` supports front/back/external device preference, orientation,
+mirroring, and ring-buffer capacity. `Camera::availableDevices()` reports native
+devices and available format/fps ranges, and `Camera::latestFrameView()` exposes
+the latest raw frame without an additional `std::vector` copy while keeping the
+backing storage alive. Direct `CVPixelBuffer`/Metal texture bridging remains
+future work.
+
+## Background Downloads
+
+`BackgroundDownloads::download()` stores persistent request metadata when
+`persistAcrossRelaunch` is true. Host apps that receive
+`application:handleEventsForBackgroundURLSession:completionHandler:` must import
+`<tcx/ios/native/TCXIOSBridgeObjC.h>` and call
+`TCXIOSHandleBackgroundURLSessionEvents(identifier, completionHandler)` so the
+addon can rebind the background session delegate and invoke the system
+completion handler after pending URLSession events finish.
 
 ## AudioSession
 

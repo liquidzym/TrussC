@@ -1,4 +1,7 @@
 #include "TCXIOSBridgeSupport.h"
+#include "tcx/ios/native/TCXIOSBridgeObjC.h"
+
+#include <cstring>
 
 namespace {
 
@@ -51,7 +54,8 @@ tcx::ios::Error TCXIOSNativeError(NSError* error, const std::string& fallback) {
         : tcx::ios::Error{
         tcx::ios::ErrorCode::NativeError,
         TCXIOSStr(error.localizedDescription),
-        static_cast<int>(error.code)
+        static_cast<int>(error.code),
+        TCXIOSStr(error.domain)
     };
     tcx::ios::logger().error("tcxIOS.native", fallback, mapped);
     return mapped;
@@ -157,6 +161,30 @@ UIViewController* TCXIOSPresenter() {
     return TCXIOSTopViewController(window.rootViewController);
 }
 
+void TCXIOSRegisterScenePresenter(NSString* identifier, UIViewController* viewController) {
+    TCXIOSSetScenePresenter(identifier, viewController);
+}
+
+UIViewController* TCXIOSRegisteredScenePresenter(NSString* identifier) {
+    return TCXIOSScenePresenter(identifier);
+}
+
+void TCXIOSUnregisterScenePresenter(NSString* identifier) {
+    TCXIOSRemoveScenePresenter(identifier);
+}
+
+void TCXIOSSetActiveSceneIdentifier(NSString* identifier) {
+    if (identifier.length == 0) return;
+    tcx::ios::SceneContext context;
+    context.identifier = TCXIOSStr(identifier);
+    context.active = true;
+    tcx::ios::scene().setActiveContext(std::move(context));
+}
+
+UIViewController* TCXIOSCurrentPresenter(void) {
+    return TCXIOSPresenter();
+}
+
 NSURL* TCXIOSTemporaryCopyURL(NSURL* sourceURL, NSString* directoryName, NSError** error) {
     NSString* filename = sourceURL.lastPathComponent.length > 0
         ? sourceURL.lastPathComponent
@@ -199,4 +227,83 @@ NSArray<UTType*>* TCXIOSContentTypes(const std::vector<std::string>& identifiers
     }
     if (types.count == 0) [types addObject:UTTypeItem];
     return types;
+}
+
+NSArray<CBUUID*>* TCXIOSCBUUIDs(const std::vector<std::string>& uuids) {
+    NSMutableArray<CBUUID*>* out = [NSMutableArray array];
+    for (const auto& uuid : uuids) {
+        [out addObject:[CBUUID UUIDWithString:TCXIOSNs(uuid)]];
+    }
+    return out.count > 0 ? out : nil;
+}
+
+std::string TCXIOSPeripheralIdentifier(CBPeripheral* peripheral) {
+    return TCXIOSStr(peripheral.identifier.UUIDString);
+}
+
+std::string TCXIOSCharacteristicKey(const tcx::ios::BLECharacteristicRef& ref) {
+    return ref.peripheralIdentifier + "|" + ref.serviceUUID + "|" + ref.characteristicUUID;
+}
+
+std::string TCXIOSCharacteristicKey(CBPeripheral* peripheral, CBCharacteristic* characteristic) {
+    return TCXIOSPeripheralIdentifier(peripheral) + "|" +
+           TCXIOSStr(characteristic.service.UUID.UUIDString) + "|" +
+           TCXIOSStr(characteristic.UUID.UUIDString);
+}
+
+tcx::ios::BluetoothState TCXIOSBluetoothState(CBManagerState state) {
+    switch (state) {
+        case CBManagerStateUnsupported: return tcx::ios::BluetoothState::Unsupported;
+        case CBManagerStateUnauthorized: return tcx::ios::BluetoothState::Unauthorized;
+        case CBManagerStatePoweredOff: return tcx::ios::BluetoothState::PoweredOff;
+        case CBManagerStatePoweredOn: return tcx::ios::BluetoothState::PoweredOn;
+        case CBManagerStateResetting:
+        case CBManagerStateUnknown: return tcx::ios::BluetoothState::Unknown;
+    }
+    return tcx::ios::BluetoothState::Unknown;
+}
+
+tcx::ios::PermissionState TCXIOSBluetoothPermissionState(tcx::ios::BluetoothState state) {
+    switch (state) {
+        case tcx::ios::BluetoothState::Unsupported:
+            return tcx::ios::PermissionState::Restricted;
+        case tcx::ios::BluetoothState::Unauthorized:
+            return tcx::ios::PermissionState::Denied;
+        case tcx::ios::BluetoothState::PoweredOff:
+        case tcx::ios::BluetoothState::PoweredOn:
+            return tcx::ios::PermissionState::Authorized;
+        case tcx::ios::BluetoothState::Unknown:
+            return tcx::ios::PermissionState::Unknown;
+    }
+    return tcx::ios::PermissionState::Unknown;
+}
+
+tcx::ios::PermissionState TCXIOSContactPermissionState(CNAuthorizationStatus status) {
+    switch (status) {
+        case CNAuthorizationStatusNotDetermined:
+            return tcx::ios::PermissionState::NotDetermined;
+        case CNAuthorizationStatusRestricted:
+            return tcx::ios::PermissionState::Restricted;
+        case CNAuthorizationStatusDenied:
+            return tcx::ios::PermissionState::Denied;
+        case CNAuthorizationStatusAuthorized:
+            return tcx::ios::PermissionState::Authorized;
+        case CNAuthorizationStatusLimited:
+            return tcx::ios::PermissionState::Limited;
+    }
+    return tcx::ios::PermissionState::Unknown;
+}
+
+std::vector<std::uint8_t> TCXIOSBytes(NSData* data) {
+    std::vector<std::uint8_t> out;
+    if (!data) return out;
+    out.resize(data.length);
+    if (!out.empty()) {
+        std::memcpy(out.data(), data.bytes, out.size());
+    }
+    return out;
+}
+
+NSData* TCXIOSData(const std::vector<std::uint8_t>& bytes) {
+    return [NSData dataWithBytes:bytes.data() length:bytes.size()];
 }

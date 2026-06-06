@@ -50,6 +50,30 @@ struct AppConfigurationRequirements {
     std::vector<PrivacyManifestEntry> privacyManifestEntries;
 };
 
+struct InfoPlistConfigurationFragment {
+    std::vector<std::string> usageDescriptionKeys;
+    std::vector<std::string> backgroundTaskIdentifiers;
+};
+
+struct BackgroundModesConfigurationFragment {
+    std::vector<std::string> modes;
+};
+
+struct EntitlementsConfigurationFragment {
+    std::vector<std::string> keys;
+};
+
+struct PrivacyManifestConfigurationFragment {
+    std::vector<PrivacyManifestEntry> entries;
+};
+
+struct AppConfigurationFragments {
+    InfoPlistConfigurationFragment infoPlist;
+    BackgroundModesConfigurationFragment backgroundModes;
+    EntitlementsConfigurationFragment entitlements;
+    PrivacyManifestConfigurationFragment privacyManifest;
+};
+
 std::vector<InfoPlistUsageDescription> defaultInfoPlistUsageDescriptions();
 std::vector<InfoPlistUsageDescription> infoPlistUsageDescriptionsFor(Permission permission);
 std::vector<std::string> requiredInfoPlistKeysFor(const std::vector<Permission>& permissions);
@@ -58,6 +82,7 @@ std::vector<std::string> missingInfoPlistKeys(const std::vector<Permission>& per
 std::vector<std::string> requiredBackgroundModesFor(const std::vector<IOSFeature>& features);
 std::vector<std::string> requiredEntitlementsFor(const std::vector<IOSFeature>& features);
 std::vector<PrivacyManifestEntry> requiredPrivacyManifestEntriesFor(const std::vector<IOSFeature>& features);
+AppConfigurationFragments configurationFragmentsFor(const FeatureConfiguration& configuration);
 AppConfigurationRequirements configurationRequirementsFor(const FeatureConfiguration& configuration);
 std::string privacyManifestXML(const std::vector<PrivacyManifestEntry>& entries);
 

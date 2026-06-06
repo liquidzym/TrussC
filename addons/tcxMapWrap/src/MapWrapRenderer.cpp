@@ -297,11 +297,13 @@ struct MapWrapRenderer::Impl {
         if (result.ok) {
             rd.vertices = std::move(result.mesh.vertices);
             rd.uvs = std::move(result.mesh.uvs);
-            rd.indices = std::move(result.mesh.indices);
+            rd.baseIndices = std::move(result.mesh.indices);
+            rd.indices = rd.baseIndices;
             rd.maskAlphas.assign(rd.vertices.size() / 2, 1.0f);
         } else {
             rd.vertices.clear();
             rd.uvs.clear();
+            rd.baseIndices.clear();
             rd.indices.clear();
             rd.maskAlphas.clear();
         }
@@ -589,11 +591,39 @@ struct MapWrapRenderer::Impl {
         return clamp01(coverage);
     }
 
-    void updateMaskAlphas(Surface& surface,
+    void pruneFullyTransparentTriangles(SurfaceRenderData& rd) {
+        if (rd.baseIndices.empty()) {
+            rd.indices.clear();
+            return;
+        }
+
+        std::vector<uint32_t> clipped;
+        clipped.reserve(rd.baseIndices.size());
+        size_t vertexCount = rd.vertices.size() / 2;
+        for (size_t i = 0; i + 2 < rd.baseIndices.size(); i += 3) {
+            uint32_t a = rd.baseIndices[i];
+            uint32_t b = rd.baseIndices[i + 1];
+            uint32_t c = rd.baseIndices[i + 2];
+            if (a >= vertexCount || b >= vertexCount || c >= vertexCount) continue;
+
+            float aa = a < rd.maskAlphas.size() ? rd.maskAlphas[a] : 1.0f;
+            float ab = b < rd.maskAlphas.size() ? rd.maskAlphas[b] : 1.0f;
+            float ac = c < rd.maskAlphas.size() ? rd.maskAlphas[c] : 1.0f;
+            if (std::max(aa, std::max(ab, ac)) <= 1e-4f) continue;
+
+            clipped.push_back(a);
+            clipped.push_back(b);
+            clipped.push_back(c);
+        }
+        rd.indices = std::move(clipped);
+    }
+
+    void updateMaskAlphas(const Surface& surface,
                           SurfaceRenderData& rd,
                           const std::vector<const MapWrapMask*>& extraMasks) {
         size_t vertexCount = rd.vertices.size() / 2;
         rd.maskAlphas.assign(vertexCount, 1.0f);
+        rd.indices = rd.baseIndices;
         rd.hasActiveMask = hasEnabledMask(surface, extraMasks);
         if (!rd.hasActiveMask) return;
 
@@ -638,6 +668,7 @@ struct MapWrapRenderer::Impl {
         for (const auto* mask : extraMasks) {
             if (mask) applyMask(*mask);
         }
+        pruneFullyTransparentTriangles(rd);
     }
 
     void drawSurface(Surface& surface,
@@ -676,6 +707,10 @@ struct MapWrapRenderer::Impl {
         }
 
         updateMaskAlphas(surface, rd, extraMasks);
+        if (rd.indices.empty()) {
+            stats.skippedSurfaceCount++;
+            return;
+        }
         stats.drawnSurfaceCount++;
 
 #if TCX_MAPWRAP_HAS_TRUSSC_RUNTIME
@@ -810,26 +845,22 @@ void MapWrapRenderer::draw(const RenderOptions& options) {
         return;
     }
 
+    const MapWrapOutput* primaryOutput = enabledOutputs.front();
     std::vector<const MapWrapMask*> stageMasks;
     for (const auto& mask : impl_->document->stage().globalMasks()) {
         stageMasks.push_back(&mask);
     }
-    for (const auto* output : enabledOutputs) {
-        for (const auto& mask : output->masks) {
-            stageMasks.push_back(&mask);
-        }
+    for (const auto& mask : primaryOutput->masks) {
+        stageMasks.push_back(&mask);
     }
 
     float outputOpacity = 1.0f;
     float outputBrightness = 1.0f;
-    if (!enabledOutputs.empty()) {
-        const MapWrapOutput* output = enabledOutputs.front();
-        outputOpacity *= clamp01(output->blend.opacity);
-        outputBrightness *= std::max(0.0f, output->blend.brightness);
-        if (output->colorCorrection.enabled) {
-            outputOpacity *= clamp01(output->colorCorrection.opacity);
-            outputBrightness *= std::max(0.0f, output->colorCorrection.brightness);
-        }
+    outputOpacity *= clamp01(primaryOutput->blend.opacity);
+    outputBrightness *= std::max(0.0f, primaryOutput->blend.brightness);
+    if (primaryOutput->colorCorrection.enabled) {
+        outputOpacity *= clamp01(primaryOutput->colorCorrection.opacity);
+        outputBrightness *= std::max(0.0f, primaryOutput->colorCorrection.brightness);
     }
 
     for (const auto& surface : surfaces) {

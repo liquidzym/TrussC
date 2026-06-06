@@ -23,6 +23,7 @@ struct Error {
     ErrorCode code = ErrorCode::None;
     std::string message;
     int nativeCode = 0;
+    std::string nativeDomain;
 };
 
 template <typename T>

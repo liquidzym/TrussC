@@ -4,6 +4,8 @@
 #include "tcx/ios/EventQueue.h"
 
 #import <UIKit/UIKit.h>
+#import <CoreBluetooth/CoreBluetooth.h>
+#import <Contacts/Contacts.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include <filesystem>
@@ -43,3 +45,12 @@ UIViewController* TCXIOSPresenter();
 NSURL* TCXIOSTemporaryCopyURL(NSURL* sourceURL, NSString* directoryName, NSError** error);
 bool TCXIOSHasUsageDescription(tcx::ios::Permission permission, tcx::ios::Completion<tcx::ios::PermissionState>& done);
 NSArray<UTType*>* TCXIOSContentTypes(const std::vector<std::string>& identifiers);
+NSArray<CBUUID*>* TCXIOSCBUUIDs(const std::vector<std::string>& uuids);
+std::string TCXIOSPeripheralIdentifier(CBPeripheral* peripheral);
+std::string TCXIOSCharacteristicKey(const tcx::ios::BLECharacteristicRef& ref);
+std::string TCXIOSCharacteristicKey(CBPeripheral* peripheral, CBCharacteristic* characteristic);
+tcx::ios::BluetoothState TCXIOSBluetoothState(CBManagerState state);
+tcx::ios::PermissionState TCXIOSBluetoothPermissionState(tcx::ios::BluetoothState state);
+tcx::ios::PermissionState TCXIOSContactPermissionState(CNAuthorizationStatus status);
+std::vector<std::uint8_t> TCXIOSBytes(NSData* data);
+NSData* TCXIOSData(const std::vector<std::uint8_t>& bytes);

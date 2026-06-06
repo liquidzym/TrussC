@@ -40,6 +40,7 @@ public:
     std::shared_ptr<SurfaceTriangle> createTriangleSurface(const std::string& name = "");
     std::shared_ptr<SurfaceCircle> createCircleSurface(const std::string& name = "");
     std::shared_ptr<SurfacePolygon> createPolygonSurface(const std::vector<Vec2>& points = {}, const std::string& name = "");
+    SurfaceId allocateSurfaceId(SurfaceKind kind);
 
     void addSurface(std::shared_ptr<Surface> surface);
     void removeSurface(const SurfaceId& id);

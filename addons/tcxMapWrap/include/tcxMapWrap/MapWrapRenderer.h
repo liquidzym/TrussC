@@ -26,6 +26,7 @@ struct SurfaceRenderData {
     SurfaceId surfaceId;
     std::vector<float> vertices;       // x,y pairs (2 floats per vertex)
     std::vector<float> uvs;            // u,v pairs (2 floats per vertex)
+    std::vector<uint32_t> baseIndices; // unmasked triangle indices
     std::vector<uint32_t> indices;     // triangle indices
     std::vector<float> maskAlphas;     // one alpha coverage value per vertex
     uint64_t surfaceRevision = 0;

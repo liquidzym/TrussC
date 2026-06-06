@@ -3,6 +3,7 @@
 #include "Types.h"
 #include "Operations.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -18,9 +19,13 @@ enum class PhotoMediaType {
 struct PickedPhoto {
     std::filesystem::path path;
     std::string typeIdentifier;
+    std::string filename;
     PhotoMediaType mediaType = PhotoMediaType::Image;
     int pixelWidth = 0;
     int pixelHeight = 0;
+    std::uint64_t fileSize = 0;
+    double durationSeconds = 0.0;
+    bool limitedLibrary = false;
 };
 
 struct PhotoPickerRequest {

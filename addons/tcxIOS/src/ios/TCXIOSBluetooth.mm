@@ -1,5 +1,4 @@
-#include "TCXIOSPlatform.h"
-#include "tcx/ios/EventQueue.h"
+#include "TCXIOSBridgeSupport.h"
 
 #import <ARKit/ARKit.h>
 #import <Contacts/Contacts.h>
@@ -20,168 +19,6 @@
 #include <memory>
 #include <mutex>
 #include <utility>
-
-namespace {
-
-NSString* TCXIOSV03Ns(const std::string& value) {
-    return [NSString stringWithUTF8String:value.c_str()];
-}
-
-std::string TCXIOSV03Str(NSString* value) {
-    return value ? std::string(value.UTF8String) : std::string();
-}
-
-tcx::ios::Error TCXIOSV03NativeError(NSError* error, const std::string& fallback) {
-    tcx::ios::Error mapped = !error ? tcx::ios::Error{tcx::ios::ErrorCode::NativeError, fallback, 0}
-        : tcx::ios::Error{
-        tcx::ios::ErrorCode::NativeError,
-        TCXIOSV03Str(error.localizedDescription),
-        static_cast<int>(error.code)
-    };
-    tcx::ios::logger().error("tcxIOS.native", fallback, mapped);
-    return mapped;
-}
-
-template <typename T>
-void TCXIOSV03Finish(tcx::ios::Completion<T> done, tcx::ios::Result<T> result) {
-    if (!done) return;
-    tcx::ios::eventQueue().post([done = std::move(done), result = std::move(result)]() mutable {
-        done(std::move(result));
-    });
-}
-
-void TCXIOSV03FinishVoid(tcx::ios::Completion<void> done, tcx::ios::Result<void> result) {
-    if (!done) return;
-    tcx::ios::eventQueue().post([done = std::move(done), result = std::move(result)]() mutable {
-        done(std::move(result));
-    });
-}
-
-NSMutableSet* TCXIOSV03Delegates() {
-    static NSMutableSet* delegates = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        delegates = [NSMutableSet set];
-    });
-    return delegates;
-}
-
-void TCXIOSV03Retain(id delegate) {
-    @synchronized (TCXIOSV03Delegates()) {
-        [TCXIOSV03Delegates() addObject:delegate];
-    }
-}
-
-void TCXIOSV03Release(id delegate) {
-    @synchronized (TCXIOSV03Delegates()) {
-        [TCXIOSV03Delegates() removeObject:delegate];
-    }
-}
-
-UIViewController* TCXIOSV03TopViewController(UIViewController* root) {
-    UIViewController* current = root;
-    while (current.presentedViewController) current = current.presentedViewController;
-    if ([current isKindOfClass:UINavigationController.class]) {
-        UIViewController* visible = ((UINavigationController*)current).visibleViewController;
-        if (visible) return TCXIOSV03TopViewController(visible);
-    }
-    if ([current isKindOfClass:UITabBarController.class]) {
-        UIViewController* selected = ((UITabBarController*)current).selectedViewController;
-        if (selected) return TCXIOSV03TopViewController(selected);
-    }
-    return current;
-}
-
-UIViewController* TCXIOSV03Presenter() {
-    for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        UIWindowScene* windowScene = (UIWindowScene*)scene;
-        if (windowScene.activationState != UISceneActivationStateForegroundActive) continue;
-        for (UIWindow* window in windowScene.windows) {
-            if (window.isKeyWindow && window.rootViewController) {
-                return TCXIOSV03TopViewController(window.rootViewController);
-            }
-        }
-    }
-    return nil;
-}
-
-NSArray<CBUUID*>* TCXIOSV03CBUUIDs(const std::vector<std::string>& uuids) {
-    NSMutableArray<CBUUID*>* out = [NSMutableArray array];
-    for (const auto& uuid : uuids) {
-        [out addObject:[CBUUID UUIDWithString:TCXIOSV03Ns(uuid)]];
-    }
-    return out.count > 0 ? out : nil;
-}
-
-std::string TCXIOSV03PeripheralIdentifier(CBPeripheral* peripheral) {
-    return TCXIOSV03Str(peripheral.identifier.UUIDString);
-}
-
-std::string TCXIOSV03CharacteristicKey(const tcx::ios::BLECharacteristicRef& ref) {
-    return ref.peripheralIdentifier + "|" + ref.serviceUUID + "|" + ref.characteristicUUID;
-}
-
-std::string TCXIOSV03CharacteristicKey(CBPeripheral* peripheral, CBCharacteristic* characteristic) {
-    return TCXIOSV03PeripheralIdentifier(peripheral) + "|" +
-           TCXIOSV03Str(characteristic.service.UUID.UUIDString) + "|" +
-           TCXIOSV03Str(characteristic.UUID.UUIDString);
-}
-
-tcx::ios::BluetoothState TCXIOSV03BluetoothState(CBManagerState state) {
-    switch (state) {
-        case CBManagerStateUnsupported: return tcx::ios::BluetoothState::Unsupported;
-        case CBManagerStateUnauthorized: return tcx::ios::BluetoothState::Unauthorized;
-        case CBManagerStatePoweredOff: return tcx::ios::BluetoothState::PoweredOff;
-        case CBManagerStatePoweredOn: return tcx::ios::BluetoothState::PoweredOn;
-        case CBManagerStateResetting:
-        case CBManagerStateUnknown: return tcx::ios::BluetoothState::Unknown;
-    }
-    return tcx::ios::BluetoothState::Unknown;
-}
-
-tcx::ios::PermissionState TCXIOSV03BluetoothPermissionState(tcx::ios::BluetoothState state) {
-    switch (state) {
-        case tcx::ios::BluetoothState::Unsupported:
-            return tcx::ios::PermissionState::Restricted;
-        case tcx::ios::BluetoothState::Unauthorized:
-            return tcx::ios::PermissionState::Denied;
-        case tcx::ios::BluetoothState::PoweredOff:
-        case tcx::ios::BluetoothState::PoweredOn:
-            return tcx::ios::PermissionState::Authorized;
-        case tcx::ios::BluetoothState::Unknown:
-            return tcx::ios::PermissionState::Unknown;
-    }
-    return tcx::ios::PermissionState::Unknown;
-}
-
-tcx::ios::PermissionState TCXIOSV03ContactPermissionState(CNAuthorizationStatus status) {
-    switch (status) {
-        case CNAuthorizationStatusNotDetermined:
-            return tcx::ios::PermissionState::NotDetermined;
-        case CNAuthorizationStatusRestricted:
-            return tcx::ios::PermissionState::Restricted;
-        case CNAuthorizationStatusDenied:
-            return tcx::ios::PermissionState::Denied;
-        case CNAuthorizationStatusAuthorized:
-            return tcx::ios::PermissionState::Authorized;
-        case CNAuthorizationStatusLimited:
-            return tcx::ios::PermissionState::Limited;
-    }
-    return tcx::ios::PermissionState::Unknown;
-}
-
-std::vector<std::uint8_t> TCXIOSV03Bytes(NSData* data) {
-    std::vector<std::uint8_t> bytes(data.length);
-    if (data.length > 0) std::memcpy(bytes.data(), data.bytes, data.length);
-    return bytes;
-}
-
-NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
-    return [NSData dataWithBytes:bytes.data() length:bytes.size()];
-}
-
-} // namespace
 
 @interface TCXIOSBLECoordinator : NSObject <CBCentralManagerDelegate, CBPeripheralDelegate>
 + (instancetype)shared;
@@ -228,7 +65,7 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
 }
 
 - (tcx::ios::BluetoothState)state {
-    return TCXIOSV03BluetoothState(central_.state);
+    return TCXIOSBluetoothState(central_.state);
 }
 
 - (void)startScan:(const tcx::ios::BLEScanRequest&)request handler:(tcx::ios::BLEScanHandler)handler {
@@ -239,7 +76,7 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
     }
     if (central_.state != CBManagerStatePoweredOn) return;
     NSDictionary* options = @{CBCentralManagerScanOptionAllowDuplicatesKey: @(request.allowDuplicates)};
-    [central_ scanForPeripheralsWithServices:TCXIOSV03CBUUIDs(request.serviceUUIDs) options:options];
+    [central_ scanForPeripheralsWithServices:TCXIOSCBUUIDs(request.serviceUUIDs) options:options];
 }
 
 - (void)stopScan {
@@ -252,17 +89,17 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
     CBPeripheral* peripheral = nil;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        peripheral = peripherals_[TCXIOSV03Str(identifier)];
-        connectCompletions_[TCXIOSV03Str(identifier)] = std::move(completion);
+        peripheral = peripherals_[TCXIOSStr(identifier)];
+        connectCompletions_[TCXIOSStr(identifier)] = std::move(completion);
     }
     if (!peripheral) {
         tcx::ios::Completion<void> done;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            done = std::move(connectCompletions_[TCXIOSV03Str(identifier)]);
-            connectCompletions_.erase(TCXIOSV03Str(identifier));
+            done = std::move(connectCompletions_[TCXIOSStr(identifier)]);
+            connectCompletions_.erase(TCXIOSStr(identifier));
         }
-        TCXIOSV03FinishVoid(std::move(done), tcx::ios::Result<void>::failure({
+        TCXIOSFinishVoid(std::move(done), tcx::ios::Result<void>::failure({
             tcx::ios::ErrorCode::InvalidArgument,
             "Peripheral has not been discovered.",
             0
@@ -274,12 +111,12 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
 
 - (void)disconnect:(NSString*)identifier {
     std::lock_guard<std::mutex> lock(mutex_);
-    CBPeripheral* peripheral = peripherals_[TCXIOSV03Str(identifier)];
+    CBPeripheral* peripheral = peripherals_[TCXIOSStr(identifier)];
     if (peripheral) [central_ cancelPeripheralConnection:peripheral];
 }
 
 - (void)read:(const tcx::ios::BLECharacteristicRef&)ref completion:(tcx::ios::BLEValueHandler)completion {
-    const std::string key = TCXIOSV03CharacteristicKey(ref);
+    const std::string key = TCXIOSCharacteristicKey(ref);
     CBPeripheral* peripheral = nil;
     CBCharacteristic* characteristic = nil;
     {
@@ -295,7 +132,7 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
             done = std::move(readCompletions_[key]);
             readCompletions_.erase(key);
         }
-        TCXIOSV03Finish(std::move(done), tcx::ios::Result<tcx::ios::BLECharacteristicValue>::failure({
+        TCXIOSFinish(std::move(done), tcx::ios::Result<tcx::ios::BLECharacteristicValue>::failure({
             tcx::ios::ErrorCode::InvalidState,
             "BLE characteristic is not discovered yet.",
             0
@@ -306,7 +143,7 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
 }
 
 - (void)write:(const tcx::ios::BLEWriteRequest&)request completion:(tcx::ios::Completion<void>)completion {
-    const std::string key = TCXIOSV03CharacteristicKey(request.characteristic);
+    const std::string key = TCXIOSCharacteristicKey(request.characteristic);
     CBPeripheral* peripheral = nil;
     CBCharacteristic* characteristic = nil;
     {
@@ -322,7 +159,7 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
             done = std::move(writeCompletions_[key]);
             writeCompletions_.erase(key);
         }
-        TCXIOSV03FinishVoid(std::move(done), tcx::ios::Result<void>::failure({
+        TCXIOSFinishVoid(std::move(done), tcx::ios::Result<void>::failure({
             tcx::ios::ErrorCode::InvalidState,
             "BLE characteristic is not discovered yet.",
             0
@@ -333,7 +170,7 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
     CBCharacteristicWriteType type = request.withResponse
         ? CBCharacteristicWriteWithResponse
         : CBCharacteristicWriteWithoutResponse;
-    [peripheral writeValue:TCXIOSV03Data(request.data) forCharacteristic:characteristic type:type];
+    [peripheral writeValue:TCXIOSData(request.data) forCharacteristic:characteristic type:type];
     if (!request.withResponse) {
         tcx::ios::Completion<void> done;
         {
@@ -341,14 +178,14 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
             done = std::move(writeCompletions_[key]);
             writeCompletions_.erase(key);
         }
-        TCXIOSV03FinishVoid(std::move(done), tcx::ios::Result<void>::success());
+        TCXIOSFinishVoid(std::move(done), tcx::ios::Result<void>::success());
     }
 }
 
 - (void)setNotify:(const tcx::ios::BLECharacteristicRef&)ref
           enabled:(BOOL)enabled
           handler:(tcx::ios::BLEValueHandler)handler {
-    const std::string key = TCXIOSV03CharacteristicKey(ref);
+    const std::string key = TCXIOSCharacteristicKey(ref);
     CBPeripheral* peripheral = nil;
     CBCharacteristic* characteristic = nil;
     {
@@ -371,7 +208,7 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
     }
     if (central.state == CBManagerStatePoweredOn && handler) {
         NSDictionary* options = @{CBCentralManagerScanOptionAllowDuplicatesKey: @(request.allowDuplicates)};
-        [central scanForPeripheralsWithServices:TCXIOSV03CBUUIDs(request.serviceUUIDs) options:options];
+        [central scanForPeripheralsWithServices:TCXIOSCBUUIDs(request.serviceUUIDs) options:options];
     }
 }
 
@@ -383,18 +220,18 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
     tcx::ios::BLEScanHandler handler;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        peripherals_[TCXIOSV03PeripheralIdentifier(peripheral)] = peripheral;
+        peripherals_[TCXIOSPeripheralIdentifier(peripheral)] = peripheral;
         handler = scanHandler_;
     }
     if (!handler) return;
 
     std::vector<std::string> services;
     NSArray<CBUUID*>* uuids = advertisementData[CBAdvertisementDataServiceUUIDsKey];
-    for (CBUUID* uuid in uuids) services.push_back(TCXIOSV03Str(uuid.UUIDString));
+    for (CBUUID* uuid in uuids) services.push_back(TCXIOSStr(uuid.UUIDString));
 
     tcx::ios::BLEPeripheralInfo info;
-    info.identifier = TCXIOSV03PeripheralIdentifier(peripheral);
-    info.name = TCXIOSV03Str(peripheral.name);
+    info.identifier = TCXIOSPeripheralIdentifier(peripheral);
+    info.name = TCXIOSStr(peripheral.name);
     info.rssi = RSSI.intValue;
     info.serviceUUIDs = std::move(services);
     tcx::ios::eventQueue().post([handler, info]() mutable {
@@ -404,27 +241,27 @@ NSData* TCXIOSV03Data(const std::vector<std::uint8_t>& bytes) {
 
 - (void)centralManager:(CBCentralManager*)central didConnectPeripheral:(CBPeripheral*)peripheral {
     [peripheral discoverServices:nil];
-    const std::string identifier = TCXIOSV03PeripheralIdentifier(peripheral);
+    const std::string identifier = TCXIOSPeripheralIdentifier(peripheral);
     tcx::ios::Completion<void> done;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         done = std::move(connectCompletions_[identifier]);
         connectCompletions_.erase(identifier);
     }
-    TCXIOSV03FinishVoid(std::move(done), tcx::ios::Result<void>::success());
+    TCXIOSFinishVoid(std::move(done), tcx::ios::Result<void>::success());
 }
 
 - (void)centralManager:(CBCentralManager*)central
  didFailToConnectPeripheral:(CBPeripheral*)peripheral
                  error:(NSError*)error {
-    const std::string identifier = TCXIOSV03PeripheralIdentifier(peripheral);
+    const std::string identifier = TCXIOSPeripheralIdentifier(peripheral);
     tcx::ios::Completion<void> done;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         done = std::move(connectCompletions_[identifier]);
         connectCompletions_.erase(identifier);
     }
-    TCXIOSV03FinishVoid(std::move(done), tcx::ios::Result<void>::failure(TCXIOSV03NativeError(error, "BLE connect failed.")));
+    TCXIOSFinishVoid(std::move(done), tcx::ios::Result<void>::failure(TCXIOSNativeError(error, "BLE connect failed.")));
 }
 
 - (void)peripheral:(CBPeripheral*)peripheral didDiscoverServices:(NSError*)error {
@@ -440,14 +277,14 @@ didDiscoverCharacteristicsForService:(CBService*)service
     if (error) return;
     std::lock_guard<std::mutex> lock(mutex_);
     for (CBCharacteristic* characteristic in service.characteristics) {
-        characteristics_[TCXIOSV03CharacteristicKey(peripheral, characteristic)] = characteristic;
+        characteristics_[TCXIOSCharacteristicKey(peripheral, characteristic)] = characteristic;
     }
 }
 
 - (void)peripheral:(CBPeripheral*)peripheral
 didUpdateValueForCharacteristic:(CBCharacteristic*)characteristic
              error:(NSError*)error {
-    const std::string key = TCXIOSV03CharacteristicKey(peripheral, characteristic);
+    const std::string key = TCXIOSCharacteristicKey(peripheral, characteristic);
     tcx::ios::BLEValueHandler readDone;
     tcx::ios::BLEValueHandler notifyHandler;
     {
@@ -458,30 +295,30 @@ didUpdateValueForCharacteristic:(CBCharacteristic*)characteristic
     }
     tcx::ios::BLECharacteristicValue value;
     value.characteristic = {
-        TCXIOSV03PeripheralIdentifier(peripheral),
-        TCXIOSV03Str(characteristic.service.UUID.UUIDString),
-        TCXIOSV03Str(characteristic.UUID.UUIDString)
+        TCXIOSPeripheralIdentifier(peripheral),
+        TCXIOSStr(characteristic.service.UUID.UUIDString),
+        TCXIOSStr(characteristic.UUID.UUIDString)
     };
-    value.data = TCXIOSV03Bytes(characteristic.value);
+    value.data = TCXIOSBytes(characteristic.value);
     auto result = error
-        ? tcx::ios::Result<tcx::ios::BLECharacteristicValue>::failure(TCXIOSV03NativeError(error, "BLE read/notify failed."))
+        ? tcx::ios::Result<tcx::ios::BLECharacteristicValue>::failure(TCXIOSNativeError(error, "BLE read/notify failed."))
         : tcx::ios::Result<tcx::ios::BLECharacteristicValue>::success(value);
-    if (readDone) TCXIOSV03Finish(std::move(readDone), result);
-    if (notifyHandler) TCXIOSV03Finish(notifyHandler, result);
+    if (readDone) TCXIOSFinish(std::move(readDone), result);
+    if (notifyHandler) TCXIOSFinish(notifyHandler, result);
 }
 
 - (void)peripheral:(CBPeripheral*)peripheral
 didWriteValueForCharacteristic:(CBCharacteristic*)characteristic
              error:(NSError*)error {
-    const std::string key = TCXIOSV03CharacteristicKey(peripheral, characteristic);
+    const std::string key = TCXIOSCharacteristicKey(peripheral, characteristic);
     tcx::ios::Completion<void> done;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         done = std::move(writeCompletions_[key]);
         writeCompletions_.erase(key);
     }
-    TCXIOSV03FinishVoid(std::move(done), error
-        ? tcx::ios::Result<void>::failure(TCXIOSV03NativeError(error, "BLE write failed."))
+    TCXIOSFinishVoid(std::move(done), error
+        ? tcx::ios::Result<void>::failure(TCXIOSNativeError(error, "BLE write failed."))
         : tcx::ios::Result<void>::success());
 }
 
@@ -493,7 +330,7 @@ BluetoothState platformBluetoothState() {
 }
 
 PermissionState platformBluetoothPermissionStatus() {
-    return TCXIOSV03BluetoothPermissionState(platformBluetoothState());
+    return TCXIOSBluetoothPermissionState(platformBluetoothState());
 }
 
 void platformStartBLEScan(const BLEScanRequest& request, BLEScanHandler handler) {
@@ -505,11 +342,11 @@ void platformStopBLEScan() {
 }
 
 void platformBLEConnect(const std::string& peripheralIdentifier, Completion<void> done) {
-    [[TCXIOSBLECoordinator shared] connect:TCXIOSV03Ns(peripheralIdentifier) completion:std::move(done)];
+    [[TCXIOSBLECoordinator shared] connect:TCXIOSNs(peripheralIdentifier) completion:std::move(done)];
 }
 
 void platformBLEDisconnect(const std::string& peripheralIdentifier) {
-    [[TCXIOSBLECoordinator shared] disconnect:TCXIOSV03Ns(peripheralIdentifier)];
+    [[TCXIOSBLECoordinator shared] disconnect:TCXIOSNs(peripheralIdentifier)];
 }
 
 void platformBLERead(const BLECharacteristicRef& characteristic, BLEValueHandler done) {

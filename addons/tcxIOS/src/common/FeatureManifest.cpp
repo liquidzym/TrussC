@@ -152,32 +152,32 @@ std::vector<PrivacyManifestEntry> requiredPrivacyManifestEntriesFor(const std::v
     return entries;
 }
 
-AppConfigurationRequirements configurationRequirementsFor(const FeatureConfiguration& configuration) {
-    AppConfigurationRequirements requirements;
-    requirements.infoPlistKeys = requiredInfoPlistKeysFor(configuration.permissions);
-    requirements.backgroundModes = requiredBackgroundModesFor(configuration.features);
-    requirements.entitlements = requiredEntitlementsFor(configuration.features);
-    requirements.backgroundTaskIdentifiers = configuration.backgroundTaskIdentifiers;
-    requirements.privacyManifestEntries = requiredPrivacyManifestEntriesFor(configuration.features);
+AppConfigurationFragments configurationFragmentsFor(const FeatureConfiguration& configuration) {
+    AppConfigurationFragments fragments;
+    fragments.infoPlist.usageDescriptionKeys = requiredInfoPlistKeysFor(configuration.permissions);
+    fragments.infoPlist.backgroundTaskIdentifiers = configuration.backgroundTaskIdentifiers;
+    fragments.backgroundModes.modes = requiredBackgroundModesFor(configuration.features);
+    fragments.entitlements.keys = requiredEntitlementsFor(configuration.features);
+    fragments.privacyManifest.entries = requiredPrivacyManifestEntriesFor(configuration.features);
 
     for (Permission permission : configuration.permissions) {
         switch (permission) {
             case Permission::Camera:
-                mergePrivacyEntry(requirements.privacyManifestEntries,
+                mergePrivacyEntry(fragments.privacyManifest.entries,
                                   {"NSPrivacyCollectedDataTypePhotosorVideos", {"Camera capture"}});
                 break;
             case Permission::PhotoLibraryRead:
             case Permission::PhotoLibraryAddOnly:
-                mergePrivacyEntry(requirements.privacyManifestEntries,
+                mergePrivacyEntry(fragments.privacyManifest.entries,
                                   {"NSPrivacyCollectedDataTypePhotosorVideos", {"Photo library access"}});
                 break;
             case Permission::LocationWhenInUse:
             case Permission::LocationAlways:
-                mergePrivacyEntry(requirements.privacyManifestEntries,
+                mergePrivacyEntry(fragments.privacyManifest.entries,
                                   {"NSPrivacyCollectedDataTypePreciseLocation", {"Location permission"}});
                 break;
             case Permission::Contacts:
-                mergePrivacyEntry(requirements.privacyManifestEntries,
+                mergePrivacyEntry(fragments.privacyManifest.entries,
                                   {"NSPrivacyCollectedDataTypeOtherUserContactInfo", {"Contacts permission"}});
                 break;
             default:
@@ -185,6 +185,17 @@ AppConfigurationRequirements configurationRequirementsFor(const FeatureConfigura
         }
     }
 
+    return fragments;
+}
+
+AppConfigurationRequirements configurationRequirementsFor(const FeatureConfiguration& configuration) {
+    const AppConfigurationFragments fragments = configurationFragmentsFor(configuration);
+    AppConfigurationRequirements requirements;
+    requirements.infoPlistKeys = fragments.infoPlist.usageDescriptionKeys;
+    requirements.backgroundModes = fragments.backgroundModes.modes;
+    requirements.entitlements = fragments.entitlements.keys;
+    requirements.backgroundTaskIdentifiers = fragments.infoPlist.backgroundTaskIdentifiers;
+    requirements.privacyManifestEntries = fragments.privacyManifest.entries;
     return requirements;
 }
 

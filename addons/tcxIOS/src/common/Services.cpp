@@ -261,6 +261,7 @@ const std::string& OperationHandle::label() const {
 void OperationHandle::cancel() const {
     if (!state_) return;
     const bool wasCancelled = state_->cancelled.exchange(true);
+    operations().remove(state_->identifier);
     if (!wasCancelled && state_->cancelHandler) state_->cancelHandler();
 }
 
@@ -344,7 +345,14 @@ void Logger::warning(const std::string& subsystem, const std::string& message) {
 }
 
 void Logger::error(const std::string& subsystem, const std::string& message, Error nativeError) {
-    log({LogLevel::Error, subsystem, message, nativeError});
+    LogRecord record;
+    record.level = LogLevel::Error;
+    record.subsystem = subsystem;
+    record.message = message;
+    record.error = std::move(nativeError);
+    record.nativeDomain = record.error.nativeDomain;
+    record.nativeCode = record.error.nativeCode;
+    log(std::move(record));
 }
 
 std::string toString(LogLevel level) {
@@ -359,10 +367,12 @@ std::string toString(LogLevel level) {
 
 template <typename T>
 Completion<T> cancellableCompletion(OperationHandle operation, Completion<T> done) {
-    return [operation, done = std::move(done)](Result<T> result) mutable {
-        const bool cancelled = operation.cancelled();
+    SingleShotCompletion<T> singleShot(std::move(done));
+    return [operation, singleShot = std::move(singleShot)](Result<T> result) mutable {
         const std::string identifier = operation.identifier();
-        if (!cancelled && done) done(std::move(result));
+        if (!operation.cancelled()) {
+            (void)singleShot.tryComplete(std::move(result));
+        }
         operations().remove(identifier);
     };
 }
@@ -491,13 +501,33 @@ bool Camera::latestFrameView(CameraFrameView& out) const {
 bool Camera::copyLatestFrameToPixels(trussc::Pixels& dst) const {
     CameraFrame frame;
     if (!latestFrame(frame)) return false;
+    return copyCameraFrameToPixels(frame, dst);
+}
+
+bool copyCameraFrameToPixels(const CameraFrame& frame, trussc::Pixels& dst) {
     if (frame.pixelFormat != CameraPixelFormat::BGRA8) return false;
     if (frame.width <= 0 || frame.height <= 0) return false;
-    const std::size_t expected = static_cast<std::size_t>(frame.width) *
-                                 static_cast<std::size_t>(frame.height) * 4;
+    const int sourceBytesPerRow = frame.bytesPerRow > 0 ? frame.bytesPerRow : frame.width * 4;
+    const int destinationBytesPerRow = frame.width * 4;
+    if (sourceBytesPerRow < destinationBytesPerRow) return false;
+    const std::size_t expected = static_cast<std::size_t>(sourceBytesPerRow) *
+                                 static_cast<std::size_t>(frame.height);
     if (frame.data.size() < expected) return false;
 
-    dst.setFromPixels(frame.data.data(), frame.width, frame.height, 4);
+    dst.allocate(frame.width, frame.height, 4);
+    unsigned char* out = dst.getData();
+    for (int y = 0; y < frame.height; ++y) {
+        const auto* src = frame.data.data() + static_cast<std::size_t>(y) * sourceBytesPerRow;
+        auto* dstRow = out + static_cast<std::size_t>(y) * destinationBytesPerRow;
+        for (int x = 0; x < frame.width; ++x) {
+            const auto* bgra = src + x * 4;
+            auto* rgba = dstRow + x * 4;
+            rgba[0] = bgra[2];
+            rgba[1] = bgra[1];
+            rgba[2] = bgra[0];
+            rgba[3] = bgra[3];
+        }
+    }
     return true;
 }
 

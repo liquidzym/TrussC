@@ -192,7 +192,7 @@ MeshBuildResult SurfaceQuad::buildMesh(const MeshBuildContext& ctx) {
     bool usePerspective = perspective_;
     ResultT<Mat3> H;
     if (usePerspective) {
-        std::array<Vec2, 4> srcArr = {{ uv_[0], uv_[1], uv_[2], uv_[3] }};
+        std::array<Vec2, 4> srcArr = {{ Vec2(0, 0), Vec2(1, 0), Vec2(1, 1), Vec2(0, 1) }};
         H = computeHomography(srcArr, dest_);
         if (!H.ok) {
             result.message = H.message;
@@ -215,9 +215,9 @@ MeshBuildResult SurfaceQuad::buildMesh(const MeshBuildContext& ctx) {
                 float sv = (1 - u) * (1 - v) * uv_[0].y + u * (1 - v) * uv_[1].y +
                            u * v * uv_[2].y + (1 - u) * v * uv_[3].y;
 
-                // Destination position via homography
-                Vec2 srcPt(su, sv);
-                Vec2 dstPt = applyHomography(H.value, srcPt);
+                // Destination geometry is controlled by canonical surface-local
+                // coordinates. uv_ only remaps texture sampling.
+                Vec2 dstPt = applyHomography(H.value, Vec2(u, v));
 
                 mesh.addVertex(dstPt.x, dstPt.y, su, sv);
             }

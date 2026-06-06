@@ -99,6 +99,8 @@ public:
 
 Camera& camera();
 
+bool copyCameraFrameToPixels(const CameraFrame& frame, trussc::Pixels& dst);
+
 std::string toString(CameraDevicePosition position);
 std::string toString(CameraOrientation orientation);
 
