@@ -195,6 +195,9 @@ addons/**/tests/
 addons/**/tests/*
 addons/**/test/
 
+# Dev tool scripts in addons (local only)
+addons/**/scripts/
+
 # =============================================================================
 # Auto-generated Shader Headers (sokol-shdc output)
 # =============================================================================
