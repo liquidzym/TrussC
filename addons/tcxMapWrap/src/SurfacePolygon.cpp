@@ -39,6 +39,34 @@ static float distToSegment(Vec2 p, Vec2 a, Vec2 b) {
     return std::sqrt(ex * ex + ey * ey);
 }
 
+static std::vector<Vec2> defaultUvsForPoints(const std::vector<Vec2>& points) {
+    std::vector<Vec2> uvs;
+    uvs.reserve(points.size());
+    if (points.empty()) return uvs;
+
+    float minX = points[0].x;
+    float maxX = points[0].x;
+    float minY = points[0].y;
+    float maxY = points[0].y;
+    for (const auto& p : points) {
+        minX = std::min(minX, p.x);
+        maxX = std::max(maxX, p.x);
+        minY = std::min(minY, p.y);
+        maxY = std::max(maxY, p.y);
+    }
+
+    float rangeX = maxX - minX;
+    float rangeY = maxY - minY;
+    if (rangeX < 1e-10f) rangeX = 1.0f;
+    if (rangeY < 1e-10f) rangeY = 1.0f;
+
+    for (const auto& p : points) {
+        uvs.push_back(Vec2((p.x - minX) / rangeX,
+                           (p.y - minY) / rangeY));
+    }
+    return uvs;
+}
+
 // ---------------------------------------------------------------------------
 // Ear-clipping triangulation internals
 // ---------------------------------------------------------------------------
@@ -116,9 +144,11 @@ std::vector<Vec2>& SurfacePolygon::destinationPoints() {
 const std::vector<Vec2>& SurfacePolygon::destinationPoints() const { return destPoints_; }
 void SurfacePolygon::setDestinationPoints(const std::vector<Vec2>& points) {
     destPoints_ = points;
-    if (uvPoints_.size() != destPoints_.size()) {
-        uvPoints_ = destPoints_;
+    if (!customUv_ || uvPoints_.size() != destPoints_.size()) {
+        uvPoints_ = defaultUvsForPoints(destPoints_);
+        customUv_ = false;
     }
+    triangles_.clear();
     markDirty();
 }
 std::vector<Vec2>& SurfacePolygon::uvPoints() {
@@ -128,9 +158,14 @@ std::vector<Vec2>& SurfacePolygon::uvPoints() {
 const std::vector<Vec2>& SurfacePolygon::uvPoints() const { return uvPoints_; }
 void SurfacePolygon::setUvPoints(const std::vector<Vec2>& points) {
     uvPoints_ = points;
-    if (uvPoints_.size() > destPoints_.size()) {
+    if (uvPoints_.size() != destPoints_.size()) {
+        std::vector<Vec2> defaults = defaultUvsForPoints(destPoints_);
         uvPoints_.resize(destPoints_.size());
+        for (size_t i = points.size(); i < uvPoints_.size() && i < defaults.size(); ++i) {
+            uvPoints_[i] = defaults[i];
+        }
     }
+    customUv_ = true;
     markDirty();
 }
 bool SurfacePolygon::closed() const { return closed_; }
@@ -138,7 +173,13 @@ void SurfacePolygon::setClosed(bool c) { closed_ = c; markDirty(); }
 
 void SurfacePolygon::addPoint(Vec2 p) {
     destPoints_.push_back(p);
-    uvPoints_.push_back(p);
+    if (customUv_) {
+        std::vector<Vec2> defaults = defaultUvsForPoints(destPoints_);
+        uvPoints_.push_back(defaults.empty() ? Vec2(0, 0) : defaults.back());
+    } else {
+        uvPoints_ = defaultUvsForPoints(destPoints_);
+    }
+    triangles_.clear();
     markDirty();
 }
 
@@ -148,6 +189,10 @@ void SurfacePolygon::removePoint(size_t i) {
         if (i < uvPoints_.size()) {
             uvPoints_.erase(uvPoints_.begin() + i);
         }
+        if (!customUv_) {
+            uvPoints_ = defaultUvsForPoints(destPoints_);
+        }
+        triangles_.clear();
         markDirty();
     }
 }
@@ -155,6 +200,10 @@ void SurfacePolygon::removePoint(size_t i) {
 void SurfacePolygon::movePoint(size_t i, Vec2 p) {
     if (i < destPoints_.size()) {
         destPoints_[i] = p;
+        if (!customUv_) {
+            uvPoints_ = defaultUvsForPoints(destPoints_);
+        }
+        triangles_.clear();
         markDirty();
     }
 }
@@ -166,56 +215,29 @@ bool SurfacePolygon::triangulate() {
     int n = (int)destPoints_.size();
     if (n < 3) return false;
 
-    // Make a working copy (ensure CCW winding)
+    triangles_.clear();
     std::vector<Vec2> poly = destPoints_;
-    float area = signedArea(poly);
-    bool ccw = area > 0;
+    std::vector<uint32_t> originalIndices;
+    originalIndices.reserve(size_t(n));
+    for (int i = 0; i < n; ++i) originalIndices.push_back(uint32_t(i));
 
-    // If CW, reverse to CCW for the algorithm
-    if (!ccw) {
+    float area = signedArea(poly);
+    if (std::fabs(area) < 1e-10f) return false;
+    if (area < 0.0f) {
         std::reverse(poly.begin(), poly.end());
+        std::reverse(originalIndices.begin(), originalIndices.end());
     }
 
     std::vector<bool> removed(n, false);
     int remaining = n;
-    uvPoints_.clear();
-
-    // Generate UVs: simple normalized mapping
-    // Find bounding box
-    float minX = poly[0].x, maxX = poly[0].x;
-    float minY = poly[0].y, maxY = poly[0].y;
-    for (int i = 1; i < n; ++i) {
-        minX = std::min(minX, poly[i].x); maxX = std::max(maxX, poly[i].x);
-        minY = std::min(minY, poly[i].y); maxY = std::max(maxY, poly[i].y);
-    }
-    float rangeX = maxX - minX;
-    float rangeY = maxY - minY;
-    if (rangeX < 1e-10f) rangeX = 1.0f;
-    if (rangeY < 1e-10f) rangeY = 1.0f;
-
-    for (int i = 0; i < n; ++i) {
-        uvPoints_.push_back(Vec2(
-            (poly[i].x - minX) / rangeX,
-            (poly[i].y - minY) / rangeY
-        ));
-    }
-
-    // Ear clipping
-    // We'll track triangle indices into the original polygon
-    // Build linked-list style prev/next
     std::vector<int> prevIdx(n), nextIdx(n);
     for (int i = 0; i < n; ++i) {
         prevIdx[i] = (i - 1 + n) % n;
         nextIdx[i] = (i + 1) % n;
     }
 
-    // Safety: maximum iterations
     int maxIter = n * n;
     int iter = 0;
-
-    // Store triangulated indices for buildMesh to use
-    // We'll repurpose uvPoints_ as the working copy for UVs
-    // and store triangulation result in a member we can access from buildMesh
 
     while (remaining > 3 && iter < maxIter) {
         bool earFound = false;
@@ -226,6 +248,9 @@ bool SurfacePolygon::triangulate() {
             int nx = nextIdx[i];
 
             if (isEarTip(poly, removed, p, i, nx, true)) {
+                triangles_.push_back(originalIndices[p]);
+                triangles_.push_back(originalIndices[i]);
+                triangles_.push_back(originalIndices[nx]);
                 removed[i] = true;
                 remaining--;
 
@@ -242,8 +267,19 @@ bool SurfacePolygon::triangulate() {
         iter++;
     }
 
-    // The remaining 3 vertices form the last triangle
-    return remaining >= 3;
+    if (remaining == 3) {
+        int v[3], vi = 0;
+        for (int i = 0; i < n && vi < 3; ++i) {
+            if (!removed[i]) v[vi++] = i;
+        }
+        if (vi == 3) {
+            triangles_.push_back(originalIndices[v[0]]);
+            triangles_.push_back(originalIndices[v[1]]);
+            triangles_.push_back(originalIndices[v[2]]);
+        }
+    }
+
+    return triangles_.size() == size_t(n - 2) * 3u;
 }
 
 // ===========================================================================
@@ -259,74 +295,39 @@ MeshBuildResult SurfacePolygon::buildMesh(const MeshBuildContext& ctx) {
         result.message = "Polygon needs at least 3 points";
         return result;
     }
+
+    GeometryValidation validation = validateGeometry();
+    if (!validation.valid) {
+        result.ok = false;
+        result.message = validation.message.empty() ? "Invalid polygon geometry" : validation.message;
+        return result;
+    }
+
+    if (uvPoints_.size() != destPoints_.size()) {
+        uvPoints_ = defaultUvsForPoints(destPoints_);
+        customUv_ = false;
+    }
+
+    if (!triangulate()) {
+        result.ok = false;
+        result.message = "Polygon triangulation failed";
+        return result;
+    }
+
     mesh.vertices.reserve(size_t(n) * 2);
     mesh.uvs.reserve(size_t(n) * 2);
     mesh.indices.reserve(size_t(std::max(0, n - 2)) * 3);
 
-    // --- Ear-clipping triangulation ---
-    std::vector<Vec2> poly = destPoints_;
-    float area = signedArea(poly);
-    bool ccw = area > 0;
-    if (!ccw) {
-        std::reverse(poly.begin(), poly.end());
-    }
-
-    // Find bounding box for UV generation
-    float minX = poly[0].x, maxX = poly[0].x;
-    float minY = poly[0].y, maxY = poly[0].y;
-    for (int i = 1; i < n; ++i) {
-        minX = std::min(minX, poly[i].x); maxX = std::max(maxX, poly[i].x);
-        minY = std::min(minY, poly[i].y); maxY = std::max(maxY, poly[i].y);
-    }
-    float rangeX = maxX - minX; if (rangeX < 1e-10f) rangeX = 1.0f;
-    float rangeY = maxY - minY; if (rangeY < 1e-10f) rangeY = 1.0f;
-
-    // Add all vertices
     for (int i = 0; i < n; ++i) {
-        float u = (poly[i].x - minX) / rangeX;
-        float v = (poly[i].y - minY) / rangeY;
-        mesh.addVertex(poly[i].x, poly[i].y, u, v);
+        mesh.addVertex(destPoints_[i].x, destPoints_[i].y,
+                       uvPoints_[i].x, uvPoints_[i].y);
     }
 
-    // Linked-list ear clipping
-    std::vector<bool> removed(n, false);
-    std::vector<int> prevIdx(n), nextIdx(n);
-    for (int i = 0; i < n; ++i) {
-        prevIdx[i] = (i - 1 + n) % n;
-        nextIdx[i] = (i + 1) % n;
-    }
-
-    int remaining = n;
-    int maxIter = n * n;
-
-    for (int iter = 0; iter < maxIter && remaining > 3; ++iter) {
-        bool earFound = false;
-        for (int i = 0; i < n; ++i) {
-            if (removed[i]) continue;
-            int p = prevIdx[i];
-            int nx = nextIdx[i];
-
-            if (isEarTip(poly, removed, p, i, nx, true)) {
-                mesh.addTriangle(uint32_t(p), uint32_t(i), uint32_t(nx));
-                removed[i] = true;
-                remaining--;
-                nextIdx[p] = nx;
-                prevIdx[nx] = p;
-                earFound = true;
-                break;
-            }
-        }
-        if (!earFound) break;
-    }
-
-    // Last triangle
-    if (remaining == 3) {
-        int v[3], vi = 0;
-        for (int i = 0; i < n && vi < 3; ++i) {
-            if (!removed[i]) v[vi++] = i;
-        }
-        if (vi == 3) {
-            mesh.addTriangle(uint32_t(v[0]), uint32_t(v[1]), uint32_t(v[2]));
+    for (size_t i = 0; i + 2 < triangles_.size(); i += 3) {
+        if (!mesh.addTriangle(triangles_[i], triangles_[i + 1], triangles_[i + 2])) {
+            result.ok = false;
+            result.message = "Polygon triangulation produced out-of-range index";
+            return result;
         }
     }
 

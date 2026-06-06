@@ -133,3 +133,45 @@ TEST(save_load_roundtrip) {
     ASSERT_NEAR(loadedPoly.destinationPoints()[2].x, 0.5f, 1e-4f);
     ASSERT_TRUE(loadedPoly.closed());
 }
+
+// ---------------------------------------------------------------------------
+TEST(polygon_build_mesh_uses_saved_uv_points) {
+    SurfacePolygon poly;
+    poly.setDestinationPoints({
+        Vec2(0.2f, 0.2f),
+        Vec2(0.8f, 0.2f),
+        Vec2(0.8f, 0.8f),
+        Vec2(0.2f, 0.8f)
+    });
+    poly.setUvPoints({
+        Vec2(0.10f, 0.20f),
+        Vec2(0.70f, 0.20f),
+        Vec2(0.70f, 0.90f),
+        Vec2(0.10f, 0.90f)
+    });
+
+    MeshBuildContext ctx;
+    auto result = poly.buildMesh(ctx);
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(result.mesh.vertexCount(), 4u);
+    ASSERT_NEAR(result.mesh.uvs[0], 0.10f, 1e-5f);
+    ASSERT_NEAR(result.mesh.uvs[1], 0.20f, 1e-5f);
+    ASSERT_NEAR(result.mesh.uvs[4], 0.70f, 1e-5f);
+    ASSERT_NEAR(result.mesh.uvs[5], 0.90f, 1e-5f);
+}
+
+// ---------------------------------------------------------------------------
+TEST(polygon_default_uvs_are_local_bounds_not_canvas_points) {
+    SurfacePolygon poly;
+    poly.addPoint(Vec2(0.2f, 0.3f));
+    poly.addPoint(Vec2(0.8f, 0.3f));
+    poly.addPoint(Vec2(0.5f, 0.9f));
+
+    ASSERT_EQ(poly.uvPoints().size(), 3u);
+    ASSERT_NEAR(poly.uvPoints()[0].x, 0.0f, 1e-5f);
+    ASSERT_NEAR(poly.uvPoints()[0].y, 0.0f, 1e-5f);
+    ASSERT_NEAR(poly.uvPoints()[1].x, 1.0f, 1e-5f);
+    ASSERT_NEAR(poly.uvPoints()[1].y, 0.0f, 1e-5f);
+    ASSERT_NEAR(poly.uvPoints()[2].x, 0.5f, 1e-5f);
+    ASSERT_NEAR(poly.uvPoints()[2].y, 1.0f, 1e-5f);
+}

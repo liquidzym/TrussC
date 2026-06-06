@@ -51,7 +51,10 @@ static bool pointInPolygon(const std::vector<Vec2>& poly, Vec2 p) {
 // SurfaceGrid
 // ===========================================================================
 
-SurfaceGrid::SurfaceGrid(int cols, int rows) : cols_(cols), rows_(rows) {
+SurfaceGrid::SurfaceGrid(int cols, int rows)
+    : cols_(std::max(2, cols))
+    , rows_(std::max(2, rows))
+{
     name_ = "Grid";
     points_.resize((cols_ + 1) * (rows_ + 1));
     for (int r = 0; r <= rows_; ++r)
@@ -67,8 +70,8 @@ std::unique_ptr<Surface> SurfaceGrid::clone() const {
 }
 
 void SurfaceGrid::setCols(int c) {
-    if (c == cols_) return;
-    int newCols = std::max(1, c);
+    int newCols = std::max(2, c);
+    if (newCols == cols_) return;
     std::vector<Vec2> newPoints((newCols + 1) * (rows_ + 1));
 
     for (int r = 0; r <= rows_; ++r) {
@@ -89,8 +92,8 @@ void SurfaceGrid::setCols(int c) {
 }
 
 void SurfaceGrid::setRows(int r) {
-    if (r == rows_) return;
-    int newRows = std::max(1, r);
+    int newRows = std::max(2, r);
+    if (newRows == rows_) return;
     std::vector<Vec2> newPoints((cols_ + 1) * (newRows + 1));
 
     for (int rr = 0; rr <= newRows; ++rr) {
@@ -111,10 +114,12 @@ void SurfaceGrid::setRows(int r) {
 }
 
 Vec2 SurfaceGrid::gridPoint(int c, int r) const {
+    if (c < 0 || r < 0 || c > cols_ || r > rows_) return Vec2(0, 0);
     return points_[r * (cols_ + 1) + c];
 }
 
 void SurfaceGrid::setGridPoint(int c, int r, Vec2 p) {
+    if (c < 0 || r < 0 || c > cols_ || r > rows_) return;
     points_[r * (cols_ + 1) + c] = p;
     markDirty();
 }
@@ -231,7 +236,7 @@ MeshBuildResult SurfaceGrid::buildMesh(const MeshBuildContext& ctx) {
     MeshBuildResult result;
     MeshData& mesh = result.mesh;
 
-    int res = std::max(1, meshResolution_);
+    int res = std::max(1, std::max(meshResolution_, ctx.meshSubdivision));
     int meshCols = cols_ * res;
     int meshRows = rows_ * res;
     int stride = meshCols + 1;

@@ -35,7 +35,7 @@ public:
     void add(std::shared_ptr<Source> source);
 
     // --- Remove ---
-    void remove(const SourceId& id);
+    bool remove(const SourceId& id);
     void clear();
 
     // --- Access ---

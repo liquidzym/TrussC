@@ -50,6 +50,7 @@ struct SurfaceSnapshot {
 // Forward declarations for helpers used by command classes
 static SurfaceSnapshot takeSnapshot(const Surface& surface);
 static void restoreSnapshot(Surface& surface, const SurfaceSnapshot& snap);
+static bool snapshotEqualsApprox(const SurfaceSnapshot& a, const SurfaceSnapshot& b, float eps = 1e-6f);
 static std::string applyProperty(Surface& surface, const std::string& path,
                                   const std::string& value);
 
@@ -57,6 +58,19 @@ static std::shared_ptr<Surface> cloneSurfaceShared(const std::shared_ptr<Surface
     if (!surface) return nullptr;
     std::unique_ptr<Surface> cloned = surface->clone();
     return std::shared_ptr<Surface>(std::move(cloned));
+}
+
+static bool isEffectivelyLocked(const MapWrapDocument& document, const Surface& surface) {
+    if (surface.isLocked()) return true;
+    for (const auto& group : document.groups()) {
+        if (!group) continue;
+        if (!group->locked) continue;
+        if (std::find(group->surfaceIds.begin(), group->surfaceIds.end(), surface.id()) !=
+            group->surfaceIds.end()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -355,12 +369,34 @@ static void restoreSnapshot(Surface& surface, const SurfaceSnapshot& snap) {
         }
         case SurfaceKind::Polygon: {
             auto& p = static_cast<SurfacePolygon&>(surface);
-            p.destinationPoints() = snap.destPoints;
-            p.uvPoints() = snap.uvPoints;
+            p.setDestinationPoints(snap.destPoints);
+            p.setUvPoints(snap.uvPoints);
             break;
         }
     }
     surface.markDirty();
+}
+
+static bool vecListEqualsApprox(const std::vector<Vec2>& a, const std::vector<Vec2>& b, float eps) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (!nearlyEqual(a[i], b[i], eps)) return false;
+    }
+    return true;
+}
+
+static bool snapshotEqualsApprox(const SurfaceSnapshot& a, const SurfaceSnapshot& b, float eps) {
+    return vecListEqualsApprox(a.destPoints, b.destPoints, eps) &&
+           vecListEqualsApprox(a.uvPoints, b.uvPoints, eps) &&
+           a.perspectiveCorrection == b.perspectiveCorrection &&
+           nearlyEqual(a.center, b.center, eps) &&
+           nearlyEqual(a.radiusX, b.radiusX, eps) &&
+           nearlyEqual(a.radiusY, b.radiusY, eps) &&
+           nearlyEqual(a.rotation, b.rotation, eps) &&
+           a.cols == b.cols &&
+           a.rows == b.rows &&
+           vecListEqualsApprox(a.gridPoints, b.gridPoints, eps) &&
+           a.meshResolution == b.meshResolution;
 }
 
 /// Compute axis-aligned bounding box of a surface in canvas-normalized coords.
@@ -720,13 +756,13 @@ static void moveHandleVertex(Surface& surface, int index, Vec2 delta, bool uvMod
                                      c.center().y + delta.y));
                 } else if (index == 1) {
                     // RadiusX handle: project delta onto rotated X axis
-                    float rotRad = c.rotation() * (float)M_PI / 180.0f;
+                    float rotRad = degToRad(c.rotation());
                     float ax = std::cos(rotRad), ay = std::sin(rotRad);
                     float proj = delta.x * ax + delta.y * ay;
                     c.setRadiusX(std::max(0.001f, c.radiusX() + proj));
                 } else if (index == 2) {
                     // RadiusY handle: project delta onto rotated Y axis
-                    float rotRad = c.rotation() * (float)M_PI / 180.0f;
+                    float rotRad = degToRad(c.rotation());
                     float ax = -std::sin(rotRad), ay = std::cos(rotRad);
                     float proj = delta.x * ax + delta.y * ay;
                     c.setRadiusY(std::max(0.001f, c.radiusY() + proj));
@@ -786,7 +822,7 @@ static void rotateCircleSurface(Surface& surface, Vec2 canvasNorm) {
     auto& c = static_cast<SurfaceCircle&>(surface);
     Vec2 ctr = c.center();
     float angle = std::atan2(canvasNorm.y - ctr.y, canvasNorm.x - ctr.x);
-    c.setRotation(angle * 180.0f / (float)M_PI);
+    c.setRotation(radToDeg(angle));
 }
 
 /// Apply snapping to a position in canvas-normalized coordinates.
@@ -1234,7 +1270,7 @@ bool MapWrapEditor::Impl::commitSelectedGeometryEdit(const std::string& desc,
     if (!document || selectedSurface.empty()) return false;
 
     auto surface = document->getSurface(selectedSurface);
-    if (!surface || surface->isLocked()) return false;
+    if (!surface || isEffectivelyLocked(*document, *surface)) return false;
 
     SurfaceSnapshot before = takeSnapshot(*surface);
     if (!edit(*surface)) return false;
@@ -1245,9 +1281,11 @@ bool MapWrapEditor::Impl::commitSelectedGeometryEdit(const std::string& desc,
 
     if (undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        undoStack->push(std::make_unique<SurfaceEditCommand>(
-            document, selectedSurface,
-            std::move(before), std::move(after), desc));
+        if (!snapshotEqualsApprox(before, after)) {
+            undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
+                document, selectedSurface,
+                std::move(before), std::move(after), desc));
+        }
     }
 
     normalizeSelectedHandle();
@@ -1334,34 +1372,51 @@ void MapWrapEditor::pointerDown(const PointerEvent& e) {
 
     HitResult hit = impl_->hitTestIndex.query(canvasNorm, options);
 
-    // Extra check: circle rotation handle (placed above the ellipse)
-    if (hit.hit && hit.handleKind == HandleKind::Body && impl_->mode == EditMode::SurfaceEdit) {
-        auto surface = impl_->document->getSurface(hit.surfaceId);
-        if (surface && surface->kind() == SurfaceKind::Circle && !surface->isLocked()) {
-            auto& circle = static_cast<SurfaceCircle&>(*surface);
-            float rotRad = circle.rotation() * (float)M_PI / 180.0f;
-            float offset = 0.04f;
-            Vec2 rotHandle(
-                circle.center().x + (-(circle.radiusY() + offset)) * (-std::sin(rotRad)),
-                circle.center().y + (-(circle.radiusY() + offset)) *   std::cos(rotRad)
-            );
-            float d = std::sqrt((canvasNorm.x - rotHandle.x) * (canvasNorm.x - rotHandle.x) +
-                                (canvasNorm.y - rotHandle.y) * (canvasNorm.y - rotHandle.y));
-            float normRadius = handleRadiusPx / canvasScale;
-            if (d < normRadius) {
-                hit.handleKind = HandleKind::RotationHandle;
-                hit.handleIndex = 0;
+    // Extra check: selected circle rotation handle is an independent hit layer.
+    auto checkCircleRotationHandle = [&](const SurfaceId& surfaceId) -> bool {
+        auto surface = impl_->document->getSurface(surfaceId);
+        if (!surface || surface->kind() != SurfaceKind::Circle ||
+            isEffectivelyLocked(*impl_->document, *surface)) return false;
+        if (canvasScale <= 1e-6f) return false;
+
+        auto& circle = static_cast<SurfaceCircle&>(*surface);
+        float rotRad = degToRad(circle.rotation());
+        float offset = 0.04f;
+        Vec2 rotHandle(
+            circle.center().x + (-(circle.radiusY() + offset)) * (-std::sin(rotRad)),
+            circle.center().y + (-(circle.radiusY() + offset)) *   std::cos(rotRad)
+        );
+        float d = std::sqrt((canvasNorm.x - rotHandle.x) * (canvasNorm.x - rotHandle.x) +
+                            (canvasNorm.y - rotHandle.y) * (canvasNorm.y - rotHandle.y));
+        float normRadius = handleRadiusPx / canvasScale;
+        if (d >= normRadius) return false;
+
+        hit.hit = true;
+        hit.surfaceId = surfaceId;
+        hit.handleKind = HandleKind::RotationHandle;
+        hit.handleIndex = 0;
+        hit.canvasNormPos = canvasNorm;
+        return true;
+    };
+
+    if (impl_->mode == EditMode::SurfaceEdit) {
+        if (impl_->selectedSurface.empty() ||
+            !checkCircleRotationHandle(impl_->selectedSurface)) {
+            if (hit.hit) {
+                checkCircleRotationHandle(hit.surfaceId);
             }
         }
     }
 
     if (hit.hit) {
-        // Check if surface is locked (unless explicitly allowed)
         auto surface = impl_->document->getSurface(hit.surfaceId);
-        if (surface && surface->isLocked() && !options.includeLocked) {
-            // Allow selecting locked surfaces but not dragging them
+        if (surface && isEffectivelyLocked(*impl_->document, *surface)) {
             impl_->selectedSurface = hit.surfaceId;
             impl_->selectDefaultHandle(*surface);
+            impl_->dragging = false;
+            impl_->dragSurfaceId.clear();
+            impl_->dragHandleKind = HandleKind::None;
+            impl_->dragHandleIndex = -1;
             return;
         }
 
@@ -1417,7 +1472,7 @@ void MapWrapEditor::pointerMove(const PointerEvent& e) {
                canvasNorm.y - impl_->dragLastCanvasNorm.y);
 
     auto surface = impl_->document->getSurface(impl_->dragSurfaceId);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     switch (impl_->dragHandleKind) {
         case HandleKind::Vertex:
@@ -1452,19 +1507,21 @@ void MapWrapEditor::pointerUp(const PointerEvent& e) {
         auto surface = impl_->document->getSurface(impl_->dragSurfaceId);
         if (surface) {
             SurfaceSnapshot afterSnapshot = takeSnapshot(*surface);
-            std::string desc;
-            switch (impl_->dragHandleKind) {
-                case HandleKind::Body:           desc = tr("command.move_surface"); break;
-                case HandleKind::Vertex:         desc = tr("command.move_vertex");  break;
-                case HandleKind::TextureVertex:  desc = tr("command.move_uv");      break;
-                case HandleKind::GridPoint:      desc = tr("command.move_grid");    break;
-                case HandleKind::RotationHandle: desc = tr("command.rotate");       break;
-                default:                         desc = tr("command.edit");         break;
+            if (!snapshotEqualsApprox(impl_->dragStartSnapshot, afterSnapshot)) {
+                std::string desc;
+                switch (impl_->dragHandleKind) {
+                    case HandleKind::Body:           desc = tr("command.move_surface"); break;
+                    case HandleKind::Vertex:         desc = tr("command.move_vertex");  break;
+                    case HandleKind::TextureVertex:  desc = tr("command.move_uv");      break;
+                    case HandleKind::GridPoint:      desc = tr("command.move_grid");    break;
+                    case HandleKind::RotationHandle: desc = tr("command.rotate");       break;
+                    default:                         desc = tr("command.edit");         break;
+                }
+                impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
+                    impl_->document, impl_->dragSurfaceId,
+                    std::move(impl_->dragStartSnapshot), std::move(afterSnapshot),
+                    desc));
             }
-            impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
-                impl_->document, impl_->dragSurfaceId,
-                std::move(impl_->dragStartSnapshot), std::move(afterSnapshot),
-                desc));
         }
     }
 
@@ -1611,11 +1668,11 @@ void MapWrapEditor::deleteSelected() {
     int idx = impl_->document->surfaceIndex(impl_->selectedSurface);
     SurfaceId deletedId = impl_->selectedSurface;
 
-    impl_->document->removeSurface(deletedId);
-
     if (impl_->undoStack) {
         impl_->undoStack->push(std::make_unique<EditorDeleteSurfaceCommand>(
             impl_->document, surface, idx));
+    } else {
+        impl_->document->removeSurface(deletedId);
     }
 
     impl_->selectedSurface.clear();
@@ -1704,10 +1761,13 @@ void MapWrapEditor::duplicateSelected() {
             auto& sp = static_cast<SurfacePolygon&>(*src);
             auto s = std::make_shared<SurfacePolygon>();
             s->setClosed(sp.closed());
-            for (auto& pt : sp.destinationPoints())
-                s->addPoint(Vec2(pt.x + offset.x, pt.y + offset.y));
-            for (auto& uv : sp.uvPoints())
-                s->uvPoints().push_back(uv);
+            std::vector<Vec2> dest;
+            dest.reserve(sp.destinationPoints().size());
+            for (const auto& pt : sp.destinationPoints()) {
+                dest.push_back(Vec2(pt.x + offset.x, pt.y + offset.y));
+            }
+            s->setDestinationPoints(dest);
+            s->setUvPoints(sp.uvPoints());
             dup = s;
             break;
         }
@@ -1724,17 +1784,17 @@ void MapWrapEditor::duplicateSelected() {
     dup->setBlend(src->blend());
     dup->setColorCorrection(src->colorCorrection());
 
-    // Add to document
-    impl_->document->addSurface(dup);
-    impl_->selectedSurface = dup->id();
-    impl_->selectDefaultHandle(*dup);
+    int insertIndex = impl_->document->surfaceIndex(src->id()) + 1;
 
     if (impl_->undoStack) {
-        int idx = impl_->document->surfaceIndex(dup->id());
         impl_->undoStack->push(std::make_unique<CreateSurfaceCommand>(
-            impl_->document, dup, idx));
+            impl_->document, dup, insertIndex));
+    } else {
+        impl_->document->insertSurface(dup, insertIndex);
     }
 
+    impl_->selectedSurface = dup->id();
+    impl_->selectDefaultHandle(*dup);
     impl_->hitTestIndex.markDirty();
 }
 
@@ -1745,12 +1805,12 @@ void MapWrapEditor::bringForward() {
     auto& surfaces = impl_->document->surfaces();
     if (idx < 0 || idx >= (int)surfaces.size() - 1) return;
 
-    impl_->document->reorderSurface(impl_->selectedSurface, idx + 1);
-
     if (impl_->undoStack) {
         impl_->undoStack->push(std::make_unique<ReorderCommand>(
             impl_->document, impl_->selectedSurface, idx, idx + 1,
             tr("command.bring_forward")));
+    } else {
+        impl_->document->reorderSurface(impl_->selectedSurface, idx + 1);
     }
 
     impl_->hitTestIndex.markDirty();
@@ -1762,12 +1822,12 @@ void MapWrapEditor::sendBackward() {
     int idx = impl_->document->surfaceIndex(impl_->selectedSurface);
     if (idx <= 0) return;
 
-    impl_->document->reorderSurface(impl_->selectedSurface, idx - 1);
-
     if (impl_->undoStack) {
         impl_->undoStack->push(std::make_unique<ReorderCommand>(
             impl_->document, impl_->selectedSurface, idx, idx - 1,
             tr("command.send_backward")));
+    } else {
+        impl_->document->reorderSurface(impl_->selectedSurface, idx - 1);
     }
 
     impl_->hitTestIndex.markDirty();
@@ -1780,7 +1840,7 @@ Result MapWrapEditor::convertSelectedTo(SurfaceKind kind) {
     auto source = impl_->document->getSurface(impl_->selectedSurface);
     if (!source) return Result::error("Surface not found");
     if (source->kind() == kind) return Result::success();
-    if (source->isLocked()) return Result::error("Selected surface is locked");
+    if (isEffectivelyLocked(*impl_->document, *source)) return Result::error("Selected surface is locked");
 
     int index = impl_->document->surfaceIndex(impl_->selectedSurface);
     if (index < 0) return Result::error("Surface is not in the document");
@@ -1990,7 +2050,7 @@ void MapWrapEditor::addPolygon(const std::vector<Vec2>& points) {
     if (pts.empty()) {
         // Default: regular pentagon centered at (0.5, 0.5)
         for (int i = 0; i < 5; ++i) {
-            float angle = 2.0f * (float)M_PI * float(i) / 5.0f - (float)M_PI / 2.0f;
+            float angle = 2.0f * kPi * float(i) / 5.0f - kPi / 2.0f;
             pts.push_back(Vec2(0.5f + 0.3f * std::cos(angle),
                                0.5f + 0.3f * std::sin(angle)));
         }
@@ -2034,38 +2094,43 @@ const EditorViewport& MapWrapEditor::viewport() const { return impl_->viewport; 
 void MapWrapEditor::nudgeSelected(Vec2 deltaPixels) {
     if (!impl_->document || impl_->selectedSurface.empty()) return;
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
-    float canvasScale = impl_->viewport.canvasSizePixels.x * impl_->viewport.zoom;
-    if (canvasScale < 1e-6f) return;
-    Vec2 deltaNorm(deltaPixels.x / canvasScale, deltaPixels.y / canvasScale);
+    Vec2 canvasScale(impl_->viewport.canvasSizePixels.x * impl_->viewport.zoom,
+                     impl_->viewport.canvasSizePixels.y * impl_->viewport.zoom);
+    if (canvasScale.x < 1e-6f || canvasScale.y < 1e-6f) return;
+    Vec2 deltaNorm(deltaPixels.x / canvasScale.x, deltaPixels.y / canvasScale.y);
 
     SurfaceSnapshot before = takeSnapshot(*surface);
     moveSurface(*surface, deltaNorm);
 
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
-            impl_->document, impl_->selectedSurface,
-            std::move(before), std::move(after),
-            tr("command.nudge")));
+        if (!snapshotEqualsApprox(before, after)) {
+            impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
+                impl_->document, impl_->selectedSurface,
+                std::move(before), std::move(after),
+                tr("command.nudge")));
+        }
     }
 }
 
 void MapWrapEditor::nudgeSelectedNormalized(Vec2 deltaNorm) {
     if (!impl_->document || impl_->selectedSurface.empty()) return;
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     SurfaceSnapshot before = takeSnapshot(*surface);
     moveSurface(*surface, deltaNorm);
 
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
-            impl_->document, impl_->selectedSurface,
-            std::move(before), std::move(after),
-            tr("command.nudge")));
+        if (!snapshotEqualsApprox(before, after)) {
+            impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
+                impl_->document, impl_->selectedSurface,
+                std::move(before), std::move(after),
+                tr("command.nudge")));
+        }
     }
 }
 
@@ -2074,11 +2139,12 @@ void MapWrapEditor::nudgeSelectedHandle(Vec2 deltaPixels) {
     if (!impl_->normalizeSelectedHandle()) return;
 
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
-    float canvasScale = impl_->viewport.canvasSizePixels.x * impl_->viewport.zoom;
-    if (canvasScale < 1e-6f) return;
-    Vec2 deltaNorm(deltaPixels.x / canvasScale, deltaPixels.y / canvasScale);
+    Vec2 canvasScale(impl_->viewport.canvasSizePixels.x * impl_->viewport.zoom,
+                     impl_->viewport.canvasSizePixels.y * impl_->viewport.zoom);
+    if (canvasScale.x < 1e-6f || canvasScale.y < 1e-6f) return;
+    Vec2 deltaNorm(deltaPixels.x / canvasScale.x, deltaPixels.y / canvasScale.y);
 
     SurfaceSnapshot before = takeSnapshot(*surface);
 
@@ -2098,10 +2164,12 @@ void MapWrapEditor::nudgeSelectedHandle(Vec2 deltaPixels) {
 
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
-            impl_->document, impl_->selectedSurface,
-            std::move(before), std::move(after),
-            tr("command.nudge_handle")));
+        if (!snapshotEqualsApprox(before, after)) {
+            impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
+                impl_->document, impl_->selectedSurface,
+                std::move(before), std::move(after),
+                tr("command.nudge_handle")));
+        }
     }
 }
 
@@ -2110,7 +2178,7 @@ void MapWrapEditor::setSelectedHandlePosition(Vec2 canvasNorm) {
     if (!impl_->normalizeSelectedHandle()) return;
 
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     SurfaceSnapshot before = takeSnapshot(*surface);
 
@@ -2188,7 +2256,7 @@ void MapWrapEditor::setSelectedHandlePosition(Vec2 canvasNorm) {
 
         if (impl_->undoStack) {
             SurfaceSnapshot after = takeSnapshot(*surface);
-            impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
+            impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
                 impl_->document, impl_->selectedSurface,
                 std::move(before), std::move(after),
                 tr("command.set_handle_position")));
@@ -2203,7 +2271,7 @@ void MapWrapEditor::fitSelectedToCanvas() {
 void MapWrapEditor::fitSelectedToRect(Rect canvasNormRect) {
     if (!impl_->document || impl_->selectedSurface.empty()) return;
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     SurfaceSnapshot before = takeSnapshot(*surface);
 
@@ -2289,7 +2357,7 @@ void MapWrapEditor::fitSelectedToRect(Rect canvasNormRect) {
 
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
+        impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
             impl_->document, impl_->selectedSurface,
             std::move(before), std::move(after),
             tr("command.fit_to_canvas")));
@@ -2299,14 +2367,14 @@ void MapWrapEditor::fitSelectedToRect(Rect canvasNormRect) {
 void MapWrapEditor::alignSelectedLeft() {
     if (!impl_->document || impl_->selectedSurface.empty()) return;
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     Rect bounds = surfaceBounds(*surface);
     SurfaceSnapshot before = takeSnapshot(*surface);
     moveSurface(*surface, Vec2(-bounds.x, 0));
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
+        impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
             impl_->document, impl_->selectedSurface,
             std::move(before), std::move(after),
             tr("command.align_left")));
@@ -2316,7 +2384,7 @@ void MapWrapEditor::alignSelectedLeft() {
 void MapWrapEditor::alignSelectedRight() {
     if (!impl_->document || impl_->selectedSurface.empty()) return;
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     Rect bounds = surfaceBounds(*surface);
     float rightEdge = bounds.x + bounds.w;
@@ -2324,7 +2392,7 @@ void MapWrapEditor::alignSelectedRight() {
     moveSurface(*surface, Vec2(1.0f - rightEdge, 0));
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
+        impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
             impl_->document, impl_->selectedSurface,
             std::move(before), std::move(after),
             tr("command.align_right")));
@@ -2334,14 +2402,14 @@ void MapWrapEditor::alignSelectedRight() {
 void MapWrapEditor::alignSelectedTop() {
     if (!impl_->document || impl_->selectedSurface.empty()) return;
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     Rect bounds = surfaceBounds(*surface);
     SurfaceSnapshot before = takeSnapshot(*surface);
     moveSurface(*surface, Vec2(0, -bounds.y));
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
+        impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
             impl_->document, impl_->selectedSurface,
             std::move(before), std::move(after),
             tr("command.align_top")));
@@ -2351,7 +2419,7 @@ void MapWrapEditor::alignSelectedTop() {
 void MapWrapEditor::alignSelectedBottom() {
     if (!impl_->document || impl_->selectedSurface.empty()) return;
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     Rect bounds = surfaceBounds(*surface);
     float bottomEdge = bounds.y + bounds.h;
@@ -2359,7 +2427,7 @@ void MapWrapEditor::alignSelectedBottom() {
     moveSurface(*surface, Vec2(0, 1.0f - bottomEdge));
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
+        impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
             impl_->document, impl_->selectedSurface,
             std::move(before), std::move(after),
             tr("command.align_bottom")));
@@ -2369,7 +2437,7 @@ void MapWrapEditor::alignSelectedBottom() {
 void MapWrapEditor::alignSelectedCenterX() {
     if (!impl_->document || impl_->selectedSurface.empty()) return;
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     Rect bounds = surfaceBounds(*surface);
     float center = bounds.x + bounds.w * 0.5f;
@@ -2377,7 +2445,7 @@ void MapWrapEditor::alignSelectedCenterX() {
     moveSurface(*surface, Vec2(0.5f - center, 0));
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
+        impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
             impl_->document, impl_->selectedSurface,
             std::move(before), std::move(after),
             tr("command.align_center_x")));
@@ -2387,7 +2455,7 @@ void MapWrapEditor::alignSelectedCenterX() {
 void MapWrapEditor::alignSelectedCenterY() {
     if (!impl_->document || impl_->selectedSurface.empty()) return;
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     Rect bounds = surfaceBounds(*surface);
     float center = bounds.y + bounds.h * 0.5f;
@@ -2395,7 +2463,7 @@ void MapWrapEditor::alignSelectedCenterY() {
     moveSurface(*surface, Vec2(0, 0.5f - center));
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
+        impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
             impl_->document, impl_->selectedSurface,
             std::move(before), std::move(after),
             tr("command.align_center_y")));
@@ -2481,7 +2549,7 @@ void MapWrapEditor::pasteGeometryToSelected() {
     if (impl_->clipboardGeometry.empty()) return;
 
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     // Only paste if kinds match (or flexible for polygon↔quad conversions)
     SurfaceSnapshot before = takeSnapshot(*surface);
@@ -2563,7 +2631,7 @@ void MapWrapEditor::pasteGeometryToSelected() {
 
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
+        impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
             impl_->document, impl_->selectedSurface,
             std::move(before), std::move(after),
             tr("command.paste_geometry")));
@@ -2602,7 +2670,7 @@ void MapWrapEditor::pasteUVToSelected() {
     if (impl_->clipboardUV.empty()) return;
 
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
-    if (!surface || surface->isLocked()) return;
+    if (!surface || isEffectivelyLocked(*impl_->document, *surface)) return;
 
     SurfaceSnapshot before = takeSnapshot(*surface);
 
@@ -2634,7 +2702,7 @@ void MapWrapEditor::pasteUVToSelected() {
 
     if (impl_->undoStack) {
         SurfaceSnapshot after = takeSnapshot(*surface);
-        impl_->undoStack->push(std::make_unique<SurfaceEditCommand>(
+        impl_->undoStack->pushAlreadyExecuted(std::make_unique<SurfaceEditCommand>(
             impl_->document, impl_->selectedSurface,
             std::move(before), std::move(after),
             tr("command.paste_uv")));
@@ -2701,14 +2769,14 @@ std::vector<EditableProperty> MapWrapEditor::selectedProperties() const {
     // --- Type-specific properties ---
     switch (surface->kind()) {
         case SurfaceKind::Quad: {
-            auto& q = static_cast<SurfaceQuad&>(*surface);
+            const auto& q = static_cast<const SurfaceQuad&>(*surface);
             props.push_back(EditableProperty::fromI18n(
                 "perspectiveCorrection", "property.perspective", PropertyKind::Bool,
                 formatBool(q.perspectiveCorrection())));
             props.push_back(EditableProperty::fromI18n(
                 "meshResolution", "property.mesh_resolution", PropertyKind::Int,
                 formatInt(q.meshResolution()), "1", "96"));
-            auto& dp = q.destinationPoints();
+            const auto& dp = q.destinationPoints();
             for (int i = 0; i < 4; ++i) {
                 props.push_back(EditableProperty::fromI18n(
                     "dest." + std::to_string(i) + ".x",
@@ -2722,7 +2790,7 @@ std::vector<EditableProperty> MapWrapEditor::selectedProperties() const {
             break;
         }
         case SurfaceKind::Grid: {
-            auto& g = static_cast<SurfaceGrid&>(*surface);
+            const auto& g = static_cast<const SurfaceGrid&>(*surface);
             props.push_back(EditableProperty::fromI18n(
                 "cols", "property.cols", PropertyKind::Int,
                 formatInt(g.cols()), "1", "20"));
@@ -2738,7 +2806,7 @@ std::vector<EditableProperty> MapWrapEditor::selectedProperties() const {
             break;
         }
         case SurfaceKind::Bezier: {
-            auto& b = static_cast<SurfaceBezier&>(*surface);
+            const auto& b = static_cast<const SurfaceBezier&>(*surface);
             props.push_back(EditableProperty::fromI18n(
                 "controlCols", "property.control_cols", PropertyKind::Int,
                 formatInt(b.controlCols()), "2", "12"));
@@ -2751,8 +2819,8 @@ std::vector<EditableProperty> MapWrapEditor::selectedProperties() const {
             break;
         }
         case SurfaceKind::Triangle: {
-            auto& t = static_cast<SurfaceTriangle&>(*surface);
-            auto& dp = t.destinationPoints();
+            const auto& t = static_cast<const SurfaceTriangle&>(*surface);
+            const auto& dp = t.destinationPoints();
             for (int i = 0; i < 3; ++i) {
                 props.push_back(EditableProperty::fromI18n(
                     "dest." + std::to_string(i) + ".x",
@@ -2766,7 +2834,7 @@ std::vector<EditableProperty> MapWrapEditor::selectedProperties() const {
             break;
         }
         case SurfaceKind::Circle: {
-            auto& c = static_cast<SurfaceCircle&>(*surface);
+            const auto& c = static_cast<const SurfaceCircle&>(*surface);
             props.push_back(EditableProperty::fromI18n(
                 "center", "property.center", PropertyKind::Vec2,
                 formatVec2(c.center())));
@@ -2785,7 +2853,7 @@ std::vector<EditableProperty> MapWrapEditor::selectedProperties() const {
             break;
         }
         case SurfaceKind::Polygon: {
-            auto& p = static_cast<SurfacePolygon&>(*surface);
+            const auto& p = static_cast<const SurfacePolygon&>(*surface);
             props.push_back(EditableProperty::fromI18n(
                 "closed", "property.closed", PropertyKind::Bool,
                 formatBool(p.closed())));
@@ -2803,6 +2871,9 @@ Result MapWrapEditor::setSelectedProperty(const std::string& path,
 
     auto surface = impl_->document->getSurface(impl_->selectedSurface);
     if (!surface) return Result::error("Surface not found");
+    if (path != "locked" && isEffectivelyLocked(*impl_->document, *surface)) {
+        return Result::error("Selected surface is locked");
+    }
 
     if (path == "surfaceKind" || path == "kind") {
         SurfaceKind target = surface->kind();

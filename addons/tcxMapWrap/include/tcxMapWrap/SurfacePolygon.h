@@ -39,6 +39,8 @@ public:
 private:
     std::vector<Vec2> destPoints_;
     std::vector<Vec2> uvPoints_;
+    std::vector<uint32_t> triangles_;
+    bool customUv_ = false;
     bool closed_ = true;
 };
 

@@ -15,6 +15,7 @@
 #include "tcxMapWrap/SourceGenerated.h"
 #include "tcxMapWrap/CalibrationPatterns.h"
 #include "tcxMapWrap/Surface.h"
+#include "tcxMapWrap/SurfaceGroup.h"
 #include "tcxMapWrap/MapWrapMask.h"
 
 #if TCX_MAPWRAP_HAS_TRUSSC_RUNTIME
@@ -136,22 +137,30 @@ static Vec2 maskPointForSpace(const MapWrapMask& mask, Vec2 surfaceLocal, Vec2 s
     return surfaceLocal;
 }
 
-static bool hasEnabledMask(const Surface& surface) {
+static bool hasEnabledMask(const Surface& surface, const std::vector<const MapWrapMask*>& extraMasks = {}) {
     for (const auto& mask : surface.masks()) {
         if (mask.enabled) return true;
     }
-    return false;
-}
-
-static bool hasPositiveMask(const Surface& surface) {
-    for (const auto& mask : surface.masks()) {
-        if (mask.enabled && mask.operation != MaskOperation::Subtract) return true;
+    for (const auto* mask : extraMasks) {
+        if (mask && mask->enabled) return true;
     }
     return false;
 }
 
-static int maskedSubdivisionFor(const Surface& surface, const PerformanceSettings& perf) {
-    if (!hasEnabledMask(surface)) return 1;
+static bool hasPositiveMask(const Surface& surface, const std::vector<const MapWrapMask*>& extraMasks = {}) {
+    for (const auto& mask : surface.masks()) {
+        if (mask.enabled && mask.operation != MaskOperation::Subtract) return true;
+    }
+    for (const auto* mask : extraMasks) {
+        if (mask && mask->enabled && mask->operation != MaskOperation::Subtract) return true;
+    }
+    return false;
+}
+
+static int maskedSubdivisionFor(const Surface& surface,
+                                const PerformanceSettings& perf,
+                                const std::vector<const MapWrapMask*>& extraMasks = {}) {
+    if (!hasEnabledMask(surface, extraMasks)) return 1;
     int target = 32;
     if (perf.mode == PerformanceMode::Quality) target = 48;
     if (perf.mode == PerformanceMode::LowPower) target = 16;
@@ -216,6 +225,7 @@ struct MapWrapRenderer::Impl {
         BuiltinPatternKind kind = BuiltinPatternKind::Grid;
         int width = 0;
         int height = 0;
+        uint64_t revision = 0;
         uint64_t updatedFrame = 0;
         bool valid = false;
     };
@@ -248,6 +258,15 @@ struct MapWrapRenderer::Impl {
         std::unordered_set<SourceId> visibleSources;
         for (const auto& surface : document->surfaces()) {
             if (!surface || !surface->isVisible()) continue;
+            bool groupVisible = true;
+            for (const auto& group : document->groups()) {
+                if (!group) continue;
+                if (std::find(group->surfaceIds.begin(), group->surfaceIds.end(), surface->id()) !=
+                    group->surfaceIds.end()) {
+                    groupVisible = groupVisible && group->visible;
+                }
+            }
+            if (!groupVisible) continue;
             if (!surface->source().empty()) visibleSources.insert(surface->source());
         }
 
@@ -259,7 +278,7 @@ struct MapWrapRenderer::Impl {
         }
     }
 
-    void rebuildMesh(Surface& surface) {
+    void rebuildMesh(Surface& surface, const std::vector<const MapWrapMask*>& extraMasks = {}) {
         auto it = surfaceData.find(surface.id());
         if (it == surfaceData.end()) {
             SurfaceRenderData data;
@@ -271,7 +290,7 @@ struct MapWrapRenderer::Impl {
 
         MeshBuildContext ctx;
         ctx.canvasSizePixels = canvasSize;
-        ctx.meshSubdivision = maskedSubdivisionFor(surface, perfSettings);
+        ctx.meshSubdivision = maskedSubdivisionFor(surface, perfSettings, extraMasks);
 
         MeshBuildResult result = surface.buildMesh(ctx);
         SurfaceRenderData& rd = it->second;
@@ -288,7 +307,7 @@ struct MapWrapRenderer::Impl {
         }
         rd.surfaceRevision = surface.revision();
         rd.dirty = false;
-        rd.hasActiveMask = hasEnabledMask(surface);
+        rd.hasActiveMask = hasEnabledMask(surface, extraMasks);
         surface.clearDirty();
     }
 
@@ -307,8 +326,10 @@ struct MapWrapRenderer::Impl {
         int w = std::max(1, static_cast<int>(std::round(pattern.size().x)));
         int h = std::max(1, static_cast<int>(std::round(pattern.size().y)));
         BuiltinPatternKind kind = pattern.pattern();
+        uint64_t revision = pattern.revision();
         auto& runtime = patternTextures[id];
-        if (runtime.valid && runtime.width == w && runtime.height == h && runtime.kind == kind) {
+        if (runtime.valid && runtime.width == w && runtime.height == h &&
+            runtime.kind == kind && runtime.revision == revision) {
             return &runtime;
         }
 
@@ -324,6 +345,7 @@ struct MapWrapRenderer::Impl {
         runtime.width = w;
         runtime.height = h;
         runtime.kind = kind;
+        runtime.revision = revision;
         runtime.valid = runtime.texture.isAllocated();
         return runtime.valid ? &runtime : nullptr;
     }
@@ -451,14 +473,19 @@ struct MapWrapRenderer::Impl {
         return placeholder();
     }
 
-    void buildGpuMesh(const Surface& surface, SurfaceRenderData& rd, float width, float height) {
+    void buildGpuMesh(const Surface& surface,
+                      SurfaceRenderData& rd,
+                      float width,
+                      float height,
+                      float externalOpacity,
+                      float externalBrightness) {
         auto& mesh = gpuMeshes[surface.id()];
         mesh.clear();
         mesh.setMode(trussc::PrimitiveMode::Triangles);
 
         Rect src = surface.sourceRect();
-        float baseOpacity = clamp01(surface.opacity() * surface.blend().opacity);
-        float brightness = std::max(0.0f, surface.blend().brightness);
+        float baseOpacity = clamp01(surface.opacity() * surface.blend().opacity * externalOpacity);
+        float brightness = std::max(0.0f, surface.blend().brightness * externalBrightness);
         ColorCorrection cc = surface.colorCorrection();
         if (cc.enabled) {
             baseOpacity *= clamp01(cc.opacity);
@@ -483,14 +510,18 @@ struct MapWrapRenderer::Impl {
         }
     }
 
-    void submitGpuSurface(const Surface& surface, SurfaceRenderData& rd, const std::shared_ptr<Source>& source) {
+    void submitGpuSurface(const Surface& surface,
+                          SurfaceRenderData& rd,
+                          const std::shared_ptr<Source>& source,
+                          float externalOpacity,
+                          float externalBrightness) {
         if (!sg_isvalid() || trussc::headless::isActive()) return;
 
         TextureResolve resolved = textureForSource(source);
         trussc::Texture* texture = resolved.texture;
         if (!texture || !texture->isAllocated()) return;
 
-        buildGpuMesh(surface, rd, canvasSize.x, canvasSize.y);
+        buildGpuMesh(surface, rd, canvasSize.x, canvasSize.y, externalOpacity, externalBrightness);
         trussc::Mesh& mesh = gpuMeshes[surface.id()];
         if (mesh.getNumVertices() == 0 || mesh.getNumIndices() == 0) return;
 
@@ -558,17 +589,19 @@ struct MapWrapRenderer::Impl {
         return clamp01(coverage);
     }
 
-    void updateMaskAlphas(Surface& surface, SurfaceRenderData& rd) {
+    void updateMaskAlphas(Surface& surface,
+                          SurfaceRenderData& rd,
+                          const std::vector<const MapWrapMask*>& extraMasks) {
         size_t vertexCount = rd.vertices.size() / 2;
         rd.maskAlphas.assign(vertexCount, 1.0f);
-        rd.hasActiveMask = hasEnabledMask(surface);
+        rd.hasActiveMask = hasEnabledMask(surface, extraMasks);
         if (!rd.hasActiveMask) return;
 
-        bool positive = hasPositiveMask(surface);
+        bool positive = hasPositiveMask(surface, extraMasks);
         std::fill(rd.maskAlphas.begin(), rd.maskAlphas.end(), positive ? 0.0f : 1.0f);
 
-        for (const auto& mask : surface.masks()) {
-            if (!mask.enabled) continue;
+        auto applyMask = [&](const MapWrapMask& mask) {
+            if (!mask.enabled) return;
 
             stats.maskCount++;
             if (mask.kind == MaskKind::AlphaTexture) stats.alphaMaskCount++;
@@ -597,11 +630,22 @@ struct MapWrapRenderer::Impl {
                 }
                 rd.maskAlphas[vi] = clamp01(rd.maskAlphas[vi]);
             }
+        };
+
+        for (const auto& mask : surface.masks()) {
+            applyMask(mask);
+        }
+        for (const auto* mask : extraMasks) {
+            if (mask) applyMask(*mask);
         }
     }
 
-    void drawSurface(Surface& surface, const RenderOptions& options) {
-        if (!surface.isVisible()) {
+    void drawSurface(Surface& surface,
+                     const RenderOptions& options,
+                     const std::vector<const MapWrapMask*>& extraMasks,
+                     float effectiveOpacity,
+                     float effectiveBrightness) {
+        if (!surface.isVisible() || effectiveOpacity <= 0.0f) {
             stats.skippedSurfaceCount++;
             return;
         }
@@ -622,7 +666,7 @@ struct MapWrapRenderer::Impl {
 
         SurfaceRenderData& rd = it->second;
         if (rd.dirty || rd.surfaceRevision != surface.revision()) {
-            rebuildMesh(surface);
+            rebuildMesh(surface, extraMasks);
             stats.rebuiltMeshCount++;
         }
 
@@ -631,12 +675,12 @@ struct MapWrapRenderer::Impl {
             return;
         }
 
-        updateMaskAlphas(surface, rd);
+        updateMaskAlphas(surface, rd, extraMasks);
         stats.drawnSurfaceCount++;
 
 #if TCX_MAPWRAP_HAS_TRUSSC_RUNTIME
         if (options.submitTexturedMeshes) {
-            submitGpuSurface(surface, rd, source);
+            submitGpuSurface(surface, rd, source, effectiveOpacity, effectiveBrightness);
         }
 #else
         (void)options;
@@ -753,9 +797,65 @@ void MapWrapRenderer::draw(const RenderOptions& options) {
     impl_->stats = RenderStats{};
     impl_->lastSubmittedGpu = false;
 
+    std::vector<const MapWrapOutput*> enabledOutputs;
+    for (const auto& output : impl_->document->stage().outputs()) {
+        if (output.enabled) enabledOutputs.push_back(&output);
+    }
+
     const auto& surfaces = impl_->document->surfaces();
+    if (enabledOutputs.empty()) {
+        impl_->stats.skippedSurfaceCount = static_cast<int>(surfaces.size());
+        impl_->drawOverlay(options);
+        impl_->countVideoStats();
+        return;
+    }
+
+    std::vector<const MapWrapMask*> stageMasks;
+    for (const auto& mask : impl_->document->stage().globalMasks()) {
+        stageMasks.push_back(&mask);
+    }
+    for (const auto* output : enabledOutputs) {
+        for (const auto& mask : output->masks) {
+            stageMasks.push_back(&mask);
+        }
+    }
+
+    float outputOpacity = 1.0f;
+    float outputBrightness = 1.0f;
+    if (!enabledOutputs.empty()) {
+        const MapWrapOutput* output = enabledOutputs.front();
+        outputOpacity *= clamp01(output->blend.opacity);
+        outputBrightness *= std::max(0.0f, output->blend.brightness);
+        if (output->colorCorrection.enabled) {
+            outputOpacity *= clamp01(output->colorCorrection.opacity);
+            outputBrightness *= std::max(0.0f, output->colorCorrection.brightness);
+        }
+    }
+
     for (const auto& surface : surfaces) {
-        if (surface) impl_->drawSurface(*surface, options);
+        if (!surface) continue;
+
+        bool groupVisible = true;
+        float groupOpacity = 1.0f;
+        for (const auto& group : impl_->document->groups()) {
+            if (!group) continue;
+            if (std::find(group->surfaceIds.begin(), group->surfaceIds.end(), surface->id()) ==
+                group->surfaceIds.end()) {
+                continue;
+            }
+            groupVisible = groupVisible && group->visible;
+            groupOpacity *= clamp01(group->opacity);
+        }
+        if (!groupVisible) {
+            impl_->stats.skippedSurfaceCount++;
+            continue;
+        }
+
+        impl_->drawSurface(*surface,
+                           options,
+                           stageMasks,
+                           groupOpacity * outputOpacity,
+                           outputBrightness);
     }
 
     impl_->drawOverlay(options);

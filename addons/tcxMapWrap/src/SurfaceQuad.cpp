@@ -189,17 +189,19 @@ MeshBuildResult SurfaceQuad::buildMesh(const MeshBuildContext& ctx) {
     mesh.uvs.reserve(vertexCount * 2);
     mesh.indices.reserve(size_t(subdiv) * size_t(subdiv) * 6);
 
-    if (perspective_) {
-        // --- Perspective-correct: use homography to warp UVs ---
+    bool usePerspective = perspective_;
+    ResultT<Mat3> H;
+    if (usePerspective) {
         std::array<Vec2, 4> srcArr = {{ uv_[0], uv_[1], uv_[2], uv_[3] }};
-        ResultT<Mat3> H = computeHomography(srcArr, dest_);
-
+        H = computeHomography(srcArr, dest_);
         if (!H.ok) {
-            // Fallback to bilinear if homography fails
-            perspective_ = false;
-            return buildMesh(ctx);
+            result.message = H.message;
+            usePerspective = false;
         }
+    }
 
+    if (usePerspective) {
+        // --- Perspective-correct: use homography to warp UVs ---
         // For each grid point (u,v) in [0,1]x[0,1], compute the
         // destination position via homography
         for (int iy = 0; iy <= subdiv; ++iy) {

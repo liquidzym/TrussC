@@ -36,6 +36,12 @@ void UndoStack::push(std::unique_ptr<Command> cmd) {
     redoStack_.clear();
 }
 
+void UndoStack::pushAlreadyExecuted(std::unique_ptr<Command> cmd) {
+    if (!cmd) return;
+    undoStack_.push_back(std::move(cmd));
+    redoStack_.clear();
+}
+
 bool UndoStack::undo() {
     if (undoStack_.empty()) return false;
     auto cmd = std::move(undoStack_.back());

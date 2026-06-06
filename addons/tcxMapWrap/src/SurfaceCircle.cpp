@@ -30,8 +30,8 @@ static float distVec2(Vec2 a, Vec2 b) {
 static Vec2 toEllipseLocal(Vec2 p, Vec2 center, float rotation) {
     float dx = p.x - center.x;
     float dy = p.y - center.y;
-    float cosR = std::cos(-rotation * (float)M_PI / 180.0f);
-    float sinR = std::sin(-rotation * (float)M_PI / 180.0f);
+    float cosR = std::cos(-degToRad(rotation));
+    float sinR = std::sin(-degToRad(rotation));
     return Vec2(dx * cosR - dy * sinR, dx * sinR + dy * cosR);
 }
 
@@ -75,11 +75,11 @@ MeshBuildResult SurfaceCircle::buildMesh(const MeshBuildContext& ctx) {
     MeshBuildResult result;
     MeshData& mesh = result.mesh;
 
-    int segs = std::max(kMinSegments, std::min(kMaxSegments, segments_));
+    int segs = std::max(kMinSegments, std::min(kMaxSegments, std::max(segments_, ctx.meshSubdivision)));
     mesh.vertices.reserve(size_t(segs + 2) * 2);
     mesh.uvs.reserve(size_t(segs + 2) * 2);
     mesh.indices.reserve(size_t(segs) * 3);
-    float rotRad = rotation_ * (float)M_PI / 180.0f;
+    float rotRad = degToRad(rotation_);
     float cosR = std::cos(rotRad);
     float sinR = std::sin(rotRad);
 
@@ -88,7 +88,7 @@ MeshBuildResult SurfaceCircle::buildMesh(const MeshBuildContext& ctx) {
 
     // Perimeter vertices (indices 1..segs)
     for (int i = 0; i <= segs; ++i) {
-        float angle = 2.0f * (float)M_PI * float(i) / float(segs);
+        float angle = 2.0f * kPi * float(i) / float(segs);
         float lx = radiusX_ * std::cos(angle);
         float ly = radiusY_ * std::sin(angle);
 
@@ -135,7 +135,7 @@ HitResult SurfaceCircle::hitTest(const Vec2& canvasNormPos, const HitTestOptions
 
     // --- Check radius handle proximity ---
     // Right edge handle: center + (rx, 0) rotated
-    float rotRad = rotation_ * (float)M_PI / 180.0f;
+    float rotRad = degToRad(rotation_);
     float cosR = std::cos(rotRad);
     float sinR = std::sin(rotRad);
     Vec2 rxHandle(center_.x + radiusX_ * cosR, center_.y + radiusX_ * sinR);

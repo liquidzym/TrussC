@@ -15,13 +15,17 @@
 #include <cassert>
 #include <utility>
 
+#ifndef TCX_MAPWRAP_HAS_TRUSSC_RUNTIME
+#define TCX_MAPWRAP_HAS_TRUSSC_RUNTIME 0
+#endif
+
 // JSON — include BEFORE namespace to avoid namespace pollution
 #include "nlohmann/json.hpp"
 
 // ===========================================================================
 // Math types — use TrussC core types when available, otherwise fallback
 // ===========================================================================
-#if __has_include(<tcMath.h>)
+#if TCX_MAPWRAP_HAS_TRUSSC_RUNTIME && __has_include(<tcMath.h>) && __has_include(<tc/types/tcRectangle.h>)
     // TrussC integration: use core math types
     #include <tcMath.h>
     #include <tc/types/tcRectangle.h>
@@ -91,6 +95,27 @@
 namespace tcx {
 namespace mapwrap {
 
+template <typename T>
+struct ResultT;
+
+constexpr float kPi = 3.1415926535897932384626433832795f;
+
+constexpr float degToRad(float deg) {
+    return deg * kPi / 180.0f;
+}
+
+constexpr float radToDeg(float rad) {
+    return rad * 180.0f / kPi;
+}
+
+inline bool nearlyEqual(float a, float b, float eps = 1e-5f) {
+    return std::fabs(a - b) <= eps;
+}
+
+inline bool nearlyEqual(Vec2 a, Vec2 b, float eps = 1e-5f) {
+    return nearlyEqual(a.x, b.x, eps) && nearlyEqual(a.y, b.y, eps);
+}
+
 struct Mat3 {
     float m[9] = {1,0,0, 0,1,0, 0,0,1};
 
@@ -116,6 +141,8 @@ struct Mat3 {
         );
     }
 
+    ResultT<Vec2> transformPointSafe(Vec2 p) const;
+
     bool operator==(const Mat3& rhs) const {
         for (int i = 0; i < 9; ++i) {
             if (m[i] != rhs.m[i]) return false;
@@ -127,6 +154,13 @@ struct Mat3 {
         return !(*this == rhs);
     }
 };
+
+inline bool nearlyEqual(const Mat3& a, const Mat3& b, float eps = 1e-5f) {
+    for (int i = 0; i < 9; ++i) {
+        if (!nearlyEqual(a.m[i], b.m[i], eps)) return false;
+    }
+    return true;
+}
 
 struct IVec2 {
     int x = 0;
@@ -167,6 +201,17 @@ struct ResultT {
     static ResultT success(T&& v) { return ResultT(true, std::move(v), ""); }
     static ResultT error(const std::string& msg) { return ResultT(false, T{}, msg); }
 };
+
+inline ResultT<Vec2> Mat3::transformPointSafe(Vec2 p) const {
+    float w = m[6] * p.x + m[7] * p.y + m[8];
+    if (std::fabs(w) < 1e-12f) {
+        return ResultT<Vec2>::error("Mat3 transform has near-zero homogeneous w");
+    }
+    return ResultT<Vec2>::success(Vec2(
+        (m[0] * p.x + m[1] * p.y + m[2]) / w,
+        (m[3] * p.x + m[4] * p.y + m[5]) / w
+    ));
+}
 
 struct LoadResult {
     bool ok = false;
@@ -397,12 +442,14 @@ struct MeshData {
         uvs.push_back(v);
     }
 
-    void addTriangle(uint32_t a, uint32_t b, uint32_t c) {
+    bool addTriangle(uint32_t a, uint32_t b, uint32_t c) {
         size_t count = vertexCount();
         assert(a < count && b < count && c < count);
+        if (a >= count || b >= count || c >= count) return false;
         indices.push_back(a);
         indices.push_back(b);
         indices.push_back(c);
+        return true;
     }
 };
 

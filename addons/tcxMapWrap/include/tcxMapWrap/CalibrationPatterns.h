@@ -22,6 +22,7 @@ public:
     void setSize(Vec2 size) override;
     void setLineThickness(float thickness);
     void setCells(int cols, int rows);
+    uint64_t revision() const;
 
     std::string kindName() const override;
 
@@ -44,6 +45,7 @@ private:
     float lineThickness_ = 1.0f;
     int cellsX_ = 16;
     int cellsY_ = 9;
+    uint64_t revision_ = 1;
 };
 
 // ===========================================================================

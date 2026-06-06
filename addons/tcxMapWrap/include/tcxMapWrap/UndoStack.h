@@ -23,6 +23,7 @@ public:
 class UndoStack {
 public:
     void push(std::unique_ptr<Command> command);
+    void pushAlreadyExecuted(std::unique_ptr<Command> command);
     bool undo();
     bool redo();
     void clear();

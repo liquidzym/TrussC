@@ -63,6 +63,9 @@ extern void test_source_registry_roundtrip();
 extern void test_load_replaces_existing_document();
 extern void test_grid_all_control_points_roundtrip();
 extern void test_bezier_surface_roundtrip();
+extern void test_malformed_field_type_returns_load_error();
+extern void test_stage_empty_outputs_restores_default_output();
+extern void test_source_registry_load_without_sources_clears_existing_registry();
 
 // test_hit_test.cpp
 extern void test_vertex_hit_on_quad();
@@ -85,6 +88,7 @@ extern void test_add_delete_mask_undo_redo();
 extern void test_drag_merged_into_single_command();
 extern void test_cant_undo_empty_stack();
 extern void test_cant_redo_after_new_push();
+extern void test_push_already_executed_does_not_execute_twice();
 
 // test_masks.cpp
 extern void test_polygon_mask_json_roundtrip();
@@ -102,6 +106,8 @@ extern void test_self_intersecting_polygon_invalid();
 extern void test_point_add_remove_undo_redo();
 extern void test_source_rect_uv_defaults();
 extern void test_save_load_roundtrip();
+extern void test_polygon_build_mesh_uses_saved_uv_points();
+extern void test_polygon_default_uvs_are_local_bounds_not_canvas_points();
 
 // test_outputs.cpp
 extern void test_default_output_auto_created();
@@ -180,6 +186,10 @@ extern void test_mat3_helpers_multiply_transform_and_compare();
 extern void test_pointer_event_factories_allow_non_down_types();
 extern void test_document_const_get_surface_returns_const_pointer();
 extern void test_generated_source_pixel_callback_writes_output_buffer();
+extern void test_document_reorder_surface_uses_final_index();
+extern void test_grid_constructor_clamps_and_bounds_checks_points();
+extern void test_quad_homography_fallback_preserves_perspective_setting();
+extern void test_autosave_preserves_document_dirty_flag();
 
 // --------------------------------------------------------------------------
 // Test registry
@@ -231,6 +241,9 @@ static std::vector<TestCase> allTests = {
     {"serialization::load_replaces_existing_document", test_load_replaces_existing_document},
     {"serialization::grid_all_control_points_roundtrip", test_grid_all_control_points_roundtrip},
     {"serialization::bezier_surface_roundtrip",   test_bezier_surface_roundtrip},
+    {"serialization::malformed_field_type_returns_load_error", test_malformed_field_type_returns_load_error},
+    {"serialization::stage_empty_outputs_restores_default_output", test_stage_empty_outputs_restores_default_output},
+    {"serialization::source_registry_load_without_sources_clears_existing_registry", test_source_registry_load_without_sources_clears_existing_registry},
 
     // test_hit_test.cpp
     {"hit_test::vertex_hit_on_quad",               test_vertex_hit_on_quad},
@@ -253,6 +266,7 @@ static std::vector<TestCase> allTests = {
     {"undo::drag_merged_into_single_command",      test_drag_merged_into_single_command},
     {"undo::cant_undo_empty_stack",                test_cant_undo_empty_stack},
     {"undo::cant_redo_after_new_push",             test_cant_redo_after_new_push},
+    {"undo::push_already_executed_does_not_execute_twice", test_push_already_executed_does_not_execute_twice},
 
     // test_masks.cpp
     {"masks::polygon_mask_json_roundtrip",         test_polygon_mask_json_roundtrip},
@@ -270,6 +284,8 @@ static std::vector<TestCase> allTests = {
     {"polygon::point_add_remove_undo_redo",        test_point_add_remove_undo_redo},
     {"polygon::source_rect_uv_defaults",          test_source_rect_uv_defaults},
     {"polygon::save_load_roundtrip",              test_save_load_roundtrip},
+    {"polygon::build_mesh_uses_saved_uv_points",  test_polygon_build_mesh_uses_saved_uv_points},
+    {"polygon::default_uvs_are_local_bounds",     test_polygon_default_uvs_are_local_bounds_not_canvas_points},
 
     // test_outputs.cpp
     {"outputs::default_output_auto_created",       test_default_output_auto_created},
@@ -348,6 +364,10 @@ static std::vector<TestCase> allTests = {
     {"api::pointer_event_factories_allow_non_down_types", test_pointer_event_factories_allow_non_down_types},
     {"api::document_const_get_surface_returns_const_pointer", test_document_const_get_surface_returns_const_pointer},
     {"api::generated_source_pixel_callback_writes_output_buffer", test_generated_source_pixel_callback_writes_output_buffer},
+    {"api::document_reorder_surface_uses_final_index", test_document_reorder_surface_uses_final_index},
+    {"api::grid_constructor_clamps_and_bounds_checks_points", test_grid_constructor_clamps_and_bounds_checks_points},
+    {"api::quad_homography_fallback_preserves_perspective_setting", test_quad_homography_fallback_preserves_perspective_setting},
+    {"api::autosave_preserves_document_dirty_flag", test_autosave_preserves_document_dirty_flag},
 };
 
 // --------------------------------------------------------------------------

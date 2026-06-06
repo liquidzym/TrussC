@@ -39,7 +39,9 @@ Vec2 CalibrationPatternSource::size() const {
 // ---------------------------------------------------------------------------
 
 void CalibrationPatternSource::setPattern(BuiltinPatternKind p) {
+    if (pattern_ == p) return;
     pattern_ = p;
+    ++revision_;
 }
 
 BuiltinPatternKind CalibrationPatternSource::pattern() const {
@@ -47,16 +49,29 @@ BuiltinPatternKind CalibrationPatternSource::pattern() const {
 }
 
 void CalibrationPatternSource::setSize(Vec2 s) {
+    if (size_.x == s.x && size_.y == s.y) return;
     size_ = s;
+    ++revision_;
 }
 
 void CalibrationPatternSource::setLineThickness(float t) {
-    lineThickness_ = (t < 0.0f) ? 0.0f : t;
+    float clamped = (t < 0.0f) ? 0.0f : t;
+    if (lineThickness_ == clamped) return;
+    lineThickness_ = clamped;
+    ++revision_;
 }
 
 void CalibrationPatternSource::setCells(int c, int r) {
-    cellsX_ = std::max(1, c);
-    cellsY_ = std::max(1, r);
+    int newX = std::max(1, c);
+    int newY = std::max(1, r);
+    if (cellsX_ == newX && cellsY_ == newY) return;
+    cellsX_ = newX;
+    cellsY_ = newY;
+    ++revision_;
+}
+
+uint64_t CalibrationPatternSource::revision() const {
+    return revision_;
 }
 
 // ---------------------------------------------------------------------------

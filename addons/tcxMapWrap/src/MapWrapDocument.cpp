@@ -225,6 +225,11 @@ void MapWrapDocument::removeSurface(const SurfaceId& id) {
         [&id](const std::shared_ptr<Surface>& s) { return s && s->id() == id; });
     if (it != impl_->surfaces.end()) {
         impl_->surfaces.erase(it, impl_->surfaces.end());
+        for (auto& group : impl_->groups) {
+            if (!group) continue;
+            auto& refs = group->surfaceIds;
+            refs.erase(std::remove(refs.begin(), refs.end(), id), refs.end());
+        }
         impl_->dirty = true;
     }
 }
@@ -241,14 +246,12 @@ void MapWrapDocument::insertSurface(std::shared_ptr<Surface> surface, int index)
 void MapWrapDocument::reorderSurface(const SurfaceId& id, int newIndex) {
     int oldIndex = surfaceIndex(id);
     if (oldIndex < 0) return;
-    if (newIndex < 0 || newIndex >= (int)impl_->surfaces.size()) return;
+    newIndex = std::max(0, std::min(newIndex, (int)impl_->surfaces.size() - 1));
     if (oldIndex == newIndex) return;
 
     auto surface = impl_->surfaces[oldIndex];
     impl_->surfaces.erase(impl_->surfaces.begin() + oldIndex);
-    int insertAt = newIndex;
-    if (insertAt > oldIndex) insertAt--;  // adjust for the erased element
-    impl_->surfaces.insert(impl_->surfaces.begin() + insertAt, surface);
+    impl_->surfaces.insert(impl_->surfaces.begin() + newIndex, surface);
     impl_->dirty = true;
 }
 
@@ -332,21 +335,20 @@ CueId MapWrapDocument::createCueFromCurrentState(const std::string& name) {
         if (!surface) continue;
         SurfaceStatePatch patch;
         patch.surfaceId = surface->id();
-        // Serialize key properties into patch JSON
-        std::ostringstream ss;
-        ss << "{";
-        ss << "\"name\":\"" << surface->name() << "\",";
-        ss << "\"visible\":" << (surface->isVisible() ? "true" : "false") << ",";
-        ss << "\"locked\":" << (surface->isLocked() ? "true" : "false") << ",";
-        ss << "\"opacity\":" << surface->opacity() << ",";
-        ss << "\"source\":\"" << surface->source() << "\",";
-        ss << "\"sourceRect\":{"
-           << "\"x\":" << surface->sourceRect().x << ","
-           << "\"y\":" << surface->sourceRect().y << ","
-           << "\"w\":" << surface->sourceRect().w << ","
-           << "\"h\":" << surface->sourceRect().h << "}";
-        ss << "}";
-        patch.patchJson = ss.str();
+        MapWrapJson patchJson = {
+            {"name", surface->name()},
+            {"visible", surface->isVisible()},
+            {"locked", surface->isLocked()},
+            {"opacity", surface->opacity()},
+            {"source", surface->source()},
+            {"sourceRect", {
+                {"x", surface->sourceRect().x},
+                {"y", surface->sourceRect().y},
+                {"w", surface->sourceRect().w},
+                {"h", surface->sourceRect().h}
+            }}
+        };
+        patch.patchJson = patchJson.dump();
         cue->surfacePatches.push_back(std::move(patch));
     }
 
@@ -354,13 +356,12 @@ CueId MapWrapDocument::createCueFromCurrentState(const std::string& name) {
     for (const auto& output : impl_->stage->outputs()) {
         OutputStatePatch patch;
         patch.outputId = output.id;
-        std::ostringstream ss;
-        ss << "{";
-        ss << "\"enabled\":" << (output.enabled ? "true" : "false") << ",";
-        ss << "\"rotationDegrees\":" << output.rotationDegrees << ",";
-        ss << "\"contentScale\":" << output.contentScale;
-        ss << "}";
-        patch.patchJson = ss.str();
+        MapWrapJson patchJson = {
+            {"enabled", output.enabled},
+            {"rotationDegrees", output.rotationDegrees},
+            {"contentScale", output.contentScale}
+        };
+        patch.patchJson = patchJson.dump();
         cue->outputPatches.push_back(std::move(patch));
     }
 
@@ -387,40 +388,29 @@ Result MapWrapDocument::applyCue(const CueId& id) {
         auto surface = getSurface(patch.surfaceId);
         if (!surface) continue;
 
-        // Parse the minimal JSON we wrote in createCueFromCurrentState.
-        // For a full implementation this would use nlohmann::json;
-        // here we do basic string extraction for the properties we serialized.
-        const auto& json = patch.patchJson;
-
-        // Extract "visible":true/false
-        {
-            auto pos = json.find("\"visible\":");
-            if (pos != std::string::npos) {
-                bool vis = json.substr(pos + 10, 4).find("true") == 0;
-                surface->setVisible(vis);
+        try {
+            MapWrapJson json = MapWrapJson::parse(patch.patchJson);
+            if (json.contains("name") && json["name"].is_string())
+                surface->setName(json["name"].get<std::string>());
+            if (json.contains("visible") && json["visible"].is_boolean())
+                surface->setVisible(json["visible"].get<bool>());
+            if (json.contains("locked") && json["locked"].is_boolean())
+                surface->setLocked(json["locked"].get<bool>());
+            if (json.contains("opacity") && json["opacity"].is_number())
+                surface->setOpacity(json["opacity"].get<float>());
+            if (json.contains("source") && json["source"].is_string())
+                surface->setSource(json["source"].get<std::string>());
+            if (json.contains("sourceRect") && json["sourceRect"].is_object()) {
+                const auto& r = json["sourceRect"];
+                Rect rect = surface->sourceRect();
+                if (r.contains("x") && r["x"].is_number()) rect.x = r["x"].get<float>();
+                if (r.contains("y") && r["y"].is_number()) rect.y = r["y"].get<float>();
+                if (r.contains("w") && r["w"].is_number()) rect.w = r["w"].get<float>();
+                if (r.contains("h") && r["h"].is_number()) rect.h = r["h"].get<float>();
+                surface->setSourceRect(rect);
             }
-        }
-        // Extract "opacity":N
-        {
-            auto pos = json.find("\"opacity\":");
-            if (pos != std::string::npos) {
-                auto start = pos + 10;
-                auto end = json.find_first_of(",}", start);
-                if (end != std::string::npos) {
-                    surface->setOpacity(std::stof(json.substr(start, end - start)));
-                }
-            }
-        }
-        // Extract "source":"..."
-        {
-            auto pos = json.find("\"source\":\"");
-            if (pos != std::string::npos) {
-                auto start = pos + 10;
-                auto end = json.find("\"", start);
-                if (end != std::string::npos) {
-                    surface->setSource(json.substr(start, end - start));
-                }
-            }
+        } catch (const MapWrapJson::exception&) {
+            continue;
         }
     }
 
@@ -429,33 +419,16 @@ Result MapWrapDocument::applyCue(const CueId& id) {
         auto* output = impl_->stage->getOutput(patch.outputId);
         if (!output) continue;
 
-        const auto& json = patch.patchJson;
-        {
-            auto pos = json.find("\"enabled\":");
-            if (pos != std::string::npos) {
-                bool en = json.substr(pos + 10, 4).find("true") == 0;
-                output->enabled = en;
-            }
-        }
-        {
-            auto pos = json.find("\"rotationDegrees\":");
-            if (pos != std::string::npos) {
-                auto start = pos + 18;
-                auto end = json.find_first_of(",}", start);
-                if (end != std::string::npos) {
-                    output->rotationDegrees = std::stof(json.substr(start, end - start));
-                }
-            }
-        }
-        {
-            auto pos = json.find("\"contentScale\":");
-            if (pos != std::string::npos) {
-                auto start = pos + 15;
-                auto end = json.find_first_of(",}", start);
-                if (end != std::string::npos) {
-                    output->contentScale = std::stof(json.substr(start, end - start));
-                }
-            }
+        try {
+            MapWrapJson json = MapWrapJson::parse(patch.patchJson);
+            if (json.contains("enabled") && json["enabled"].is_boolean())
+                output->enabled = json["enabled"].get<bool>();
+            if (json.contains("rotationDegrees") && json["rotationDegrees"].is_number())
+                output->rotationDegrees = json["rotationDegrees"].get<float>();
+            if (json.contains("contentScale") && json["contentScale"].is_number())
+                output->contentScale = json["contentScale"].get<float>();
+        } catch (const MapWrapJson::exception&) {
+            continue;
         }
     }
 

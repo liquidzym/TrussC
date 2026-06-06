@@ -25,31 +25,66 @@ Surface::Surface() {
 }
 
 SurfaceId Surface::id() const { return id_; }
-void Surface::setId(const SurfaceId& id) { id_ = id; }
+void Surface::setId(const SurfaceId& id) {
+    if (id_ == id) return;
+    id_ = id;
+    markDirty();
+}
 
 std::string Surface::name() const { return name_; }
-void Surface::setName(const std::string& n) { name_ = n; }
+void Surface::setName(const std::string& n) {
+    if (name_ == n) return;
+    name_ = n;
+    markDirty();
+}
 
 bool Surface::isVisible() const { return visible_; }
-void Surface::setVisible(bool v) { visible_ = v; }
+void Surface::setVisible(bool v) {
+    if (visible_ == v) return;
+    visible_ = v;
+    markDirty();
+}
 
 bool Surface::isLocked() const { return locked_; }
-void Surface::setLocked(bool l) { locked_ = l; }
+void Surface::setLocked(bool l) {
+    if (locked_ == l) return;
+    locked_ = l;
+    markDirty();
+}
 
 float Surface::opacity() const { return opacity_; }
-void Surface::setOpacity(float o) { opacity_ = o; }
+void Surface::setOpacity(float o) {
+    if (opacity_ == o) return;
+    opacity_ = o;
+    markDirty();
+}
 
 SourceId Surface::source() const { return source_; }
-void Surface::setSource(const SourceId& s) { source_ = s; }
+void Surface::setSource(const SourceId& s) {
+    if (source_ == s) return;
+    source_ = s;
+    markDirty();
+}
 
 Rect Surface::sourceRect() const { return sourceRect_; }
-void Surface::setSourceRect(const Rect& r) { sourceRect_ = r; }
+void Surface::setSourceRect(const Rect& r) {
+    if (sourceRect_.x == r.x && sourceRect_.y == r.y &&
+        sourceRect_.w == r.w && sourceRect_.h == r.h) return;
+    sourceRect_ = r;
+    markDirty();
+}
 
 BlendSettings Surface::blend() const { return blend_; }
-void Surface::setBlend(const BlendSettings& s) { blend_ = s; }
+void Surface::setBlend(const BlendSettings& s) {
+    blend_ = s;
+    markDirty();
+}
 
 ColorCorrection Surface::colorCorrection() const { return colorCorrection_; }
-void Surface::setColorCorrection(const ColorCorrection& c) { colorCorrection_ = c; }
+void Surface::setColorCorrection(const ColorCorrection& c) {
+    colorCorrection_ = c;
+    markDirty();
+}
 
 std::vector<MapWrapMask>& Surface::masks() {
     markDirty();

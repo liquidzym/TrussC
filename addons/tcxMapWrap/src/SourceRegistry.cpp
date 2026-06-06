@@ -137,8 +137,8 @@ void SourceRegistry::add(std::shared_ptr<Source> source) {
 // Remove / query
 // ===========================================================================
 
-void SourceRegistry::remove(const SourceId& id) {
-    impl_->sources.erase(id);
+bool SourceRegistry::remove(const SourceId& id) {
+    return impl_->sources.erase(id) > 0;
 }
 
 void SourceRegistry::clear() {

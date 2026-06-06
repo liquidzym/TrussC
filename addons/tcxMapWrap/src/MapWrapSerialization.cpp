@@ -218,25 +218,34 @@ static bool stringToPlaybackMode(const std::string& s, SourcePlaybackMode& mode)
 
 static Json vec2ToJson(Vec2 v) { return Json::array({v.x, v.y}); }
 static Vec2 jsonToVec2(const Json& j, Vec2 fallback = Vec2(0,0)) {
-    if (j.is_array() && j.size() >= 2) return Vec2(j[0].get<float>(), j[1].get<float>());
+    if (j.is_array() && j.size() >= 2 && j[0].is_number() && j[1].is_number())
+        return Vec2(j[0].get<float>(), j[1].get<float>());
     return fallback;
 }
 
 static Json vec3ToJson(Vec3 v) { return Json::array({v.x, v.y, v.z}); }
 static Vec3 jsonToVec3(const Json& j, Vec3 fallback = Vec3(0,0,0)) {
-    if (j.is_array() && j.size() >= 3) return Vec3(j[0].get<float>(), j[1].get<float>(), j[2].get<float>());
+    if (j.is_array() && j.size() >= 3 &&
+        j[0].is_number() && j[1].is_number() && j[2].is_number())
+        return Vec3(j[0].get<float>(), j[1].get<float>(), j[2].get<float>());
     return fallback;
 }
 
 static Json vec4ToJson(Vec4 v) { return Json::array({v.x, v.y, v.z, v.w}); }
 static Vec4 jsonToVec4(const Json& j, Vec4 fallback = Vec4(0,0,0,0)) {
-    if (j.is_array() && j.size() >= 4) return Vec4(j[0].get<float>(), j[1].get<float>(), j[2].get<float>(), j[3].get<float>());
+    if (j.is_array() && j.size() >= 4 &&
+        j[0].is_number() && j[1].is_number() &&
+        j[2].is_number() && j[3].is_number())
+        return Vec4(j[0].get<float>(), j[1].get<float>(), j[2].get<float>(), j[3].get<float>());
     return fallback;
 }
 
 static Json rectToJson(Rect r) { return Json::array({r.x, r.y, r.w, r.h}); }
 static Rect jsonToRect(const Json& j, Rect fallback = Rect(0,0,0,0)) {
-    if (j.is_array() && j.size() >= 4) return Rect(j[0].get<float>(), j[1].get<float>(), j[2].get<float>(), j[3].get<float>());
+    if (j.is_array() && j.size() >= 4 &&
+        j[0].is_number() && j[1].is_number() &&
+        j[2].is_number() && j[3].is_number())
+        return Rect(j[0].get<float>(), j[1].get<float>(), j[2].get<float>(), j[3].get<float>());
     return fallback;
 }
 
@@ -259,13 +268,13 @@ static Json blendSettingsToJson(const BlendSettings& b) {
 static BlendSettings jsonToBlendSettings(const Json& j) {
     BlendSettings b;
     if (!j.is_object()) return b;
-    if (j.contains("opacity"))    b.opacity    = j["opacity"].get<float>();
-    if (j.contains("brightness")) b.brightness = j["brightness"].get<float>();
+    if (j.contains("opacity") && j["opacity"].is_number())       b.opacity    = j["opacity"].get<float>();
+    if (j.contains("brightness") && j["brightness"].is_number()) b.brightness = j["brightness"].get<float>();
     if (j.contains("edge"))       b.edge       = jsonToVec4(j["edge"], b.edge);
     if (j.contains("gamma"))      b.gamma      = jsonToVec3(j["gamma"], b.gamma);
     if (j.contains("luminance"))  b.luminance  = jsonToVec3(j["luminance"], b.luminance);
-    if (j.contains("exponent"))   b.exponent   = j["exponent"].get<float>();
-    if (j.contains("enabled"))    b.enabled    = j["enabled"].get<bool>();
+    if (j.contains("exponent") && j["exponent"].is_number())     b.exponent   = j["exponent"].get<float>();
+    if (j.contains("enabled") && j["enabled"].is_boolean())      b.enabled    = j["enabled"].get<bool>();
     return b;
 }
 
@@ -288,17 +297,18 @@ static Json colorCorrectionToJson(const ColorCorrection& c) {
 static ColorCorrection jsonToColorCorrection(const Json& j) {
     ColorCorrection c;
     if (!j.is_object()) return c;
-    if (j.contains("enabled"))            c.enabled            = j["enabled"].get<bool>();
-    if (j.contains("opacity"))            c.opacity            = j["opacity"].get<float>();
-    if (j.contains("brightness"))         c.brightness         = j["brightness"].get<float>();
-    if (j.contains("contrast"))           c.contrast           = j["contrast"].get<float>();
-    if (j.contains("saturation"))         c.saturation         = j["saturation"].get<float>();
+    if (j.contains("enabled") && j["enabled"].is_boolean())     c.enabled            = j["enabled"].get<bool>();
+    if (j.contains("opacity") && j["opacity"].is_number())      c.opacity            = j["opacity"].get<float>();
+    if (j.contains("brightness") && j["brightness"].is_number()) c.brightness        = j["brightness"].get<float>();
+    if (j.contains("contrast") && j["contrast"].is_number())    c.contrast           = j["contrast"].get<float>();
+    if (j.contains("saturation") && j["saturation"].is_number()) c.saturation        = j["saturation"].get<float>();
     if (j.contains("gamma"))              c.gamma              = jsonToVec3(j["gamma"], c.gamma);
     if (j.contains("lift"))               c.lift               = jsonToVec3(j["lift"], c.lift);
     if (j.contains("gain"))               c.gain               = jsonToVec3(j["gain"], c.gain);
-    if (j.contains("blackLevel"))         c.blackLevel         = j["blackLevel"].get<float>();
-    if (j.contains("whiteLevel"))         c.whiteLevel         = j["whiteLevel"].get<float>();
-    if (j.contains("premultipliedAlpha")) c.premultipliedAlpha = j["premultipliedAlpha"].get<bool>();
+    if (j.contains("blackLevel") && j["blackLevel"].is_number()) c.blackLevel        = j["blackLevel"].get<float>();
+    if (j.contains("whiteLevel") && j["whiteLevel"].is_number()) c.whiteLevel        = j["whiteLevel"].get<float>();
+    if (j.contains("premultipliedAlpha") && j["premultipliedAlpha"].is_boolean())
+        c.premultipliedAlpha = j["premultipliedAlpha"].get<bool>();
     return c;
 }
 
@@ -416,6 +426,7 @@ static std::shared_ptr<Source> jsonToSource(const Json& j, std::vector<std::stri
         case SourceKind::Generated: {
             auto s = std::make_shared<SourceGenerated>();
             s->setSize(size);
+            warnings.push_back("Generated source restored without callback; host app must re-register callback");
             source = s;
             break;
         }
@@ -847,18 +858,18 @@ static std::shared_ptr<Surface> jsonToSurface(const Json& j, std::vector<std::st
         case SurfaceKind::Polygon: {
             auto& poly = static_cast<SurfacePolygon&>(*surface);
             if (j.contains("destinationPoints") && j["destinationPoints"].is_array()) {
-                auto& pts = poly.destinationPoints();
-                pts.clear();
+                std::vector<Vec2> pts;
                 for (const auto& pj : j["destinationPoints"]) {
                     pts.push_back(jsonToVec2(pj));
                 }
+                poly.setDestinationPoints(pts);
             }
             if (j.contains("uvPoints") && j["uvPoints"].is_array()) {
-                auto& pts = poly.uvPoints();
-                pts.clear();
+                std::vector<Vec2> pts;
                 for (const auto& pj : j["uvPoints"]) {
                     pts.push_back(jsonToVec2(pj));
                 }
+                poly.setUvPoints(pts);
             }
             if (j.contains("closed")) {
                 poly.setClosed(j["closed"].get<bool>());
@@ -1057,6 +1068,7 @@ static void jsonToStage(MapWrapStage& stage, const Json& j, std::vector<std::str
         for (const auto& oj : j["outputs"]) {
             outputs.push_back(jsonToOutput(oj, warnings));
         }
+        stage.ensureDefaultOutput();
     }
 
     // Global masks
@@ -1191,6 +1203,7 @@ LoadResult MapWrapSerialization::loadFromString(MapWrapDocument& document, const
         return LoadResult::error("Root JSON is not an object");
     }
 
+    try {
     // Schema check
     if (root.contains("schema")) {
         std::string schema = root["schema"].get<std::string>();
@@ -1298,6 +1311,9 @@ LoadResult MapWrapSerialization::loadFromString(MapWrapDocument& document, const
         return LoadResult::success();
     }
     return LoadResult::successWithWarnings(std::move(warnings));
+    } catch (const Json::exception& e) {
+        return LoadResult::error(std::string("JSON conversion error: ") + e.what());
+    }
 }
 
 LoadResult MapWrapSerialization::loadFromString(MapWrapDocument& document,
@@ -1309,21 +1325,26 @@ LoadResult MapWrapSerialization::loadFromString(MapWrapDocument& document,
     Json root;
     try {
         root = Json::parse(jsonStr);
-    } catch (const Json::parse_error& e) {
+    } catch (const Json::exception& e) {
         return LoadResult::error(std::string("JSON parse error: ") + e.what());
     }
+
+    sources.clear();
 
     if (!root.contains("sources")) {
         result.warnings.push_back("Missing sources section");
     } else if (!root["sources"].is_array()) {
         result.warnings.push_back("Invalid sources section");
     } else {
-        sources.clear();
-        for (const auto& sj : root["sources"]) {
-            auto source = jsonToSource(sj, result.warnings);
-            if (source) {
-                sources.add(source);
+        try {
+            for (const auto& sj : root["sources"]) {
+                auto source = jsonToSource(sj, result.warnings);
+                if (source) {
+                    sources.add(source);
+                }
             }
+        } catch (const Json::exception& e) {
+            return LoadResult::error(std::string("JSON conversion error: ") + e.what());
         }
     }
 

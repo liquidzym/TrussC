@@ -4,8 +4,10 @@
 
 #include "tcxMapWrap/MapWrapDocument.h"
 #include "tcxMapWrap/MapWrapInput.h"
+#include "tcxMapWrap/MapWrapAutosave.h"
 #include "tcxMapWrap/SourceGenerated.h"
 #include "tcxMapWrap/SurfaceCircle.h"
+#include "tcxMapWrap/SurfaceGrid.h"
 #include "tcxMapWrap/SurfacePolygon.h"
 #include "tcxMapWrap/SurfaceQuad.h"
 #include "tcxMapWrap/UndoStack.h"
@@ -14,6 +16,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -205,4 +208,86 @@ TEST(generated_source_pixel_callback_writes_output_buffer) {
     ASSERT_EQ(static_cast<int>(pixels[1]), 20);
     ASSERT_EQ(static_cast<int>(pixels[2]), 30);
     ASSERT_EQ(static_cast<int>(pixels[3]), 255);
+}
+
+// ---------------------------------------------------------------------------
+TEST(document_reorder_surface_uses_final_index) {
+    MapWrapDocument doc;
+    auto a = std::make_shared<SurfaceQuad>();
+    auto b = std::make_shared<SurfaceQuad>();
+    auto c = std::make_shared<SurfaceQuad>();
+    a->setId("A");
+    b->setId("B");
+    c->setId("C");
+    doc.addSurface(a);
+    doc.addSurface(b);
+    doc.addSurface(c);
+
+    doc.reorderSurface("A", 1);
+    ASSERT_EQ(doc.surfaces()[0]->id(), std::string("B"));
+    ASSERT_EQ(doc.surfaces()[1]->id(), std::string("A"));
+    ASSERT_EQ(doc.surfaces()[2]->id(), std::string("C"));
+
+    doc.reorderSurface("A", 2);
+    ASSERT_EQ(doc.surfaces()[0]->id(), std::string("B"));
+    ASSERT_EQ(doc.surfaces()[1]->id(), std::string("C"));
+    ASSERT_EQ(doc.surfaces()[2]->id(), std::string("A"));
+}
+
+// ---------------------------------------------------------------------------
+TEST(grid_constructor_clamps_and_bounds_checks_points) {
+    SurfaceGrid grid(0, 0);
+    ASSERT_EQ(grid.cols(), 2);
+    ASSERT_EQ(grid.rows(), 2);
+
+    Vec2 before = grid.gridPoint(0, 0);
+    grid.setGridPoint(-1, 0, Vec2(0.8f, 0.8f));
+    grid.setGridPoint(100, 100, Vec2(0.8f, 0.8f));
+    Vec2 after = grid.gridPoint(0, 0);
+    ASSERT_NEAR(after.x, before.x, 1e-5f);
+    ASSERT_NEAR(after.y, before.y, 1e-5f);
+
+    Vec2 invalid = grid.gridPoint(100, 100);
+    ASSERT_NEAR(invalid.x, 0.0f, 1e-5f);
+    ASSERT_NEAR(invalid.y, 0.0f, 1e-5f);
+}
+
+// ---------------------------------------------------------------------------
+TEST(quad_homography_fallback_preserves_perspective_setting) {
+    SurfaceQuad quad;
+    quad.setPerspectiveCorrection(true);
+    quad.setUvPoints({{
+        Vec2(0.0f, 0.0f),
+        Vec2(0.0f, 0.0f),
+        Vec2(0.0f, 0.0f),
+        Vec2(0.0f, 0.0f)
+    }});
+
+    MeshBuildContext ctx;
+    auto result = quad.buildMesh(ctx);
+    ASSERT_TRUE(result.ok);
+    ASSERT_TRUE(quad.perspectiveCorrection());
+}
+
+// ---------------------------------------------------------------------------
+TEST(autosave_preserves_document_dirty_flag) {
+    MapWrapDocument doc;
+    doc.setName("Dirty/Autosave:Project");
+    doc.markDirty();
+
+    AutosaveSettings settings;
+    settings.enabled = true;
+    settings.intervalSeconds = 1.0f;
+    settings.maxBackups = 3;
+    settings.autosaveFolder =
+        (std::filesystem::temp_directory_path() / "tcxMapWrap_autosave_test").string();
+    std::filesystem::remove_all(settings.autosaveFolder);
+
+    MapWrapAutosave autosave;
+    autosave.setup(&doc, settings);
+    Result result = autosave.forceSave();
+    ASSERT_TRUE(result.ok);
+    ASSERT_TRUE(doc.isDirty());
+
+    std::filesystem::remove_all(settings.autosaveFolder);
 }

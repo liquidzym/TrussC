@@ -255,3 +255,19 @@ TEST(cant_redo_after_new_push) {
     ASSERT_TRUE(!stack.redo());  // can't redo old commands
     ASSERT_EQ(val, 3);
 }
+
+// ---------------------------------------------------------------------------
+TEST(push_already_executed_does_not_execute_twice) {
+    UndoStack stack;
+
+    int val = 1;
+    auto cmd = std::make_unique<TestCommand>(&val, 1, 0, "already executed");
+    stack.pushAlreadyExecuted(std::move(cmd));
+
+    ASSERT_EQ(val, 1);
+    ASSERT_TRUE(stack.canUndo());
+    ASSERT_TRUE(stack.undo());
+    ASSERT_EQ(val, 0);
+    ASSERT_TRUE(stack.redo());
+    ASSERT_EQ(val, 1);
+}

@@ -407,3 +407,54 @@ TEST(bezier_surface_roundtrip) {
     ASSERT_NEAR(loaded->controlPoint(2, 1).x, 0.44f, 1e-4f);
     ASSERT_NEAR(loaded->controlPoint(2, 1).y, 0.37f, 1e-4f);
 }
+
+// ---------------------------------------------------------------------------
+TEST(malformed_field_type_returns_load_error) {
+    std::string json = R"({
+        "schema": "tcxMapWrap.composition",
+        "version": "1",
+        "designCanvasSize": ["bad", 1080],
+        "surfaces": []
+    })";
+
+    MapWrapDocument doc;
+    auto result = MapWrapSerialization::loadFromString(doc, json);
+    ASSERT_TRUE(!result.ok);
+    ASSERT_TRUE(result.message.find("JSON") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+TEST(stage_empty_outputs_restores_default_output) {
+    std::string json = R"({
+        "schema": "tcxMapWrap.composition",
+        "version": 1,
+        "stage": {
+            "outputs": []
+        },
+        "surfaces": []
+    })";
+
+    MapWrapDocument doc;
+    auto result = MapWrapSerialization::loadFromString(doc, json);
+    ASSERT_TRUE(result.ok);
+    ASSERT_TRUE(doc.stage().outputs().size() >= 1u);
+}
+
+// ---------------------------------------------------------------------------
+TEST(source_registry_load_without_sources_clears_existing_registry) {
+    MapWrapDocument doc;
+    SourceRegistry sources;
+    SourceId oldId = sources.addBuiltinPattern(
+        "Old Bars", BuiltinPatternKind::ColorBars, Vec2(320, 240));
+    ASSERT_TRUE(sources.has(oldId));
+
+    std::string json = R"({
+        "schema": "tcxMapWrap.composition",
+        "version": 1,
+        "surfaces": []
+    })";
+
+    auto result = MapWrapSerialization::loadFromString(doc, sources, json);
+    ASSERT_TRUE(result.ok);
+    ASSERT_TRUE(!sources.has(oldId));
+}
