@@ -197,6 +197,10 @@ void WarpPerspective::reset() {
     dst_ = {{ Vec2(0,0), Vec2(1,0), Vec2(1,1), Vec2(0,1) }};
 }
 
+std::unique_ptr<Warp> WarpPerspective::clone() const {
+    return std::make_unique<WarpPerspective>(*this);
+}
+
 std::array<Vec2, 4>& WarpPerspective::srcPoints() { return src_; }
 const std::array<Vec2, 4>& WarpPerspective::srcPoints() const { return src_; }
 std::array<Vec2, 4>& WarpPerspective::dstPoints() { return dst_; }

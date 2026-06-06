@@ -50,5 +50,9 @@ void WarpGrid::reset() {
     // The base class has no persistent grid points (those belong to SurfaceGrid)
 }
 
+std::unique_ptr<Warp> WarpGrid::clone() const {
+    return std::make_unique<WarpGrid>(*this);
+}
+
 } // namespace mapwrap
 } // namespace tcx

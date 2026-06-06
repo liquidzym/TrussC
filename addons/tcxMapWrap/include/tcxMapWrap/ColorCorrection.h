@@ -7,4 +7,3 @@
 
 // ColorCorrection is defined in MapWrapTypes.h
 // This header exists for include symmetry per the task book.
-#include "tcxMapWrap/MapWrapTypes.h"

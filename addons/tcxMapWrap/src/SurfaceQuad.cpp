@@ -87,10 +87,38 @@ static float distanceVec2(Vec2 a, Vec2 b) {
 
 SurfaceQuad::SurfaceQuad() { name_ = "Quad"; }
 
-std::array<Vec2, 4>& SurfaceQuad::destinationPoints() { return dest_; }
+std::unique_ptr<Surface> SurfaceQuad::clone() const {
+    return std::make_unique<SurfaceQuad>(*this);
+}
+
+std::array<Vec2, 4>& SurfaceQuad::destinationPoints() {
+    markDirty();
+    return dest_;
+}
 const std::array<Vec2, 4>& SurfaceQuad::destinationPoints() const { return dest_; }
-std::array<Vec2, 4>& SurfaceQuad::uvPoints() { return uv_; }
+void SurfaceQuad::setDestinationPoint(int index, Vec2 pos) {
+    if (index < 0 || index >= 4) return;
+    dest_[index] = pos;
+    markDirty();
+}
+void SurfaceQuad::setDestinationPoints(const std::array<Vec2, 4>& points) {
+    dest_ = points;
+    markDirty();
+}
+std::array<Vec2, 4>& SurfaceQuad::uvPoints() {
+    markDirty();
+    return uv_;
+}
 const std::array<Vec2, 4>& SurfaceQuad::uvPoints() const { return uv_; }
+void SurfaceQuad::setUvPoint(int index, Vec2 uv) {
+    if (index < 0 || index >= 4) return;
+    uv_[index] = uv;
+    markDirty();
+}
+void SurfaceQuad::setUvPoints(const std::array<Vec2, 4>& points) {
+    uv_ = points;
+    markDirty();
+}
 bool SurfaceQuad::perspectiveCorrection() const { return perspective_; }
 void SurfaceQuad::setPerspectiveCorrection(bool e) { perspective_ = e; markDirty(); }
 int SurfaceQuad::meshResolution() const { return meshResolution_; }

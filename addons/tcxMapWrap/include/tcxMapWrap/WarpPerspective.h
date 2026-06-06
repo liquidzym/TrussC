@@ -18,6 +18,7 @@ class WarpPerspective : public Warp {
 public:
     WarpKind kind() const override { return WarpKind::Perspective; }
     void reset() override;
+    std::unique_ptr<Warp> clone() const override;
 
     std::array<Vec2, 4>& srcPoints();
     const std::array<Vec2, 4>& srcPoints() const;

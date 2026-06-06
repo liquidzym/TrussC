@@ -24,27 +24,33 @@ struct PointerEvent {
     bool ctrl = false;
     bool super_ = false;
 
-    static PointerEvent mouse(Vec2 pos, int button) {
+    PointerEvent withType(Type newType) const {
+        PointerEvent e = *this;
+        e.type = newType;
+        return e;
+    }
+
+    static PointerEvent mouse(Vec2 pos, int button, Type type = Type::Down) {
         PointerEvent e;
-        e.type = Type::Down;
+        e.type = type;
         e.device = Device::Mouse;
         e.positionPixels = pos;
         e.button = button;
         return e;
     }
 
-    static PointerEvent touch(Vec2 pos, int pointerId) {
+    static PointerEvent touch(Vec2 pos, int pointerId, Type type = Type::Down) {
         PointerEvent e;
-        e.type = Type::Down;
+        e.type = type;
         e.device = Device::Touch;
         e.positionPixels = pos;
         e.pointerId = pointerId;
         return e;
     }
 
-    static PointerEvent pen(Vec2 pos, float pressure) {
+    static PointerEvent pen(Vec2 pos, float pressure, Type type = Type::Down) {
         PointerEvent e;
-        e.type = Type::Down;
+        e.type = type;
         e.device = Device::Pen;
         e.positionPixels = pos;
         e.pressure = pressure;

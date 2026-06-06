@@ -13,6 +13,10 @@ class SurfaceCircle : public Surface {
 public:
     SurfaceCircle();
     SurfaceKind kind() const override { return SurfaceKind::Circle; }
+    std::unique_ptr<Surface> clone() const override;
+
+    static constexpr int kMinSegments = 3;
+    static constexpr int kMaxSegments = 128;
 
     Vec2 center() const;
     void setCenter(Vec2 center);

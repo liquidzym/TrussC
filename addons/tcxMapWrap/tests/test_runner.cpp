@@ -169,6 +169,18 @@ extern void test_available_languages_includes_en_zh();
 extern void test_reset_to_detected_reverts();
 extern void test_on_language_change_callback_fires();
 
+// test_api_regressions.cpp
+extern void test_surface_mutable_geometry_access_marks_dirty();
+extern void test_surface_clone_deep_copies_common_and_geometry_state();
+extern void test_warp_clone_deep_copies_state();
+extern void test_delete_surface_undo_restores_snapshot_clone();
+extern void test_polygon_add_remove_keeps_uv_points_in_sync();
+extern void test_circle_segments_clamped_to_supported_range();
+extern void test_mat3_helpers_multiply_transform_and_compare();
+extern void test_pointer_event_factories_allow_non_down_types();
+extern void test_document_const_get_surface_returns_const_pointer();
+extern void test_generated_source_pixel_callback_writes_output_buffer();
+
 // --------------------------------------------------------------------------
 // Test registry
 // --------------------------------------------------------------------------
@@ -324,6 +336,18 @@ static std::vector<TestCase> allTests = {
     {"i18n::available_languages_includes_en_zh",         test_available_languages_includes_en_zh},
     {"i18n::reset_to_detected_reverts",                  test_reset_to_detected_reverts},
     {"i18n::on_language_change_callback_fires",          test_on_language_change_callback_fires},
+
+    // test_api_regressions.cpp
+    {"api::surface_mutable_geometry_access_marks_dirty", test_surface_mutable_geometry_access_marks_dirty},
+    {"api::surface_clone_deep_copies_common_and_geometry_state", test_surface_clone_deep_copies_common_and_geometry_state},
+    {"api::warp_clone_deep_copies_state",                test_warp_clone_deep_copies_state},
+    {"api::delete_surface_undo_restores_snapshot_clone", test_delete_surface_undo_restores_snapshot_clone},
+    {"api::polygon_add_remove_keeps_uv_points_in_sync",  test_polygon_add_remove_keeps_uv_points_in_sync},
+    {"api::circle_segments_clamped_to_supported_range",  test_circle_segments_clamped_to_supported_range},
+    {"api::mat3_helpers_multiply_transform_and_compare", test_mat3_helpers_multiply_transform_and_compare},
+    {"api::pointer_event_factories_allow_non_down_types", test_pointer_event_factories_allow_non_down_types},
+    {"api::document_const_get_surface_returns_const_pointer", test_document_const_get_surface_returns_const_pointer},
+    {"api::generated_source_pixel_callback_writes_output_buffer", test_generated_source_pixel_callback_writes_output_buffer},
 };
 
 // --------------------------------------------------------------------------

@@ -13,12 +13,17 @@ class SurfaceQuad : public Surface {
 public:
     SurfaceQuad();
     SurfaceKind kind() const override { return SurfaceKind::Quad; }
+    std::unique_ptr<Surface> clone() const override;
 
     std::array<Vec2, 4>& destinationPoints();
     const std::array<Vec2, 4>& destinationPoints() const;
+    void setDestinationPoint(int index, Vec2 pos);
+    void setDestinationPoints(const std::array<Vec2, 4>& points);
 
     std::array<Vec2, 4>& uvPoints();
     const std::array<Vec2, 4>& uvPoints() const;
+    void setUvPoint(int index, Vec2 uv);
+    void setUvPoints(const std::array<Vec2, 4>& points);
 
     bool perspectiveCorrection() const;
     void setPerspectiveCorrection(bool enabled);

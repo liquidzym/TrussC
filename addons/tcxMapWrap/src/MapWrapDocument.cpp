@@ -269,6 +269,15 @@ std::shared_ptr<Surface> MapWrapDocument::getSurface(const SurfaceId& id) {
     return nullptr;
 }
 
+std::shared_ptr<const Surface> MapWrapDocument::getSurface(const SurfaceId& id) const {
+    for (const auto& surface : impl_->surfaces) {
+        if (surface && surface->id() == id) {
+            return surface;
+        }
+    }
+    return nullptr;
+}
+
 const std::vector<std::shared_ptr<Surface>>& MapWrapDocument::surfaces() const {
     return impl_->surfaces;
 }

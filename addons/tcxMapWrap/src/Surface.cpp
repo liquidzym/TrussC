@@ -6,6 +6,7 @@
 #include "tcxMapWrap/MapWrapI18n.h"
 
 #include <atomic>
+#include <utility>
 
 namespace tcx {
 namespace mapwrap {
@@ -50,8 +51,21 @@ void Surface::setBlend(const BlendSettings& s) { blend_ = s; }
 ColorCorrection Surface::colorCorrection() const { return colorCorrection_; }
 void Surface::setColorCorrection(const ColorCorrection& c) { colorCorrection_ = c; }
 
-std::vector<MapWrapMask>& Surface::masks() { return masks_; }
+std::vector<MapWrapMask>& Surface::masks() {
+    markDirty();
+    return masks_;
+}
 const std::vector<MapWrapMask>& Surface::masks() const { return masks_; }
+
+void Surface::setMasks(const std::vector<MapWrapMask>& masks) {
+    masks_ = masks;
+    markDirty();
+}
+
+void Surface::setMasks(std::vector<MapWrapMask>&& masks) {
+    masks_ = std::move(masks);
+    markDirty();
+}
 
 bool Surface::isDirty() const { return dirty_; }
 

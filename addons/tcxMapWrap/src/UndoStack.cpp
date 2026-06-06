@@ -19,6 +19,12 @@
 namespace tcx {
 namespace mapwrap {
 
+static std::shared_ptr<Surface> cloneSurfaceShared(const std::shared_ptr<Surface>& surface) {
+    if (!surface) return nullptr;
+    std::unique_ptr<Surface> cloned = surface->clone();
+    return std::shared_ptr<Surface>(std::move(cloned));
+}
+
 // =============================================================================
 // UndoStack core
 // =============================================================================
@@ -200,7 +206,7 @@ DeleteSurfaceCommand::DeleteSurfaceCommand(MapWrapDocument* doc,
                                            std::shared_ptr<Surface> surface,
                                            int index)
     : doc_(doc)
-    , surface_(std::move(surface))
+    , surface_(cloneSurfaceShared(surface))
     , index_(index)
 {}
 

@@ -53,6 +53,12 @@ static void restoreSnapshot(Surface& surface, const SurfaceSnapshot& snap);
 static std::string applyProperty(Surface& surface, const std::string& path,
                                   const std::string& value);
 
+static std::shared_ptr<Surface> cloneSurfaceShared(const std::shared_ptr<Surface>& surface) {
+    if (!surface) return nullptr;
+    std::unique_ptr<Surface> cloned = surface->clone();
+    return std::shared_ptr<Surface>(std::move(cloned));
+}
+
 // ---------------------------------------------------------------------------
 // Undo commands
 // ---------------------------------------------------------------------------
@@ -95,7 +101,7 @@ class EditorDeleteSurfaceCommand : public Command {
 public:
     EditorDeleteSurfaceCommand(MapWrapDocument* doc,
                                std::shared_ptr<Surface> surface, int originalIndex)
-        : doc_(doc), surface_(std::move(surface)), originalIndex_(originalIndex) {}
+        : doc_(doc), surface_(cloneSurfaceShared(surface)), originalIndex_(originalIndex) {}
 
     void execute() override {
         if (surface_) doc_->removeSurface(surface_->id());

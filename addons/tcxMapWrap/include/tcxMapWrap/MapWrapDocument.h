@@ -47,6 +47,7 @@ public:
     void reorderSurface(const SurfaceId& id, int newIndex);
     int surfaceIndex(const SurfaceId& id) const;
     std::shared_ptr<Surface> getSurface(const SurfaceId& id);
+    std::shared_ptr<const Surface> getSurface(const SurfaceId& id) const;
     const std::vector<std::shared_ptr<Surface>>& surfaces() const;
 
     // Surface groups

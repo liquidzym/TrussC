@@ -50,6 +50,10 @@ static bool pointInEllipse(Vec2 p, Vec2 center, float rx, float ry, float rotati
 
 SurfaceCircle::SurfaceCircle() { name_ = "Circle"; }
 
+std::unique_ptr<Surface> SurfaceCircle::clone() const {
+    return std::make_unique<SurfaceCircle>(*this);
+}
+
 Vec2 SurfaceCircle::center() const { return center_; }
 void SurfaceCircle::setCenter(Vec2 c) { center_ = c; markDirty(); }
 float SurfaceCircle::radiusX() const { return radiusX_; }
@@ -59,7 +63,10 @@ void SurfaceCircle::setRadiusY(float r) { radiusY_ = r; markDirty(); }
 float SurfaceCircle::rotation() const { return rotation_; }
 void SurfaceCircle::setRotation(float d) { rotation_ = d; markDirty(); }
 int SurfaceCircle::segments() const { return segments_; }
-void SurfaceCircle::setSegments(int s) { segments_ = std::max(3, s); markDirty(); }
+void SurfaceCircle::setSegments(int s) {
+    segments_ = std::max(kMinSegments, std::min(kMaxSegments, s));
+    markDirty();
+}
 
 // ===========================================================================
 // buildMesh — triangle fan
@@ -68,7 +75,7 @@ MeshBuildResult SurfaceCircle::buildMesh(const MeshBuildContext& ctx) {
     MeshBuildResult result;
     MeshData& mesh = result.mesh;
 
-    int segs = std::max(3, segments_);
+    int segs = std::max(kMinSegments, std::min(kMaxSegments, segments_));
     mesh.vertices.reserve(size_t(segs + 2) * 2);
     mesh.uvs.reserve(size_t(segs + 2) * 2);
     mesh.indices.reserve(size_t(segs) * 3);

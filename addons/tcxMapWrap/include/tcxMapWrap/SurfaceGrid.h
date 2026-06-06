@@ -13,6 +13,7 @@ class SurfaceGrid : public Surface {
 public:
     SurfaceGrid(int cols = 3, int rows = 3);
     SurfaceKind kind() const override { return SurfaceKind::Grid; }
+    std::unique_ptr<Surface> clone() const override;
 
     int cols() const;
     int rows() const;
@@ -42,7 +43,7 @@ private:
     int rows_ = 3;
     std::vector<Vec2> points_;
     bool curved_ = false;
-    int meshRes_ = 1;
+    int meshResolution_ = 1;
 };
 
 } // namespace mapwrap

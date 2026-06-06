@@ -62,6 +62,10 @@ SurfaceGrid::SurfaceGrid(int cols, int rows) : cols_(cols), rows_(rows) {
 int SurfaceGrid::cols() const { return cols_; }
 int SurfaceGrid::rows() const { return rows_; }
 
+std::unique_ptr<Surface> SurfaceGrid::clone() const {
+    return std::make_unique<SurfaceGrid>(*this);
+}
+
 void SurfaceGrid::setCols(int c) {
     if (c == cols_) return;
     int newCols = std::max(1, c);
@@ -212,11 +216,11 @@ void SurfaceGrid::removeRow() {
 
 bool SurfaceGrid::curvedInterpolation() const { return curved_; }
 void SurfaceGrid::setCurvedInterpolation(bool c) { curved_ = c; markDirty(); }
-int SurfaceGrid::meshResolution() const { return meshRes_; }
+int SurfaceGrid::meshResolution() const { return meshResolution_; }
 void SurfaceGrid::setMeshResolution(int r) {
     int clamped = std::max(1, std::min(64, r));
-    if (clamped == meshRes_) return;
-    meshRes_ = clamped;
+    if (clamped == meshResolution_) return;
+    meshResolution_ = clamped;
     markDirty();
 }
 
@@ -227,7 +231,7 @@ MeshBuildResult SurfaceGrid::buildMesh(const MeshBuildContext& ctx) {
     MeshBuildResult result;
     MeshData& mesh = result.mesh;
 
-    int res = std::max(1, meshRes_);
+    int res = std::max(1, meshResolution_);
     int meshCols = cols_ * res;
     int meshRows = rows_ * res;
     int stride = meshCols + 1;

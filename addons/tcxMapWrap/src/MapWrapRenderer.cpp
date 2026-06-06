@@ -339,21 +339,23 @@ struct MapWrapRenderer::Impl {
         }
 
         runtime.pixels.assign(static_cast<size_t>(w) * static_cast<size_t>(h) * 4, 0);
-        double time = generated.elapsedSeconds();
-        for (int y = 0; y < h; ++y) {
-            float v = h > 1 ? static_cast<float>(y) / static_cast<float>(h - 1) : 0.0f;
-            for (int x = 0; x < w; ++x) {
-                float u = w > 1 ? static_cast<float>(x) / static_cast<float>(w - 1) : 0.0f;
-                float wave = 0.5f + 0.5f * std::sin(static_cast<float>(time) * 2.2f + u * 9.0f + v * 6.0f);
-                float ringDx = u - 0.5f;
-                float ringDy = v - 0.5f;
-                float ring = 0.5f + 0.5f * std::cos(std::sqrt(ringDx * ringDx + ringDy * ringDy) * 36.0f -
-                                                     static_cast<float>(time) * 5.0f);
-                int idx = (y * w + x) * 4;
-                runtime.pixels[idx + 0] = static_cast<uint8_t>(std::min(255.0f, (0.18f + u * 0.55f + wave * 0.25f) * 255.0f));
-                runtime.pixels[idx + 1] = static_cast<uint8_t>(std::min(255.0f, (0.20f + v * 0.50f + ring * 0.28f) * 255.0f));
-                runtime.pixels[idx + 2] = static_cast<uint8_t>(std::min(255.0f, (0.35f + wave * 0.45f) * 255.0f));
-                runtime.pixels[idx + 3] = 255;
+        if (!generated.generatePixels(runtime.pixels.data(), w, h)) {
+            double time = generated.elapsedSeconds();
+            for (int y = 0; y < h; ++y) {
+                float v = h > 1 ? static_cast<float>(y) / static_cast<float>(h - 1) : 0.0f;
+                for (int x = 0; x < w; ++x) {
+                    float u = w > 1 ? static_cast<float>(x) / static_cast<float>(w - 1) : 0.0f;
+                    float wave = 0.5f + 0.5f * std::sin(static_cast<float>(time) * 2.2f + u * 9.0f + v * 6.0f);
+                    float ringDx = u - 0.5f;
+                    float ringDy = v - 0.5f;
+                    float ring = 0.5f + 0.5f * std::cos(std::sqrt(ringDx * ringDx + ringDy * ringDy) * 36.0f -
+                                                         static_cast<float>(time) * 5.0f);
+                    int idx = (y * w + x) * 4;
+                    runtime.pixels[idx + 0] = static_cast<uint8_t>(std::min(255.0f, (0.18f + u * 0.55f + wave * 0.25f) * 255.0f));
+                    runtime.pixels[idx + 1] = static_cast<uint8_t>(std::min(255.0f, (0.20f + v * 0.50f + ring * 0.28f) * 255.0f));
+                    runtime.pixels[idx + 2] = static_cast<uint8_t>(std::min(255.0f, (0.35f + wave * 0.45f) * 255.0f));
+                    runtime.pixels[idx + 3] = 255;
+                }
             }
         }
 

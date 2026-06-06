@@ -45,6 +45,10 @@ void SourceGenerated::setCallback(GeneratedSourceCallback cb) {
     callback_ = std::move(cb);
 }
 
+void SourceGenerated::setPixelCallback(GeneratedPixelCallback cb) {
+    pixelCallback_ = std::move(cb);
+}
+
 void SourceGenerated::setSize(Vec2 size) {
     size_ = size;
 }
@@ -58,6 +62,14 @@ void SourceGenerated::update(float dt) {
 
 double SourceGenerated::elapsedSeconds() const {
     return elapsedSeconds_;
+}
+
+bool SourceGenerated::generatePixels(uint8_t* rgba, int width, int height) const {
+    if (!pixelCallback_ || !rgba || width <= 0 || height <= 0) {
+        return false;
+    }
+    pixelCallback_(rgba, width, height, elapsedSeconds_, size_);
+    return true;
 }
 
 // ---------------------------------------------------------------------------

@@ -62,6 +62,7 @@ public:
     virtual HitResult hitTest(const Vec2& canvasNormPos, const HitTestOptions& options) const = 0;
     virtual GeometryValidation validateGeometry() const = 0;
     virtual Result repairGeometry();
+    virtual std::unique_ptr<Surface> clone() const = 0;
 
     /// Localized name for the surface kind (e.g. "Quad", "四边形")
     virtual std::string kindName() const;
@@ -70,6 +71,9 @@ public:
     uint64_t revision() const;
     void markDirty();
     void clearDirty();
+
+    void setMasks(const std::vector<MapWrapMask>& masks);
+    void setMasks(std::vector<MapWrapMask>&& masks);
 
 protected:
     SurfaceId id_;

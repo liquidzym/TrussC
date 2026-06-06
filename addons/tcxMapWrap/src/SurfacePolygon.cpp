@@ -105,21 +105,49 @@ static bool isEarTip(const std::vector<Vec2>& poly,
 
 SurfacePolygon::SurfacePolygon() { name_ = "Polygon"; }
 
-std::vector<Vec2>& SurfacePolygon::destinationPoints() { return destPoints_; }
+std::unique_ptr<Surface> SurfacePolygon::clone() const {
+    return std::make_unique<SurfacePolygon>(*this);
+}
+
+std::vector<Vec2>& SurfacePolygon::destinationPoints() {
+    markDirty();
+    return destPoints_;
+}
 const std::vector<Vec2>& SurfacePolygon::destinationPoints() const { return destPoints_; }
-std::vector<Vec2>& SurfacePolygon::uvPoints() { return uvPoints_; }
+void SurfacePolygon::setDestinationPoints(const std::vector<Vec2>& points) {
+    destPoints_ = points;
+    if (uvPoints_.size() != destPoints_.size()) {
+        uvPoints_ = destPoints_;
+    }
+    markDirty();
+}
+std::vector<Vec2>& SurfacePolygon::uvPoints() {
+    markDirty();
+    return uvPoints_;
+}
 const std::vector<Vec2>& SurfacePolygon::uvPoints() const { return uvPoints_; }
+void SurfacePolygon::setUvPoints(const std::vector<Vec2>& points) {
+    uvPoints_ = points;
+    if (uvPoints_.size() > destPoints_.size()) {
+        uvPoints_.resize(destPoints_.size());
+    }
+    markDirty();
+}
 bool SurfacePolygon::closed() const { return closed_; }
 void SurfacePolygon::setClosed(bool c) { closed_ = c; markDirty(); }
 
 void SurfacePolygon::addPoint(Vec2 p) {
     destPoints_.push_back(p);
+    uvPoints_.push_back(p);
     markDirty();
 }
 
 void SurfacePolygon::removePoint(size_t i) {
     if (i < destPoints_.size()) {
         destPoints_.erase(destPoints_.begin() + i);
+        if (i < uvPoints_.size()) {
+            uvPoints_.erase(uvPoints_.begin() + i);
+        }
         markDirty();
     }
 }

@@ -13,12 +13,15 @@ class SurfacePolygon : public Surface {
 public:
     SurfacePolygon();
     SurfaceKind kind() const override { return SurfaceKind::Polygon; }
+    std::unique_ptr<Surface> clone() const override;
 
     std::vector<Vec2>& destinationPoints();
     const std::vector<Vec2>& destinationPoints() const;
+    void setDestinationPoints(const std::vector<Vec2>& points);
 
     std::vector<Vec2>& uvPoints();
     const std::vector<Vec2>& uvPoints() const;
+    void setUvPoints(const std::vector<Vec2>& points);
 
     bool closed() const;
     void setClosed(bool closed);

@@ -61,10 +61,38 @@ static bool pointInTriangle(Vec2 p, Vec2 a, Vec2 b, Vec2 c) {
 
 SurfaceTriangle::SurfaceTriangle() { name_ = "Triangle"; }
 
-std::array<Vec2, 3>& SurfaceTriangle::destinationPoints() { return dest_; }
+std::unique_ptr<Surface> SurfaceTriangle::clone() const {
+    return std::make_unique<SurfaceTriangle>(*this);
+}
+
+std::array<Vec2, 3>& SurfaceTriangle::destinationPoints() {
+    markDirty();
+    return dest_;
+}
 const std::array<Vec2, 3>& SurfaceTriangle::destinationPoints() const { return dest_; }
-std::array<Vec2, 3>& SurfaceTriangle::uvPoints() { return uv_; }
+void SurfaceTriangle::setDestinationPoint(int index, Vec2 pos) {
+    if (index < 0 || index >= 3) return;
+    dest_[index] = pos;
+    markDirty();
+}
+void SurfaceTriangle::setDestinationPoints(const std::array<Vec2, 3>& points) {
+    dest_ = points;
+    markDirty();
+}
+std::array<Vec2, 3>& SurfaceTriangle::uvPoints() {
+    markDirty();
+    return uv_;
+}
 const std::array<Vec2, 3>& SurfaceTriangle::uvPoints() const { return uv_; }
+void SurfaceTriangle::setUvPoint(int index, Vec2 uv) {
+    if (index < 0 || index >= 3) return;
+    uv_[index] = uv;
+    markDirty();
+}
+void SurfaceTriangle::setUvPoints(const std::array<Vec2, 3>& points) {
+    uv_ = points;
+    markDirty();
+}
 
 // ===========================================================================
 // buildMesh

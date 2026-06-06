@@ -13,6 +13,7 @@ class SurfaceBezier : public Surface {
 public:
     SurfaceBezier(int controlCols = 4, int controlRows = 4);
     SurfaceKind kind() const override { return SurfaceKind::Bezier; }
+    std::unique_ptr<Surface> clone() const override;
 
     int controlCols() const;
     int controlRows() const;
@@ -23,6 +24,7 @@ public:
 
     std::vector<Vec2>& controlPoints();
     const std::vector<Vec2>& controlPoints() const;
+    void setControlPoints(const std::vector<Vec2>& points);
 
     int meshResolution() const;
     void setMeshResolution(int resolution);

@@ -16,6 +16,7 @@ class WarpGrid : public Warp {
 public:
     WarpKind kind() const override { return WarpKind::Grid; }
     void reset() override;
+    std::unique_ptr<Warp> clone() const override;
 };
 
 } // namespace mapwrap

@@ -103,6 +103,10 @@ SurfaceBezier::SurfaceBezier(int controlCols, int controlRows)
 int SurfaceBezier::controlCols() const { return controlCols_; }
 int SurfaceBezier::controlRows() const { return controlRows_; }
 
+std::unique_ptr<Surface> SurfaceBezier::clone() const {
+    return std::make_unique<SurfaceBezier>(*this);
+}
+
 void SurfaceBezier::setControlDimensions(int cols, int rows) {
     cols = std::max(2, cols);
     rows = std::max(2, rows);
@@ -139,8 +143,16 @@ void SurfaceBezier::setControlPoint(int col, int row, Vec2 pos) {
     markDirty();
 }
 
-std::vector<Vec2>& SurfaceBezier::controlPoints() { return controlPoints_; }
+std::vector<Vec2>& SurfaceBezier::controlPoints() {
+    markDirty();
+    return controlPoints_;
+}
 const std::vector<Vec2>& SurfaceBezier::controlPoints() const { return controlPoints_; }
+void SurfaceBezier::setControlPoints(const std::vector<Vec2>& points) {
+    if (points.size() != size_t(controlCols_ * controlRows_)) return;
+    controlPoints_ = points;
+    markDirty();
+}
 
 int SurfaceBezier::meshResolution() const { return meshResolution_; }
 

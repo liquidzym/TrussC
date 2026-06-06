@@ -12,6 +12,8 @@
 #include <functional>
 #include <optional>
 #include <algorithm>
+#include <cassert>
+#include <utility>
 
 // JSON — include BEFORE namespace to avoid namespace pollution
 #include "nlohmann/json.hpp"
@@ -53,7 +55,7 @@
             Vec2 operator+(const Vec2& v) const { return Vec2(x+v.x, y+v.y); }
             Vec2 operator-(const Vec2& v) const { return Vec2(x-v.x, y-v.y); }
             Vec2 operator*(float s) const { return Vec2(x*s, y*s); }
-            Vec2 operator/(float s) const { return Vec2(x/s, y/s); }
+            Vec2 operator/(float s) const { assert(s != 0.0f); return Vec2(x/s, y/s); }
             Vec2 operator-() const { return Vec2(-x, -y); }
             Vec2& operator+=(const Vec2& v) { x+=v.x; y+=v.y; return *this; }
             bool operator==(const Vec2& v) const { return x==v.x && y==v.y; }
@@ -91,6 +93,39 @@ namespace mapwrap {
 
 struct Mat3 {
     float m[9] = {1,0,0, 0,1,0, 0,0,1};
+
+    Mat3 multiply(const Mat3& rhs) const {
+        Mat3 result;
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                result.m[row * 3 + col] =
+                    m[row * 3 + 0] * rhs.m[0 * 3 + col] +
+                    m[row * 3 + 1] * rhs.m[1 * 3 + col] +
+                    m[row * 3 + 2] * rhs.m[2 * 3 + col];
+            }
+        }
+        return result;
+    }
+
+    Vec2 transformPoint(Vec2 p) const {
+        float w = m[6] * p.x + m[7] * p.y + m[8];
+        if (std::fabs(w) < 1e-12f) return Vec2(0, 0);
+        return Vec2(
+            (m[0] * p.x + m[1] * p.y + m[2]) / w,
+            (m[3] * p.x + m[4] * p.y + m[5]) / w
+        );
+    }
+
+    bool operator==(const Mat3& rhs) const {
+        for (int i = 0; i < 9; ++i) {
+            if (m[i] != rhs.m[i]) return false;
+        }
+        return true;
+    }
+
+    bool operator!=(const Mat3& rhs) const {
+        return !(*this == rhs);
+    }
 };
 
 struct IVec2 {
@@ -120,8 +155,17 @@ struct ResultT {
     bool ok = false;
     T value{};
     std::string message;
-    static ResultT success(const T& v) { return {true, v, ""}; }
-    static ResultT error(const std::string& msg) { return {false, T{}, msg}; }
+
+    ResultT() = default;
+    ResultT(bool ok_, T value_, std::string message_)
+        : ok(ok_)
+        , value(std::move(value_))
+        , message(std::move(message_))
+    {}
+
+    static ResultT success(const T& v) { return ResultT(true, v, ""); }
+    static ResultT success(T&& v) { return ResultT(true, std::move(v), ""); }
+    static ResultT error(const std::string& msg) { return ResultT(false, T{}, msg); }
 };
 
 struct LoadResult {
@@ -354,6 +398,8 @@ struct MeshData {
     }
 
     void addTriangle(uint32_t a, uint32_t b, uint32_t c) {
+        size_t count = vertexCount();
+        assert(a < count && b < count && c < count);
         indices.push_back(a);
         indices.push_back(b);
         indices.push_back(c);
