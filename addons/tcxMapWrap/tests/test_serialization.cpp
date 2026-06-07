@@ -409,6 +409,42 @@ TEST(bezier_surface_roundtrip) {
 }
 
 // ---------------------------------------------------------------------------
+TEST(surface_bad_field_loads_with_warning_without_dropping_file) {
+    std::string json = R"({
+        "schema": "tcxMapWrap.composition",
+        "version": 1,
+        "surfaces": [
+            {
+                "id": "good_a",
+                "kind": "quad",
+                "name": "Good A"
+            },
+            {
+                "id": "bad_field",
+                "kind": "quad",
+                "name": "Bad Field",
+                "opacity": "not-a-number"
+            },
+            {
+                "id": "good_b",
+                "kind": "quad",
+                "name": "Good B"
+            }
+        ]
+    })";
+
+    MapWrapDocument doc;
+    auto result = MapWrapSerialization::loadFromString(doc, json);
+    ASSERT_TRUE(result.ok);
+    ASSERT_TRUE(!result.warnings.empty());
+    ASSERT_EQ(doc.surfaces().size(), 3u);
+    ASSERT_TRUE(doc.getSurface("good_a") != nullptr);
+    ASSERT_TRUE(doc.getSurface("bad_field") != nullptr);
+    ASSERT_TRUE(doc.getSurface("good_b") != nullptr);
+    ASSERT_NEAR(doc.getSurface("bad_field")->opacity(), 1.0f, 1e-5f);
+}
+
+// ---------------------------------------------------------------------------
 TEST(malformed_field_type_returns_load_error) {
     std::string json = R"({
         "schema": "tcxMapWrap.composition",

@@ -1,0 +1,11 @@
+{
+  "name": "tcxMediaPipe",
+  "description": "Offline MediaPipe Tasks Vision addon for TrussC using tcxCEF, local WASM, local task models, and GPU delegate",
+  "version": "0.1.0",
+  "author": "showlab",
+  "license": "MIT",
+  "category": "computer-vision",
+  "keywords": ["mediapipe", "pose", "hand", "face", "landmarks", "gpu", "wasm", "computer-vision"],
+  "platforms": ["macos", "win", "linux"],
+  "dependencies": ["tcxCEF"]
+}

@@ -63,6 +63,7 @@ extern void test_source_registry_roundtrip();
 extern void test_load_replaces_existing_document();
 extern void test_grid_all_control_points_roundtrip();
 extern void test_bezier_surface_roundtrip();
+extern void test_surface_bad_field_loads_with_warning_without_dropping_file();
 extern void test_malformed_field_type_returns_load_error();
 extern void test_stage_empty_outputs_restores_default_output();
 extern void test_source_registry_load_without_sources_clears_existing_registry();
@@ -122,6 +123,7 @@ extern void test_editor_drag_uses_engine_canvas_size();
 extern void test_renderer_feathered_ellipse_mask_has_partial_alpha();
 extern void test_renderer_complex_mask_subtract_reduces_alpha();
 extern void test_renderer_masked_quad_uses_subdivision_for_mask_coverage();
+extern void test_renderer_uses_primary_output_masks_without_mixing_other_outputs();
 
 // test_calibration_patterns.cpp
 extern void test_checkerboard_source_generation();
@@ -190,6 +192,10 @@ extern void test_document_reorder_surface_uses_final_index();
 extern void test_grid_constructor_clamps_and_bounds_checks_points();
 extern void test_quad_homography_fallback_preserves_perspective_setting();
 extern void test_autosave_preserves_document_dirty_flag();
+extern void test_masked_surface_draw_does_not_dirty_or_rebuild_each_frame();
+extern void test_quad_perspective_uv_points_do_not_change_destination_geometry();
+extern void test_editor_set_selected_property_records_already_applied_undo();
+extern void test_editor_duplicate_selected_uses_document_kind_id_sequence();
 
 // --------------------------------------------------------------------------
 // Test registry
@@ -241,6 +247,7 @@ static std::vector<TestCase> allTests = {
     {"serialization::load_replaces_existing_document", test_load_replaces_existing_document},
     {"serialization::grid_all_control_points_roundtrip", test_grid_all_control_points_roundtrip},
     {"serialization::bezier_surface_roundtrip",   test_bezier_surface_roundtrip},
+    {"serialization::surface_bad_field_loads_with_warning", test_surface_bad_field_loads_with_warning_without_dropping_file},
     {"serialization::malformed_field_type_returns_load_error", test_malformed_field_type_returns_load_error},
     {"serialization::stage_empty_outputs_restores_default_output", test_stage_empty_outputs_restores_default_output},
     {"serialization::source_registry_load_without_sources_clears_existing_registry", test_source_registry_load_without_sources_clears_existing_registry},
@@ -300,6 +307,7 @@ static std::vector<TestCase> allTests = {
     {"outputs::renderer_feathered_ellipse_mask_has_partial_alpha", test_renderer_feathered_ellipse_mask_has_partial_alpha},
     {"outputs::renderer_complex_mask_subtract_reduces_alpha", test_renderer_complex_mask_subtract_reduces_alpha},
     {"outputs::renderer_masked_quad_uses_subdivision_for_mask_coverage", test_renderer_masked_quad_uses_subdivision_for_mask_coverage},
+    {"outputs::renderer_uses_primary_output_masks_without_mixing_other_outputs", test_renderer_uses_primary_output_masks_without_mixing_other_outputs},
 
     // test_calibration_patterns.cpp
     {"calibration::checkerboard_source_generation",  test_checkerboard_source_generation},
@@ -368,6 +376,10 @@ static std::vector<TestCase> allTests = {
     {"api::grid_constructor_clamps_and_bounds_checks_points", test_grid_constructor_clamps_and_bounds_checks_points},
     {"api::quad_homography_fallback_preserves_perspective_setting", test_quad_homography_fallback_preserves_perspective_setting},
     {"api::autosave_preserves_document_dirty_flag", test_autosave_preserves_document_dirty_flag},
+    {"api::masked_surface_draw_does_not_dirty_or_rebuild_each_frame", test_masked_surface_draw_does_not_dirty_or_rebuild_each_frame},
+    {"api::quad_perspective_uv_points_do_not_change_destination_geometry", test_quad_perspective_uv_points_do_not_change_destination_geometry},
+    {"api::editor_set_selected_property_records_already_applied_undo", test_editor_set_selected_property_records_already_applied_undo},
+    {"api::editor_duplicate_selected_uses_document_kind_id_sequence", test_editor_duplicate_selected_uses_document_kind_id_sequence},
 };
 
 // --------------------------------------------------------------------------

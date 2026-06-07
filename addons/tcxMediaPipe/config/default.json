@@ -1,0 +1,15 @@
+{
+  "delegate": "GPU",
+  "inputMode": "WebCamera",
+  "inputWidth": 640,
+  "inputHeight": 480,
+  "processingWidth": 480,
+  "processingHeight": 360,
+  "maxFPS": 30,
+  "mirror": true,
+  "multiPerson": true,
+  "maxHands": 4,
+  "maxPoses": 4,
+  "maxFaces": 4,
+  "maxGestures": 4
+}

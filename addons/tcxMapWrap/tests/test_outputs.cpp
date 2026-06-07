@@ -298,3 +298,33 @@ TEST(renderer_masked_quad_uses_subdivision_for_mask_coverage) {
     ASSERT_TRUE(data->indices.size() > 6u);
     ASSERT_EQ(engine.renderer().stats().alphaMaskCount, 1);
 }
+
+// ---------------------------------------------------------------------------
+TEST(renderer_uses_primary_output_masks_without_mixing_other_outputs) {
+    MapWrapEngine engine;
+    auto quad = engine.document().createQuadSurface("quad");
+    quad->resetToCanvas();
+    engine.document().addSurface(quad);
+
+    MapWrapOutput second;
+    second.id = "output_second";
+    second.name = "Second";
+    second.enabled = true;
+
+    MapWrapMask subtractAll;
+    subtractAll.kind = MaskKind::Rectangle;
+    subtractAll.operation = MaskOperation::Subtract;
+    subtractAll.space = MaskSpace::SurfaceLocal;
+    subtractAll.rect = Rect(0, 0, 1, 1);
+    second.masks.push_back(subtractAll);
+    engine.document().stage().outputs().push_back(second);
+
+    engine.draw();
+    const auto* data = engine.renderer().surfaceRenderData(quad->id());
+    ASSERT_TRUE(data != nullptr);
+    ASSERT_TRUE(!data->maskAlphas.empty());
+    for (float alpha : data->maskAlphas) {
+        ASSERT_NEAR(alpha, 1.0f, 1e-5f);
+    }
+    ASSERT_TRUE(!data->indices.empty());
+}

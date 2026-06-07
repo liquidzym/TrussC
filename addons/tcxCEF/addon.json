@@ -1,0 +1,11 @@
+{
+  "name": "tcxCEF",
+  "description": "Chromium Embedded Framework runtime addon for TrussC with local asset serving and WebSocket bridge utilities",
+  "version": "0.1.0",
+  "author": "showlab",
+  "license": "MIT",
+  "category": "web",
+  "keywords": ["cef", "chromium", "browser", "websocket", "local-server", "web"],
+  "platforms": ["macos", "win", "linux"],
+  "dependencies": ["tcxWebSocket"]
+}

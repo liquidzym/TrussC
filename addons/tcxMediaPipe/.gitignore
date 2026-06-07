@@ -1,0 +1,13 @@
+.DS_Store
+__pycache__/
+web/node_modules/
+examples/example-*/.vscode/
+examples/example-*/CMakePresets.json
+examples/example-*/bin/
+examples/example-*/build-macos/
+*_Codex_Task*.md
+*任务书*
+build*/
+cmake-build-*/
+*.log
+*.tmp

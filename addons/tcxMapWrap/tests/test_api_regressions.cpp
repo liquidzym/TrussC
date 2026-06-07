@@ -3,6 +3,7 @@
 // =============================================================================
 
 #include "tcxMapWrap/MapWrapDocument.h"
+#include "tcxMapWrap/MapWrapEngine.h"
 #include "tcxMapWrap/MapWrapInput.h"
 #include "tcxMapWrap/MapWrapAutosave.h"
 #include "tcxMapWrap/SourceGenerated.h"
@@ -14,6 +15,7 @@
 #include "tcxMapWrap/WarpGrid.h"
 #include "tcxMapWrap/WarpPerspective.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -290,4 +292,108 @@ TEST(autosave_preserves_document_dirty_flag) {
     ASSERT_TRUE(doc.isDirty());
 
     std::filesystem::remove_all(settings.autosaveFolder);
+}
+
+// ---------------------------------------------------------------------------
+TEST(masked_surface_draw_does_not_dirty_or_rebuild_each_frame) {
+    MapWrapEngine engine;
+    PerformanceSettings perf;
+    perf.maxGridSubdivision = 8;
+    engine.setPerformanceSettings(perf);
+
+    auto quad = engine.document().createQuadSurface("masked");
+    quad->resetToCanvas();
+
+    MapWrapMask mask;
+    mask.kind = MaskKind::Rectangle;
+    mask.operation = MaskOperation::Add;
+    mask.space = MaskSpace::SurfaceLocal;
+    mask.rect = Rect(0, 0, 1, 1);
+    quad->setMasks({mask});
+    engine.document().addSurface(quad);
+
+    engine.draw();
+    ASSERT_EQ(engine.renderer().stats().rebuiltMeshCount, 1);
+
+    uint64_t revisionAfterFirstDraw = quad->revision();
+    engine.draw();
+
+    ASSERT_EQ(engine.renderer().stats().rebuiltMeshCount, 0);
+    ASSERT_EQ(quad->revision(), revisionAfterFirstDraw);
+}
+
+// ---------------------------------------------------------------------------
+TEST(quad_perspective_uv_points_do_not_change_destination_geometry) {
+    SurfaceQuad base;
+    base.setPerspectiveCorrection(true);
+    base.setMeshResolution(3);
+    base.setDestinationPoints({{
+        Vec2(0.10f, 0.15f),
+        Vec2(0.90f, 0.10f),
+        Vec2(0.82f, 0.88f),
+        Vec2(0.18f, 0.76f)
+    }});
+
+    SurfaceQuad remapped;
+    remapped.setPerspectiveCorrection(true);
+    remapped.setMeshResolution(3);
+    remapped.setDestinationPoints(base.destinationPoints());
+    remapped.setUvPoints({{
+        Vec2(0.20f, 0.15f),
+        Vec2(0.80f, 0.10f),
+        Vec2(0.75f, 0.85f),
+        Vec2(0.25f, 0.80f)
+    }});
+    remapped.setSourceRect(Rect(0.2f, 0.1f, 0.5f, 0.6f));
+
+    MeshBuildContext ctx;
+    MeshBuildResult baseMesh = base.buildMesh(ctx);
+    MeshBuildResult remappedMesh = remapped.buildMesh(ctx);
+
+    ASSERT_TRUE(baseMesh.ok);
+    ASSERT_TRUE(remappedMesh.ok);
+    ASSERT_EQ(baseMesh.mesh.vertices.size(), remappedMesh.mesh.vertices.size());
+    for (size_t i = 0; i < baseMesh.mesh.vertices.size(); ++i) {
+        ASSERT_NEAR(baseMesh.mesh.vertices[i], remappedMesh.mesh.vertices[i], 1e-5f);
+    }
+    ASSERT_TRUE(baseMesh.mesh.uvs != remappedMesh.mesh.uvs);
+}
+
+// ---------------------------------------------------------------------------
+TEST(editor_set_selected_property_records_already_applied_undo) {
+    MapWrapEngine engine;
+    auto quad = engine.document().createQuadSurface("editable");
+    engine.document().addSurface(quad);
+    engine.editor().selectSurface(quad->id());
+
+    uint64_t beforeRevision = quad->revision();
+    Result result = engine.editor().setSelectedProperty("opacity", "0.5");
+
+    ASSERT_TRUE(result.ok);
+    ASSERT_NEAR(quad->opacity(), 0.5f, 1e-5f);
+    ASSERT_EQ(quad->revision(), beforeRevision + 1);
+
+    ASSERT_TRUE(engine.undoStack().undo());
+    ASSERT_NEAR(quad->opacity(), 1.0f, 1e-5f);
+
+    ASSERT_TRUE(engine.undoStack().redo());
+    ASSERT_NEAR(quad->opacity(), 0.5f, 1e-5f);
+}
+
+// ---------------------------------------------------------------------------
+TEST(editor_duplicate_selected_uses_document_kind_id_sequence) {
+    MapWrapEngine engine;
+    auto quad = engine.document().createQuadSurface("Original");
+    engine.document().addSurface(quad);
+    engine.editor().selectSurface(quad->id());
+
+    engine.editor().duplicateSelected();
+
+    ASSERT_EQ(engine.document().surfaces().size(), 2u);
+    SurfaceId duplicateId = engine.editor().selectedSurface();
+    ASSERT_EQ(duplicateId, std::string("surface_quad_2"));
+    ASSERT_TRUE(engine.document().getSurface(duplicateId) != nullptr);
+
+    auto next = engine.document().createQuadSurface("Next");
+    ASSERT_EQ(next->id(), std::string("surface_quad_3"));
 }
