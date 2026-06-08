@@ -51,7 +51,18 @@ enum class FlowPassKind {
     ParticlesSpawn,
     ParticlesUpdate,
     ParticlesRender,
-    ExtensionSplitVelocity
+    ExtensionSplitVelocity,
+    ExtensionNormalizeVector,
+    ExtensionDecay,
+    ExtensionSplitVelocityVisual,
+    ExtensionColorizeLuminance,
+    ExtensionColorizeVelocity,
+    ExtensionColorizeGradient,
+    ExtensionDilate,
+    ExtensionErode,
+    ExtensionInverseWarp,
+    ExtensionEase,
+    ExtensionTimeBlur
 };
 
 struct FlowPassParams {

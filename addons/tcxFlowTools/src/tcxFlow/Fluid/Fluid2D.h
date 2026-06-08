@@ -52,7 +52,10 @@ public:
     float velocityEnergy() const;
     float pressureEnergy() const;
     float temperatureEnergy() const;
+    bool refreshVelocityReadback();
     tc::Vec2 sampleVelocityAtPosition(const tc::Vec2& position) const;
+    float samplePressureAtPosition(const tc::Vec2& position) const;
+    float sampleTemperatureAtPosition(const tc::Vec2& position) const;
     const tc::Texture* getVelocityTexture() const;
     const tc::Texture* getDensityTexture() const;
     const tc::Texture* getPressureTexture() const;
@@ -150,6 +153,7 @@ private:
     mutable tc::Fbo debugFbo_;
     tc::Texture externalVelocityTexture_;
     std::vector<float> externalVelocityPixels_;
+    std::vector<float> velocityReadbackPixels_;
     const tc::Texture* pendingVelocityTexture_ = nullptr;
     float pendingVelocityTextureScale_ = 1.0f;
     bool pendingVelocityTextureMixMode_ = false;

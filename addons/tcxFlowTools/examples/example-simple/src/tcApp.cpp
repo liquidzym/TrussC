@@ -42,10 +42,16 @@ void tcApp::draw() {
             fluid_.drawDensity(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
             fluid_.drawVelocity(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
             break;
+        case tcx::flow::FlowVisualizer::Mode::VelocityField:
+        case tcx::flow::FlowVisualizer::Mode::VelocityDots:
+            fluid_.drawVelocity(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
+            break;
         case tcx::flow::FlowVisualizer::Mode::Pressure:
+        case tcx::flow::FlowVisualizer::Mode::PressureField:
             fluid_.drawPressure(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
             break;
         case tcx::flow::FlowVisualizer::Mode::Temperature:
+        case tcx::flow::FlowVisualizer::Mode::TemperatureField:
             fluid_.drawTemperature(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
             break;
     }

@@ -20,4 +20,5 @@
 #include "tcxFlow/Extensions/AverageFlow.h"
 #include "tcxFlow/Extensions/SplitVelocity.h"
 #include "tcxFlow/Extensions/ParticleFlow.h"
+#include "tcxFlow/Extensions/FlowHelperPipeline.h"
 #include "tcxFlow/SoftBody/SoftBody2D.h"

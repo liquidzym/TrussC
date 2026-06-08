@@ -1,7 +1,26 @@
 #include "BridgeFlow.h"
 #include "../Fluid/Fluid2D.h"
 
+#include <algorithm>
+
 namespace tcx::flow {
+
+namespace {
+
+float bridgeOptionFlags(const BridgeSettings& settings) {
+    float flags = 0.0f;
+    if (settings.invert) flags += 1.0f;
+    if (settings.useAlphaAsMask) flags += 2.0f;
+    if (settings.mirrorX) flags += 4.0f;
+    if (settings.mirrorY) flags += 8.0f;
+    const int maskSource = settings.useAlphaAsMask
+        ? static_cast<int>(BridgeMaskSource::Alpha)
+        : static_cast<int>(settings.maskSource);
+    flags += static_cast<float>(std::clamp(maskSource, 0, 6)) * 16.0f;
+    return flags;
+}
+
+} // namespace
 
 void BridgeFlow::setup(int width, int height) {
     resize(width, height);
@@ -62,7 +81,9 @@ bool BridgeFlow::renderTextureOutput(FlowPassKind kind, const tc::Texture& input
 
     texturePass_.setTexture("tex0", input);
     texturePass_.setColor(color);
-    texturePass_.setOptions(gain, threshold, radius, extra);
+    texturePass_.setOptions(gain, threshold, radius, bridgeOptionFlags(settings_) + extra);
+    texturePass_.setTexelExtra(std::max(0.0f, settings_.maskSoftness),
+                               std::max(0.0001f, settings_.maskGamma));
     texturePass_.render(textureOutput_);
     textureOutputValid_ = true;
     return true;

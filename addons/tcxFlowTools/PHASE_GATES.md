@@ -23,7 +23,7 @@ This file is the strict review ledger for `tcxFlowTools`. A phase is only treate
 | Phase 7 | Extensions/particles | `example-particles`, `example-particle-variants` | Complete with GPU particles default and first-pass variants |
 | Phase 8 | HD pipeline | `example-hd` with independent sim/output scale | Complete with GPU fluid and separate output scale |
 | Phase 9 | Final tests/docs cleanup | all selected examples build; docs updated | Complete for GPU fluid milestone |
-| Phase 10 | ofx helper shader gaps | split velocity / average watcher / helper filters | In progress |
+| Phase 10 | ofx helper shader gaps | split velocity / average watcher / helper filters | Complete for first-pass ofx deep parity |
 | Phase 11 | PixelFlow CFD + flow-field examples | liquid text/painting, streamlines, collision, velocity encoding | In progress with liquid text and liquid painting |
 | Phase 12 | PixelFlow Softbody Dynamics | SoftBody2D/3D cloth, chains, collision, playground | In progress with first SoftBody2D cloth example |
 | Phase 13 | Broader PixelFlow modules | Skylight, post-processing, anti-aliasing, Shadertoy, sampling/geometry | Planned |
@@ -251,7 +251,7 @@ Review checklist:
 - Bridge example builds: pass on macOS.
 - Camera-fluid GPU-fluid example builds: pass on macOS.
 - External texture bridge processing: pass for velocity, density, temperature, and combined bridge injection.
-- Advanced bridge settings such as invert, alpha-mask, and mirror controls remain pending and are tracked in `REFERENCE_GAPS.md`.
+- Later closure note: advanced bridge settings such as invert, alpha-mask, mirror axes, mask source, soft threshold, and gamma were implemented on 2026-06-08.
 - TrussC core API changed: no.
 
 Review commands:
@@ -274,7 +274,7 @@ Bridge texture audit on 2026-05-12:
 - `addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts`: pass.
 - Visual check: mode 1 shows velocity, mode 2 shows density and is no longer black, mode 3 shows temperature, and mode 4 shows live combined density/velocity/temperature output.
 - Reference checked: ofxFlowTools bridge class split and PixelFlow filter primitives.
-- Remaining parity gap: advanced bridge controls such as invert, alpha-mask, mirror axes, and deeper mask options are not yet implemented.
+- Later closure note: advanced bridge controls such as invert, alpha-mask, mirror axes, mask source, soft threshold, and gamma were implemented on 2026-06-08. Exact ofx GUI parameter binding remains future tuning.
 
 ## Phase 6 Review
 
@@ -420,26 +420,30 @@ Current review result on 2026-05-10:
 - `example-particles`: build pass.
 - `example-hd`: build pass.
 
-Phase 9 is complete for the current GPU-first milestone. CPU remains a no-GPU fallback. Remaining reference gaps now include deeper bridge parity, full streamline particle rendering, exact HD shader-family parity beyond output resolution, richer particle variants, helper shader parity, broader PixelFlow CFD examples, PixelFlow Softbody Dynamics, Skylight/PostProcessing/AntiAliasing/Shadertoy/sampling/geometry modules, and cross-platform builds; see `REFERENCE_GAPS.md`.
+Phase 9 is complete for the current GPU-first milestone. CPU remains a no-GPU fallback. Remaining reference gaps now include exact GPU ping-pong/custom-render streamlines, exact HD shader-family parity beyond output resolution, richer particle variants, broader PixelFlow CFD examples, PixelFlow Softbody Dynamics, Skylight/PostProcessing/AntiAliasing/Shadertoy/sampling/geometry modules, and cross-platform builds; see `REFERENCE_GAPS.md`.
 
 ## Phase 10 Review
 
 Implementation summary:
 
 - `SplitVelocity` still computes CPU sampled positive/negative velocity metrics.
-- `SplitVelocity::updateTexture()` adds a first GPU helper shader output for combined, positive, and negative velocity channels.
-- `shaders/extensions/extensions.glsl` adds the generated split-velocity helper pass.
-- `FlowPassKind::ExtensionSplitVelocity` maps the generated pass through the shared fullscreen pass wrapper.
-- `example-split-velocity` demonstrates combined/positive/negative split views over GPU fluid.
+- `SplitVelocity::updateTexture()` now runs a fuller GPU graph: raw RGBA positive/negative velocity split, normalized split texture, decayed trail texture, visual output, and split field overlay drawing.
+- `shaders/extensions/extensions.glsl` adds generated split-velocity raw/visual, normalize vector, decay, colorize luminance/velocity/gradient, dilate, erode, inverse warp, ease, and time blur helper passes.
+- `FlowPassKind` maps the generated extension helper passes through the shared fullscreen pass wrapper.
+- `FlowHelperPipeline` wraps the generated helper passes into reusable high-level fullscreen pipelines.
+- `example-split-velocity` demonstrates combined/positive/negative/trail split views over GPU fluid, with runtime gain, force, decay, and field overlay controls.
+- `AverageFlow` now supports ROI sampling, magnitude normalization, watcher-style magnitude/velocity events, bounded history, and settings serialization.
+- `example-average-flow` demonstrates first-pass ofxFlowTools `example_extended_average` / `AverageFlowWatcher` parity over a GPU fluid field with four ROI overlays and persistent settings.
+- Bridge and particle deep ofx gaps are included in this phase: bridge mask source/softness/gamma controls and particle birth-from-velocity/layout controls are implemented.
 
 Review checklist:
 
-- Split-velocity helper shader compiles for `metal_macos:hlsl5:glsl300es:wgsl`: pass by build.
+- Split-velocity and helper shaders compile for `metal_macos:hlsl5:glsl300es:wgsl`: pass by build.
 - Generated extension shader header exists and pass mapping is reachable through `FlowPassKind`: pass by `test_core_contracts`.
 - Existing CPU split metrics still run: pass by `tcxFlowTools_settings`.
 - Visual example builds: pass on macOS.
-- Visual example renders nonblank combined/positive/negative GPU views: pass by screenshot audit.
-- Full ofx helper parity remains partial: velocity-dot/field visualizers, AverageFlowWatcher, colorize helpers, decay, dilate/erode, inverse warp, normalization, ease, and time blur are not done.
+- Visual example renders nonblank combined/positive/negative/trail GPU views: pass by 2026-06-08 screenshot audit.
+- First-pass `AverageFlowWatcher`, split field overlay, helper-pipeline wrappers, deep bridge masks, and particle birth-from-velocity parity exist. Full ofx helper parity remains partial for exact GUI panels, XML format, and reference geometry styling.
 - TrussC core API changed: no.
 
 Review commands:
@@ -447,6 +451,8 @@ Review commands:
 ```bash
 cmake -S addons/tcxFlowTools/examples/example-split-velocity -B addons/tcxFlowTools/examples/example-split-velocity/build-macos
 cmake --build addons/tcxFlowTools/examples/example-split-velocity/build-macos --parallel 2
+cmake -S addons/tcxFlowTools/examples/example-average-flow -B addons/tcxFlowTools/examples/example-average-flow/build-macos
+cmake --build addons/tcxFlowTools/examples/example-average-flow/build-macos --parallel 2
 cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2
 addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings
 addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
@@ -460,6 +466,27 @@ addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
 - PixelFlow Softbody Dynamics and Computational Fluid Dynamics examples are explicitly in scope.
 - Broader PixelFlow modules such as Skylight, PostProcessing Filters, AntiAliasing, Shadertoy wrappers, sampling, and geometry/util examples are also in parity scope unless a later task splits them into companion addons.
 
+2026-06-08 execution queue:
+
+- Start with ofxFlowTools parity: bridge invert/alpha-mask/mirror controls, velocity dots/field and pressure/temperature styling, full split-velocity graph, helper shaders, and particle age/lifespan/mass/draw/move details.
+- Continue with PixelFlow Fluid/CFD: velocity encoding, multiple fluids, texture data transfer examples, custom-render streamlines, exact GPU ping-pong streamlines, slow buoyancy, and Verlet collision tuning.
+- Then continue with PixelFlow OpticalFlow: capture/movie fluid, capture-driven Verlet particles, and PFM export.
+- Then continue with PixelFlow FlowFieldParticles: cohesion, dam break, optical-flow capture particles, and sprite generator.
+
+2026-06-08 progress:
+
+- First-pass ofxFlowTools bridge controls implemented: invert, alpha-mask use, mirror-X, and mirror-Y are packed into the bridge shader option flags and exposed by `example-fluid-bridges`.
+- First-pass ofxFlowTools field visualizers implemented: `FlowVisualizer` supports velocity field arrows, velocity dots, pressure field, and temperature field modes, with `example-wind-tunnel` controls.
+- Fuller ofxFlowTools split-velocity graph implemented: raw split, normalized split, decayed trail, and visual output are wired through `SplitVelocity`.
+- First-pass ofxFlowTools helper shader suite implemented: colorize luminance/velocity/gradient, decay, dilate, erode, inverse warp, normalization, ease, and time blur are available as generated `FlowPassKind` entries.
+- First-pass ofxFlowTools particle details implemented: `ParticleFlowSettings` exposes lifespan spread, mass, mass spread, and size spread; GPU and CPU movement/draw paths use per-particle mass and age/lifespan fade.
+- Deep ofxFlowTools closure added later on 2026-06-08: bridge mask source/softness/gamma, styled pressure/temperature/velocity field drawing, split-velocity field overlay, AverageFlow history/settings serialization, `FlowHelperPipeline`, and particle birth-from-velocity/layout controls.
+- Particle GPU spawn initialization now uses procedural shader seeds instead of a CPU seed texture upload, fixing the same-frame `Texture::loadData()` warning seen in the three particle examples.
+- User-reported builds for `example-fluid-liquid-painting` and `example-softbody2d-cloth` were reconfigured and built successfully; no source failure was reproduced.
+- All 18 current `examples/example-*` apps were reconfigured and built successfully on macOS/Metal.
+- Example review finding fixed: `example-simple` now explicitly handles the expanded `FlowVisualizer::Mode` enum in its draw switch.
+- GUI screenshot review covered all 18 current examples. No black screens, stale texture bindings, or obvious wrong-output defaults were found in the sampled startup states. `example-simple` remains intentionally empty until drag injection.
+
 ## Phase 11 Review
 
 Implementation summary:
@@ -469,11 +496,16 @@ Implementation summary:
 - `TCX_LIQUID_TEXT_SOURCE=1` shows a source-preview panel for visual parity checks. `TCX_LIQUID_TEXT_DENSITY` and `TCX_LIQUID_TEXT_TEMPERATURE` expose startup tuning for automated visual runs.
 - Added `example-fluid-liquid-painting`, based on PixelFlow `Fluid_LiquidPainting`. It loads the local PixelFlow Escher image, injects it into GPU density, and uses procedural edge flow plus mouse drag to create liquid-smoke image smearing.
 - `TCX_LIQUID_PAINTING_SOURCE=1` shows the injected source preview. `TCX_LIQUID_PAINTING_MIX=<float>` tunes the persistent density source floor used to keep the source readable during GPU advection.
+- Added `example-fluid-streamlines`, based on PixelFlow `Fluid_StreamLines` / `FlowField_LIC_StreamLines`. The example keeps the fluid solver on the GPU, reads back the velocity buffer, and renders bidirectional regular-grid CPU streamline segments over density/LIC views. Controls now cover the reference feature surface for pause, background mode, velocity vectors, seed particles, seed density, and line length.
+- Added `ParticleFlow::spawn()` and `example-fluid-custom-particles`, based on PixelFlow `Fluid_CustomParticles`. The example keeps particle state on GPU texture path where available, respawns particles into local fluid sources, and maps left velocity+particles, middle heat+particles, and right particles-only input.
+- Corrected a GPU spawn parity issue in `example-fluid-custom-particles`: same-frame source and mouse spawn requests were previously averaged into one center, causing visible mouse offset when the continuous source was active. GPU spawn requests now stay independent.
 
 Review checklist:
 
 - PixelFlow liquid-text source texture drives the fluid field: pass by screenshot inspection.
 - PixelFlow liquid-painting source texture remains readable while being pulled into fluid trails: pass by user visual confirmation.
+- PixelFlow streamline visual family is represented by regular seed-grid multi-segment lines driven by the current GPU velocity field, with streamlines promoted to the primary visual layer: pass by macOS build and code inspection.
+- PixelFlow custom fluid-particle visual family is represented by local particle spawning into active fluid sources with GPU texture particles: pass by macOS build, screenshot inspection, and clean rerun logs after removing CPU seed texture upload.
 - GPU fluid path remains active: pass by example HUD and `Fluid2D` GPU draw output.
 - Tests still pass: pass.
 
@@ -484,6 +516,10 @@ cmake -S addons/tcxFlowTools/examples/example-fluid-liquid-text -B addons/tcxFlo
 cmake --build addons/tcxFlowTools/examples/example-fluid-liquid-text/build-macos --parallel 2
 cmake -S addons/tcxFlowTools/examples/example-fluid-liquid-painting -B addons/tcxFlowTools/examples/example-fluid-liquid-painting/build-macos
 cmake --build addons/tcxFlowTools/examples/example-fluid-liquid-painting/build-macos --parallel 2
+cmake -S addons/tcxFlowTools/examples/example-fluid-streamlines -B addons/tcxFlowTools/examples/example-fluid-streamlines/build-macos
+cmake --build addons/tcxFlowTools/examples/example-fluid-streamlines/build-macos --parallel 2
+cmake -S addons/tcxFlowTools/examples/example-fluid-custom-particles -B addons/tcxFlowTools/examples/example-fluid-custom-particles/build-macos
+cmake --build addons/tcxFlowTools/examples/example-fluid-custom-particles/build-macos --parallel 2
 cmake --build addons/tcxFlowTools/tests/build-macos --parallel 2
 addons/tcxFlowTools/tests/build-macos/tcxFlowTools_settings
 addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
@@ -492,7 +528,7 @@ addons/tcxFlowTools/tests/build-macos/tcxFlowTools_softbody2d
 
 All passed. Visual screenshot `/tmp/example-fluid-liquid-text-tuned.png` showed the generated text source preview and live density/temperature fluid response. Visual screenshot `/tmp/example-fluid-liquid-painting-v4.png` showed the Escher source staying readable while the right edge pulled into liquid-smoke trails; user confirmed the effect is correct. Synthetic macOS keypresses were blocked by accessibility permissions, so visual toggle verification used startup state and direct inspection rather than `osascript` key events.
 
-Remaining gap: Phase 11 is still incomplete beyond the first liquid-text and liquid-painting examples. Verlet collision, multiple fluids, velocity encoding, texture transfer, and full streamline particle examples remain tracked parity targets.
+Remaining gap: Phase 11 is still incomplete beyond the first liquid-text, liquid-painting, CPU-readback streamline, and custom fluid-particle examples. Verlet collision tuning, multiple fluids, velocity encoding, texture transfer, and exact GPU ping-pong/custom-render streamlines remain tracked parity targets.
 
 ## Phase 12 Review
 

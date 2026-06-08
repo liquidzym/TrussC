@@ -15,6 +15,8 @@ const char* textureFormatName(TextureFormat format) {
         case TextureFormat::RGBA8: return "RGBA8";
         case TextureFormat::RGBA16F: return "RGBA16F";
         case TextureFormat::RGBA32F: return "RGBA32F";
+        case TextureFormat::BGRA8: return "BGRA8";
+        case TextureFormat::RGBA16: return "RGBA16";
         case TextureFormat::R8: return "R8";
         case TextureFormat::R16F: return "R16F";
         case TextureFormat::R32F: return "R32F";

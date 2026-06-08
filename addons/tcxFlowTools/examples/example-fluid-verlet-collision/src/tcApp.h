@@ -45,7 +45,6 @@ private:
     void collideObstacles(Particle& particle);
     void drawObstacles() const;
     void drawParticles() const;
-    tc::Vec2 proceduralFluidVelocity(const tc::Vec2& position, float time) const;
     tc::Color particleColorFor(float u, float radius) const;
 
     tcx::flow::Fluid2D fluid_;
@@ -53,6 +52,7 @@ private:
     std::vector<Obstacle> obstacles_;
     tc::Vec2 previousMouse_;
     int grabbedParticle_ = -1;
+    int activeMouseButton_ = -1;
     bool showFluid_ = true;
     bool collisionsEnabled_ = true;
     bool wasMousePressed_ = false;

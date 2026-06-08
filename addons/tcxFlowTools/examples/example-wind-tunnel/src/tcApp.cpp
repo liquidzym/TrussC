@@ -26,34 +26,28 @@ void tcApp::update() {
     }
     injectWind(t);
     fluid_.update(dt);
+    fluid_.refreshVelocityReadback();
 }
 
 void tcApp::draw() {
     tc::clear(0.018f, 0.022f, 0.03f);
-    switch (mode_) {
-        case tcx::flow::FlowVisualizer::Mode::Density:
-            fluid_.drawDensity(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
-            break;
-        case tcx::flow::FlowVisualizer::Mode::Pressure:
-            fluid_.drawPressure(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
-            break;
-        case tcx::flow::FlowVisualizer::Mode::Temperature:
-            fluid_.drawTemperature(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
-            break;
-        case tcx::flow::FlowVisualizer::Mode::Velocity:
-            fluid_.drawVelocity(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
-            break;
-    }
+    visualizer_.draw(fluid_, 0, 0, tc::getWindowWidth(), tc::getWindowHeight(), mode_);
     if (showVelocity_) {
-        fluid_.drawVelocity(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
+        tcx::flow::FlowFieldStyle overlayStyle;
+        overlayStyle.columns = 40;
+        overlayStyle.rows = 22;
+        overlayStyle.velocityScale = 0.075f;
+        overlayStyle.dotScale = 0.040f;
+        overlayStyle.alpha = 0.72f;
+        visualizer_.drawVelocityField(fluid_, 0, 0, tc::getWindowWidth(), tc::getWindowHeight(), overlayStyle);
     }
     drawObstacles();
 
     tc::setColor(1.0f);
     const std::string gpu = fluid_.lastUpdateUsedGpu() ? "GPU" : "CPU fallback";
-    tc::drawBitmapString("wind-tunnel | " + gpu + " | d/v/p/t view | o obstacle | +/- wind | r reset",
+    tc::drawBitmapString("wind-tunnel | " + gpu + " | d density | c velocity color | f velocity field | g velocity dots | p pressure field | t temperature field",
                          18, 28, tcx::flow::example::kHudScale);
-    tc::drawBitmapString("wind " + tc::toString(windStrength_, 2) + " | sim " +
+    tc::drawBitmapString("o obstacle | v overlay FlowFieldStyle | +/- wind | r reset | wind " + tc::toString(windStrength_, 2) + " | sim " +
                              tc::toString(fluid_.simWidth()) + "x" + tc::toString(fluid_.simHeight()) +
                              " | texture inlet",
                          18, 28 + tcx::flow::example::kHudLine, tcx::flow::example::kHudScale);
@@ -62,9 +56,12 @@ void tcApp::draw() {
 void tcApp::keyPressed(int key) {
     using tcx::flow::example::keyIs;
     if (keyIs(key, 'd')) mode_ = tcx::flow::FlowVisualizer::Mode::Density;
+    if (keyIs(key, 'c')) mode_ = tcx::flow::FlowVisualizer::Mode::Velocity;
+    if (keyIs(key, 'f')) mode_ = tcx::flow::FlowVisualizer::Mode::VelocityField;
+    if (keyIs(key, 'g')) mode_ = tcx::flow::FlowVisualizer::Mode::VelocityDots;
     if (keyIs(key, 'v')) showVelocity_ = !showVelocity_;
-    if (keyIs(key, 'p')) mode_ = tcx::flow::FlowVisualizer::Mode::Pressure;
-    if (keyIs(key, 't')) mode_ = tcx::flow::FlowVisualizer::Mode::Temperature;
+    if (keyIs(key, 'p')) mode_ = tcx::flow::FlowVisualizer::Mode::PressureField;
+    if (keyIs(key, 't')) mode_ = tcx::flow::FlowVisualizer::Mode::TemperatureField;
     if (keyIs(key, 'o')) {
         mouseObstacle_ = !mouseObstacle_;
         rebuildObstacles();

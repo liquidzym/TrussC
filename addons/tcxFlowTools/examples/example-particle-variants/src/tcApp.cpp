@@ -92,9 +92,13 @@ void tcApp::configureParticles() {
     tcx::flow::ParticleFlowSettings settings;
     settings.particleCount = 18000;
     settings.lifetime = 6.0f;
+    settings.lifespanSpread = 0.22f;
     settings.velocityScale = 10.0f;
     settings.spawnRadius = 180.0f;
     settings.particleSize = 1.6f;
+    settings.mass = 1.0f;
+    settings.massSpread = 0.38f;
+    settings.sizeSpread = 0.28f;
     settings.variant = variant_;
     if (variant_ == tcx::flow::ParticleFlowVariant::Attractor) {
         settings.variantStrength = 0.42f;

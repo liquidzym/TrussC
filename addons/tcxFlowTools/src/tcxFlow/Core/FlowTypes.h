@@ -10,6 +10,16 @@ namespace tcx::flow {
 
 using TextureFormat = tc::TextureFormat;
 
+enum class BridgeMaskSource {
+    Luminance = 0,
+    Alpha = 1,
+    Red = 2,
+    Green = 3,
+    Blue = 4,
+    MaxRgb = 5,
+    Saturation = 6
+};
+
 struct FlowSize {
     int width = 0;
     int height = 0;
@@ -29,6 +39,9 @@ struct BridgeSettings {
     bool useAlphaAsMask = false;
     bool mirrorX = false;
     bool mirrorY = false;
+    BridgeMaskSource maskSource = BridgeMaskSource::Luminance;
+    float maskSoftness = 0.0f;
+    float maskGamma = 1.0f;
 };
 
 inline float clamp01(float v) {

@@ -28,15 +28,21 @@ void tcApp::draw() {
     particles_.draw(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
     tc::setColor(1.0f);
     const std::string mode = particles_.lastUpdateUsedGpu() ? "GPU particles" : "CPU fallback particles";
-    tc::drawBitmapString("particles | " + mode + " | f fluid | r reset",
+    tc::drawBitmapString("particles | " + mode + " | f fluid | b birth-from-velocity | r reset",
                          18, 28, tcx::flow::example::kHudScale);
-    tc::drawBitmapString("count " + tc::toString(particles_.particleCount()),
+    tc::drawBitmapString("count " + tc::toString(particles_.particleCount()) +
+                             " | age/lifespan/mass/size spread on | birth " +
+                             std::string(particles_.settings().birthFromVelocity ? "velocity" : "center"),
                          18, 28 + tcx::flow::example::kHudLine, tcx::flow::example::kHudScale);
 }
 
 void tcApp::keyPressed(int key) {
     using tcx::flow::example::keyIs;
     if (keyIs(key, 'f')) showFluid_ = !showFluid_;
+    if (keyIs(key, 'b')) {
+        particles_.settings().birthFromVelocity = !particles_.settings().birthFromVelocity;
+        particles_.reset();
+    }
     if (keyIs(key, 'r')) particles_.reset();
 }
 
@@ -53,7 +59,16 @@ void tcApp::resizeSystems() {
 
     tcx::flow::ParticleFlowSettings particleSettings;
     particleSettings.particleCount = 12000;
+    particleSettings.lifetime = 5.5f;
+    particleSettings.lifespanSpread = 0.28f;
     particleSettings.velocityScale = 8.0f;
     particleSettings.spawnRadius = 160.0f;
+    particleSettings.mass = 1.0f;
+    particleSettings.massSpread = 0.45f;
+    particleSettings.sizeSpread = 0.35f;
+    particleSettings.birthFromVelocity = true;
+    particleSettings.birthVelocityScale = 1.25f;
+    particleSettings.birthVelocityJitter = 0.12f;
+    particleSettings.ageFadePower = 1.15f;
     particles_.setup(tc::getWindowWidth(), tc::getWindowHeight(), particleSettings);
 }

@@ -8,9 +8,10 @@
 
 namespace {
 
-constexpr int kParticleCount = 940;
+constexpr int kParticleCount = 1000;
 constexpr float kBoundsPad = 14.0f;
 constexpr float kRestitution = 0.10f;
+constexpr float kParticleFillFactor = 0.60f;
 
 float hash01(int value) {
     unsigned int x = static_cast<unsigned int>(value) * 747796405u + 2891336453u;
@@ -43,25 +44,26 @@ void tcApp::update() {
     injectFluid(time);
 
     const tc::Vec2 mouse = tc::getMousePos();
-    if (tc::isMousePressed()) {
+    if (tc::isMousePressed() && activeMouseButton_ == 0) {
         if (!wasMousePressed_) {
             previousMouse_ = mouse;
         }
         const tc::Vec2 delta = mouse - previousMouse_;
         if (delta.length() > 0.0f) {
-            const int steps = std::max(2, std::min(32, static_cast<int>(delta.length() / 4.0f)));
-            for (int i = 0; i <= steps; ++i) {
+            const int steps = std::max(1, std::min(96, static_cast<int>(std::ceil(delta.length() / 2.0f))));
+            const tc::Vec2 segmentVelocity = delta * (20.0f / static_cast<float>(steps));
+            for (int i = 1; i <= steps; ++i) {
                 const float t = static_cast<float>(i) / static_cast<float>(steps);
                 const tc::Vec2 p = previousMouse_ + delta * t;
-                fluid_.addVelocity(p, 24.0f, delta * (28.0f / static_cast<float>(steps + 1)));
-                fluid_.addDensity(p, 18.0f, tc::Color(0.58f, 0.62f, 0.68f, 0.10f));
+                fluid_.addVelocity(p, 24.0f, segmentVelocity);
             }
+            fluid_.addDensity(mouse, 13.0f, tc::Color(0.78f, 0.84f, 0.90f, 0.10f));
             for (auto& particle : particles_) {
                 const tc::Vec2 toParticle = particle.position - mouse;
                 const float d = toParticle.length();
                 const float k = std::max(0.0f, 1.0f - d / 150.0f);
-                particle.previous -= delta * (k * k * 0.85f);
-                particle.acceleration += delta * (k * k * 18.0f);
+                particle.previous -= delta * (k * k * 1.35f);
+                particle.acceleration += delta * (k * k * 24.0f);
             }
         }
         previousMouse_ = mouse;
@@ -72,6 +74,7 @@ void tcApp::update() {
     }
 
     fluid_.update(dt);
+    fluid_.refreshVelocityReadback();
     updateParticles(dt, time);
     ++frame_;
 }
@@ -79,13 +82,13 @@ void tcApp::update() {
 void tcApp::draw() {
     tc::clear(0.0f, 0.0f, 0.0f);
     if (showFluid_) {
-        fluid_.drawDensity(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
+        fluid_.drawCombined(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
     }
     drawObstacles();
     drawParticles();
 
     tc::setColor(1.0f);
-    tc::drawBitmapString("fluid-verlet-collision | drag inject | c collision | f fluid | r reset",
+    tc::drawBitmapString("fluid-verlet-collision | drag inject | middle grab | c collision | f fluid | r reset",
                          18, 28, tcx::flow::example::kHudScale);
     tc::drawBitmapString("PixelFlow Fluid_VerletParticleCollisionSystem parity target | " +
                              tc::toString(static_cast<int>(particles_.size())) + " particles | " +
@@ -107,9 +110,10 @@ void tcApp::keyPressed(int key) {
 
 void tcApp::mousePressed(tc::Vec2 pos, int button) {
     previousMouse_ = pos;
+    activeMouseButton_ = button;
     wasMousePressed_ = true;
     grabbedParticle_ = -1;
-    if (button == 1) return;
+    if (button != 2) return;
     float best = 34.0f;
     for (int i = 0; i < static_cast<int>(particles_.size()); ++i) {
         const float d = (particles_[i].position - pos).length();
@@ -132,11 +136,11 @@ void tcApp::mouseReleased(tc::Vec2 pos, int button) {
         particles_[grabbedParticle_].grabbed = false;
     }
     grabbedParticle_ = -1;
+    activeMouseButton_ = -1;
 }
 
 void tcApp::mouseDragged(tc::Vec2 pos, int button) {
-    previousMouse_ = pos;
-    if (button == 0 && grabbedParticle_ >= 0 && grabbedParticle_ < static_cast<int>(particles_.size())) {
+    if (button == 2 && grabbedParticle_ >= 0 && grabbedParticle_ < static_cast<int>(particles_.size())) {
         particles_[grabbedParticle_].position = pos;
         particles_[grabbedParticle_].previous = pos;
     }
@@ -153,14 +157,17 @@ void tcApp::resizeSystems() {
     settings.resolutionScale = 0.5f;
     settings.outputResolutionScale = 1.0f;
     settings.timestep = 0.125f;
-    settings.solverIterations = 34;
+    settings.solverIterations = 40;
     settings.enableVorticity = true;
-    settings.vorticity = 0.18f;
+    settings.vorticity = 0.42f;
     settings.enableTemperature = true;
-    settings.velocityDissipation = 0.990f;
-    settings.densityDissipation = 0.996f;
+    settings.enableBuoyancy = true;
+    settings.buoyancy = 0.32f;
+    settings.densityWeight = 0.015f;
+    settings.velocityDissipation = 0.996f;
+    settings.densityDissipation = 0.990f;
     settings.temperatureDissipation = 0.52f;
-    settings.viscosity = 0.0015f;
+    settings.viscosity = 0.0030f;
     fluid_.setup(tc::getWindowWidth(), tc::getWindowHeight(), settings);
     configureObstacles();
     resetParticles();
@@ -171,17 +178,17 @@ void tcApp::resetParticles() {
     particles_.reserve(kParticleCount);
     const float w = static_cast<float>(tc::getWindowWidth());
     const float h = static_cast<float>(tc::getWindowHeight());
-    const float spacing = std::min(w, h) * 0.027f;
+    const float baseRadius = std::max(1.0f, std::sqrt((w * h * kParticleFillFactor) /
+                                                      static_cast<float>(kParticleCount)) * 0.5f);
+    const float rMin = baseRadius * 0.5f;
+    const float rMax = baseRadius * 1.5f;
     for (int i = 0; i < kParticleCount; ++i) {
         Particle p;
-        p.radius = spacing * (0.28f + hash01(i * 7 + 3) * 0.22f);
-        if (i == 0) p.radius *= 1.55f;
-        p.mass = std::max(1.0f, p.radius * p.radius * 0.04f);
-        p.position = tc::Vec2(kBoundsPad + p.radius + hash01(i * 5 + 1) * (w - (kBoundsPad + p.radius) * 2.0f),
-                              kBoundsPad + p.radius + hash01(i * 5 + 2) * (h - (kBoundsPad + p.radius) * 2.0f));
-        if (hash01(i * 11 + 4) < 0.38f) {
-            p.position.y = h * (0.60f + hash01(i * 3 + 8) * 0.30f);
-        }
+        p.radius = rMin + hash01(i * 7 + 3) * (rMax - rMin);
+        if (i == 0) p.radius = rMax * 1.5f;
+        p.mass = std::max(0.25f, (rMax * rMax) / std::max(1.0f, p.radius * p.radius));
+        p.position = tc::Vec2(kBoundsPad + p.radius + hash01(i * 5 + 1) * std::max(1.0f, w - (kBoundsPad + p.radius) * 2.0f),
+                              kBoundsPad + p.radius + hash01(i * 5 + 2) * std::max(1.0f, h - (kBoundsPad + p.radius) * 2.0f));
         p.position.x = clampf(p.position.x, kBoundsPad + p.radius, w - kBoundsPad - p.radius);
         p.position.y = clampf(p.position.y, kBoundsPad + p.radius, h - kBoundsPad - p.radius);
         const tc::Vec2 kick((hash01(i * 9 + 6) - 0.5f) * 1.8f,
@@ -215,15 +222,15 @@ void tcApp::injectFluid(float time) {
     const tc::Vec2 center(w * 0.50f, h * 0.50f);
     const tc::Vec2 upper(w * 0.54f + std::sin(time * 0.7f) * 36.0f, h * 0.11f);
 
-    fluid_.addDensity(topRight, 46.0f, tc::Color(0.48f, 0.50f, 0.54f, 0.20f));
-    fluid_.addTemperature(topRight, 60.0f, 3.5f);
-    fluid_.addVelocity(topRight, 50.0f, tc::Vec2(-18.0f, 58.0f));
+    fluid_.addDensity(topRight, 50.0f, tc::Color(0.56f, 0.58f, 0.62f, 0.26f));
+    fluid_.addTemperature(topRight, 66.0f, 4.4f);
+    fluid_.addVelocity(topRight, 58.0f, tc::Vec2(-32.0f, 90.0f));
 
-    fluid_.addDensity(center, 14.0f, tc::Color(0.58f, 0.60f, 0.64f, 0.24f));
-    fluid_.addVelocity(center, 38.0f, tc::Vec2(std::sin(time * 1.1f) * 38.0f, -58.0f));
+    fluid_.addDensity(center, 18.0f, tc::Color(0.66f, 0.68f, 0.72f, 0.25f));
+    fluid_.addVelocity(center, 45.0f, tc::Vec2(std::sin(time * 1.1f) * 60.0f, -96.0f));
 
-    fluid_.addDensity(upper, 18.0f, tc::Color(0.95f, 0.52f, 0.18f, 0.22f));
-    fluid_.addVelocity(upper, 42.0f, tc::Vec2(-62.0f, 14.0f));
+    fluid_.addDensity(upper, 22.0f, tc::Color(0.95f, 0.52f, 0.18f, 0.24f));
+    fluid_.addVelocity(upper, 52.0f, tc::Vec2(-105.0f, 22.0f));
 
 }
 
@@ -253,12 +260,12 @@ void tcApp::updateParticles(float dt, float time) {
 }
 
 void tcApp::applyParticleForces(float time) {
+    (void)time;
     for (auto& p : particles_) {
         if (p.grabbed) continue;
-        const tc::Vec2 field = proceduralFluidVelocity(p.position, time);
-        p.acceleration += field * (0.42f / std::max(1.0f, p.mass));
-        p.acceleration += tc::Vec2(std::sin(time * 1.2f + p.position.y * 0.013f) * 3.5f,
-                                   5.5f + std::cos(time * 0.9f + p.position.x * 0.011f) * 2.5f);
+        const tc::Vec2 field = fluid_.sampleVelocityAtPosition(p.position);
+        p.acceleration += field * (0.16f / std::max(0.25f, p.mass));
+        p.acceleration += tc::Vec2(0.0f, 0.65f);
     }
 }
 
@@ -313,15 +320,15 @@ void tcApp::collideObstacles(Particle& particle) {
         const tc::Vec2 delta = particle.position - obstacle.position;
         const float minDist = particle.radius + obstacle.radius;
         const float distSq = delta.x * delta.x + delta.y * delta.y;
-    if (distSq < minDist * minDist) {
-        const tc::Vec2 normal = safeNormal(delta);
-        particle.position = obstacle.position + normal * minDist;
-        const tc::Vec2 velocity = particle.position - particle.previous;
-        const float vn = velocity.x * normal.x + velocity.y * normal.y;
-        if (vn < 0.0f) {
-            particle.previous = particle.position - (velocity - normal * (1.65f * vn));
+        if (distSq < minDist * minDist) {
+            const tc::Vec2 normal = safeNormal(delta);
+            particle.position = obstacle.position + normal * minDist;
+            const tc::Vec2 velocity = particle.position - particle.previous;
+            const float vn = velocity.x * normal.x + velocity.y * normal.y;
+            if (vn < 0.0f) {
+                particle.previous = particle.position - (velocity - normal * (1.65f * vn));
+            }
         }
-    }
     }
 }
 
@@ -356,32 +363,6 @@ void tcApp::drawParticles() const {
         tc::setColor(1.0f, 1.0f, 1.0f, p.color.a * 0.18f);
         tc::drawCircle(p.position.x - p.radius * 0.25f, p.position.y - p.radius * 0.32f, p.radius * 0.34f);
     }
-}
-
-tc::Vec2 tcApp::proceduralFluidVelocity(const tc::Vec2& position, float time) const {
-    const float w = static_cast<float>(tc::getWindowWidth());
-    const float h = static_cast<float>(tc::getWindowHeight());
-    tc::Vec2 force(0.0f, 0.0f);
-    const tc::Vec2 sources[] = {
-        tc::Vec2(w - 84.0f, 34.0f),
-        tc::Vec2(w * 0.50f, h * 0.50f),
-        tc::Vec2(w * 0.54f + std::sin(time * 0.7f) * 36.0f, h * 0.11f),
-    };
-    const tc::Vec2 velocities[] = {
-        tc::Vec2(-72.0f, 92.0f),
-        tc::Vec2(std::sin(time * 1.1f) * 58.0f, -96.0f),
-        tc::Vec2(-92.0f, 28.0f),
-    };
-    const float radii[] = {320.0f, 250.0f, 220.0f};
-    for (int i = 0; i < 3; ++i) {
-        const tc::Vec2 delta = position - sources[i];
-        const float d = std::sqrt(delta.x * delta.x + delta.y * delta.y);
-        const float k = std::max(0.0f, 1.0f - d / radii[i]);
-        force += velocities[i] * (k * k);
-        const tc::Vec2 tangent(-delta.y, delta.x);
-        force += safeNormal(tangent, tc::Vec2(0, 1)) * (k * 22.0f * (i == 1 ? -1.0f : 1.0f));
-    }
-    return force;
 }
 
 tc::Color tcApp::particleColorFor(float u, float radius) const {

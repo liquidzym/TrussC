@@ -9,7 +9,7 @@
 
 void tcApp::setup() {
     if (const char* env = std::getenv("TCX_SPLIT_MODE")) {
-        mode_ = std::clamp(static_cast<int>(std::atoi(env)), 0, 2);
+        mode_ = std::clamp(static_cast<int>(std::atoi(env)), 0, 3);
     }
     resizeSystems();
 }
@@ -20,7 +20,11 @@ void tcApp::update() {
     injectFluid(time);
     fluid_.update(dt);
     splitVelocity_.update(fluid_, 28, 18);
-    splitVelocity_.updateTexture(fluid_, fluid_.outputWidth(), fluid_.outputHeight(), 0.075f, mode_);
+    splitVelocity_.setForce(force_);
+    splitVelocity_.setDecay(decay_);
+    splitVelocity_.setNormalizeRange(1.0f);
+    splitVelocity_.setTrailBlend(mode_ == 3 ? 1.0f : 0.55f);
+    splitVelocity_.updateTexture(fluid_, fluid_.outputWidth(), fluid_.outputHeight(), visualGain_, mode_);
 }
 
 void tcApp::draw() {
@@ -29,16 +33,29 @@ void tcApp::draw() {
         fluid_.drawDensity(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
     }
     splitVelocity_.draw(0, 0, tc::getWindowWidth(), tc::getWindowHeight());
+    if (showField_) {
+        tcx::flow::SplitVelocityFieldStyle fieldStyle;
+        fieldStyle.columns = 34;
+        fieldStyle.rows = 20;
+        fieldStyle.scale = 0.085f * force_;
+        fieldStyle.alpha = 0.76f;
+        splitVelocity_.drawField(fluid_, 0, 0, tc::getWindowWidth(), tc::getWindowHeight(), fieldStyle);
+    }
 
     const auto& result = splitVelocity_.result();
     tc::setColor(1.0f);
     const std::string gpu = splitVelocity_.lastUpdateUsedGpu() ? "GPU" : "CPU metrics only";
-    tc::drawBitmapString("split-velocity | 1 combined 2 positive 3 negative | d density | r reset",
+    tc::drawBitmapString("split-velocity | 1 combined 2 positive 3 negative 4 trail | d density | f field | r reset",
                          18, 28, tcx::flow::example::kHudScale);
     tc::drawBitmapString(modeName() + " | " + gpu + " | pos " +
                              tc::toString(result.positive.x, 2) + "," + tc::toString(result.positive.y, 2) +
                              " neg " + tc::toString(result.negative.x, 2) + "," + tc::toString(result.negative.y, 2),
                          18, 28 + tcx::flow::example::kHudLine,
+                         tcx::flow::example::kHudScale);
+    tc::drawBitmapString("+/- gain " + tc::toString(visualGain_, 3) +
+                             " | [ ] force " + tc::toString(force_, 2) +
+                             " | , . decay " + tc::toString(decay_, 2),
+                         18, 28 + tcx::flow::example::kHudLine * 2.0f,
                          tcx::flow::example::kHudScale);
 }
 
@@ -46,9 +63,16 @@ void tcApp::keyPressed(int key) {
     using tcx::flow::example::digitKey;
     using tcx::flow::example::keyIs;
     const int digit = digitKey(key);
-    if (digit >= 1 && digit <= 3) mode_ = digit - 1;
+    if (digit >= 1 && digit <= 4) mode_ = digit - 1;
     if (keyIs(key, 'd')) showDensity_ = !showDensity_;
+    if (keyIs(key, 'f')) showField_ = !showField_;
     if (keyIs(key, 'r')) fluid_.reset();
+    if (key == static_cast<int>('+') || key == static_cast<int>('=')) visualGain_ = std::min(0.50f, visualGain_ + 0.01f);
+    if (key == static_cast<int>('-') || key == static_cast<int>('_')) visualGain_ = std::max(0.005f, visualGain_ - 0.01f);
+    if (key == static_cast<int>(']') || key == static_cast<int>('}')) force_ = std::min(4.0f, force_ + 0.10f);
+    if (key == static_cast<int>('[') || key == static_cast<int>('{')) force_ = std::max(0.05f, force_ - 0.10f);
+    if (key == static_cast<int>('.') || key == static_cast<int>('>')) decay_ = std::min(1.0f, decay_ + 0.02f);
+    if (key == static_cast<int>(',') || key == static_cast<int>('<')) decay_ = std::max(0.0f, decay_ - 0.02f);
 }
 
 void tcApp::windowResized(int width, int height) {
@@ -91,5 +115,6 @@ void tcApp::injectFluid(float time) {
 std::string tcApp::modeName() const {
     if (mode_ == 1) return "positive";
     if (mode_ == 2) return "negative";
+    if (mode_ == 3) return "trail-normalized";
     return "combined";
 }

@@ -28,6 +28,7 @@ void Fluid2D::resize(int width, int height) {
     debugFbo_.clear();
     externalVelocityTexture_.clear();
     externalVelocityPixels_.clear();
+    velocityReadbackPixels_.clear();
     obstaclesDirty_ = true;
     lastUpdateUsedGpu_ = false;
     clear();
@@ -462,11 +463,55 @@ float Fluid2D::temperatureEnergy() const {
     return sum;
 }
 
+bool Fluid2D::refreshVelocityReadback() {
+    if (!isAllocated()) return false;
+    if (!lastUpdateUsedGpu_ || !isGpuReady()) return true;
+
+#if defined(__EMSCRIPTEN__)
+    return false;
+#endif
+
+    const auto& velocityFbo = gpuBuffers_.velocity().read();
+    if (!velocityFbo.isAllocated()) return false;
+
+    const int w = velocityFbo.getWidth();
+    const int h = velocityFbo.getHeight();
+    if (w <= 0 || h <= 0) return false;
+
+    velocityReadbackPixels_.assign(static_cast<std::size_t>(w * h * 4), 0.0f);
+    if (!velocityFbo.readPixelsFloat(velocityReadbackPixels_.data())) return false;
+
+    if (w != simWidth_ || h != simHeight_) return false;
+    velocity_.assign(static_cast<std::size_t>(simWidth_ * simHeight_), tc::Vec2(0, 0));
+    for (int y = 0; y < simHeight_; ++y) {
+        for (int x = 0; x < simWidth_; ++x) {
+            const int src = (y * simWidth_ + x) * 4;
+            velocity_[index(x, y)] = tc::Vec2(velocityReadbackPixels_[src + 0],
+                                              velocityReadbackPixels_[src + 1]);
+        }
+    }
+    return true;
+}
+
 tc::Vec2 Fluid2D::sampleVelocityAtPosition(const tc::Vec2& position) const {
     if (!isAllocated()) return tc::Vec2(0, 0);
     const float x = position.x * simWidth_ / std::max(1, inputWidth_);
     const float y = position.y * simHeight_ / std::max(1, inputHeight_);
     return sampleVelocity(velocity_, x, y);
+}
+
+float Fluid2D::samplePressureAtPosition(const tc::Vec2& position) const {
+    if (!isAllocated()) return 0.0f;
+    const float x = position.x * simWidth_ / std::max(1, inputWidth_);
+    const float y = position.y * simHeight_ / std::max(1, inputHeight_);
+    return sampleScalar(pressure_, x, y);
+}
+
+float Fluid2D::sampleTemperatureAtPosition(const tc::Vec2& position) const {
+    if (!isAllocated()) return 0.0f;
+    const float x = position.x * simWidth_ / std::max(1, inputWidth_);
+    const float y = position.y * simHeight_ / std::max(1, inputHeight_);
+    return sampleScalar(temperature_, x, y);
 }
 
 const tc::Texture* Fluid2D::getVelocityTexture() const {

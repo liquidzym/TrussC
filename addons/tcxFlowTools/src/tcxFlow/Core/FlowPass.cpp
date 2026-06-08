@@ -23,7 +23,7 @@ struct PassInfo {
     ShaderDescFn desc = nullptr;
 };
 
-constexpr std::array<PassInfo, 44> kCommonPasses = {{
+constexpr std::array<PassInfo, 55> kCommonPasses = {{
     {FlowPassKind::Copy, "copy", "shaders/common/copy.glsl", tcx_flow_copy_shader_desc},
     {FlowPassKind::Clear, "clear", "shaders/common/clear.glsl", tcx_flow_clear_shader_desc},
     {FlowPassKind::Multiply, "multiply", "shaders/common/multiply.glsl", tcx_flow_multiply_shader_desc},
@@ -67,7 +67,18 @@ constexpr std::array<PassInfo, 44> kCommonPasses = {{
     {FlowPassKind::ParticlesSpawn, "particles_spawn", "shaders/particles/spawn.glsl", tcx_flow_particles_spawn_shader_desc},
     {FlowPassKind::ParticlesUpdate, "particles_update", "shaders/particles/update.glsl", tcx_flow_particles_update_shader_desc},
     {FlowPassKind::ParticlesRender, "particles_render", "shaders/particles/render.glsl", tcx_flow_particles_render_shader_desc},
-    {FlowPassKind::ExtensionSplitVelocity, "extension_split_velocity", "shaders/extensions/split_velocity.glsl", tcx_flow_extensions_split_velocity_shader_desc},
+    {FlowPassKind::ExtensionSplitVelocity, "extension_split_velocity", "shaders/extensions/split_velocity.glsl", tcx_flow_extensions_split_velocity_raw_shader_desc},
+    {FlowPassKind::ExtensionNormalizeVector, "extension_normalize_vector", "shaders/extensions/normalize_vector.glsl", tcx_flow_extensions_normalize_vector_shader_desc},
+    {FlowPassKind::ExtensionDecay, "extension_decay", "shaders/extensions/decay.glsl", tcx_flow_extensions_decay_shader_desc},
+    {FlowPassKind::ExtensionSplitVelocityVisual, "extension_split_velocity_visual", "shaders/extensions/split_velocity_visual.glsl", tcx_flow_extensions_split_velocity_visual_shader_desc},
+    {FlowPassKind::ExtensionColorizeLuminance, "extension_colorize_luminance", "shaders/extensions/colorize_luminance.glsl", tcx_flow_extensions_colorize_luminance_shader_desc},
+    {FlowPassKind::ExtensionColorizeVelocity, "extension_colorize_velocity", "shaders/extensions/colorize_velocity.glsl", tcx_flow_extensions_colorize_velocity_shader_desc},
+    {FlowPassKind::ExtensionColorizeGradient, "extension_colorize_gradient", "shaders/extensions/colorize_gradient.glsl", tcx_flow_extensions_colorize_gradient_shader_desc},
+    {FlowPassKind::ExtensionDilate, "extension_dilate", "shaders/extensions/dilate.glsl", tcx_flow_extensions_dilate_shader_desc},
+    {FlowPassKind::ExtensionErode, "extension_erode", "shaders/extensions/erode.glsl", tcx_flow_extensions_erode_shader_desc},
+    {FlowPassKind::ExtensionInverseWarp, "extension_inverse_warp", "shaders/extensions/inverse_warp.glsl", tcx_flow_extensions_inverse_warp_shader_desc},
+    {FlowPassKind::ExtensionEase, "extension_ease", "shaders/extensions/ease.glsl", tcx_flow_extensions_ease_shader_desc},
+    {FlowPassKind::ExtensionTimeBlur, "extension_time_blur", "shaders/extensions/time_blur.glsl", tcx_flow_extensions_time_blur_shader_desc},
 }};
 
 const PassInfo* findPass(FlowPassKind kind) {

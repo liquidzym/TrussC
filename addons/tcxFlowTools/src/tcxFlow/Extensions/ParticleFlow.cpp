@@ -1,7 +1,9 @@
 #include "ParticleFlow.h"
 #include "particles/particles.glsl.h"
 
+#include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace tcx::flow {
 
@@ -21,6 +23,32 @@ int variantCode(ParticleFlowVariant variant) {
     }
 }
 
+float hash01(int value) {
+    unsigned int x = static_cast<unsigned int>(value) * 747796405u + 2891336453u;
+    x = ((x >> ((x >> 28u) + 4u)) ^ x) * 277803737u;
+    x = (x >> 22u) ^ x;
+    return static_cast<float>(x & 0xffffu) / 65535.0f;
+}
+
+float spreadValue(float base, float spread, float randomValue, float minimum) {
+    const float amount = std::max(0.0f, spread);
+    const float scale = 1.0f + (randomValue * 2.0f - 1.0f) * amount;
+    return std::max(minimum, base * scale);
+}
+
+float particleMassForIndex(const ParticleFlowSettings& settings, int index) {
+    return spreadValue(std::max(0.05f, settings.mass), settings.massSpread, hash01(index * 97 + 13), 0.05f);
+}
+
+float particleLifespanForIndex(const ParticleFlowSettings& settings, int index) {
+    return spreadValue(std::max(0.0001f, settings.lifetime), settings.lifespanSpread, hash01(index * 131 + 29), 0.0001f);
+}
+
+float particleSizeForIndex(const ParticleFlowSettings& settings, int index, float mass) {
+    const float size = spreadValue(std::max(0.05f, settings.particleSize), settings.sizeSpread, hash01(index * 173 + 41), 0.05f);
+    return size * std::sqrt(std::max(0.05f, mass));
+}
+
 } // namespace
 
 ParticleFlow::~ParticleFlow() {
@@ -36,11 +64,14 @@ void ParticleFlow::setup(int width, int height, const ParticleFlowSettings& sett
 
 void ParticleFlow::reset() {
     releaseGpu();
+    pendingSpawns_.clear();
+    cpuSpawnCursor_ = 0;
     gpuReady_ = setupGpu();
     if (gpuReady_) {
         positions_.clear();
         velocities_.clear();
         ages_.clear();
+        masses_.clear();
         return;
     }
 
@@ -48,11 +79,22 @@ void ParticleFlow::reset() {
     positions_.resize(static_cast<std::size_t>(count));
     velocities_.assign(static_cast<std::size_t>(count), tc::Vec2(0, 0));
     ages_.assign(static_cast<std::size_t>(count), 0.0f);
+    masses_.resize(static_cast<std::size_t>(count));
     for (int i = 0; i < count; ++i) {
         const float u = static_cast<float>((i * 1103515245u + 12345u) & 0xffffu) / 65535.0f;
         const float v = static_cast<float>((i * 214013u + 2531011u) & 0xffffu) / 65535.0f;
         positions_[static_cast<std::size_t>(i)] = tc::Vec2(u * width_, v * height_);
+        masses_[static_cast<std::size_t>(i)] = particleMassForIndex(settings_, i);
     }
+}
+
+void ParticleFlow::spawn(const tc::Vec2& position, float radius, int amount) {
+    if (amount <= 0) return;
+    SpawnRequest request;
+    request.position = position;
+    request.radius = std::max(1.0f, radius);
+    request.amount = amount;
+    pendingSpawns_.push_back(request);
 }
 
 void ParticleFlow::update(const Fluid2D& fluid, float dt) {
@@ -68,27 +110,32 @@ void ParticleFlow::update(const Fluid2D& fluid, float dt) {
 
     const float damping = std::clamp(settings_.damping, 0.0f, 1.0f);
     const tc::Vec2 variantCenter(settings_.variantCenter.x * width_, settings_.variantCenter.y * height_);
+    applyCpuSpawns(fluid);
     for (std::size_t i = 0; i < positions_.size(); ++i) {
         ages_[i] += dt;
-        velocities_[i] += fluid.sampleVelocityAtPosition(positions_[i]) * dt;
+        const int index = static_cast<int>(i);
+        const float mass = i < masses_.size() ? masses_[i] : particleMassForIndex(settings_, index);
+        const float invMass = 1.0f / std::max(0.05f, mass);
+        velocities_[i] += fluid.sampleVelocityAtPosition(positions_[i]) * (dt * invMass);
         if (settings_.variant == ParticleFlowVariant::Attractor) {
             const tc::Vec2 toward = variantCenter - positions_[i];
             const float dist = std::max(1.0f, std::sqrt(toward.x * toward.x + toward.y * toward.y));
-            velocities_[i] += toward * (settings_.variantStrength * dt / dist);
+            velocities_[i] += toward * (settings_.variantStrength * dt * invMass / dist);
         } else if (settings_.variant == ParticleFlowVariant::Impulse) {
             const tc::Vec2 away = positions_[i] - variantCenter;
             const float dist = std::max(1.0f, std::sqrt(away.x * away.x + away.y * away.y));
-            velocities_[i] += away * (settings_.variantStrength * dt / dist);
+            velocities_[i] += away * (settings_.variantStrength * dt * invMass / dist);
         }
         velocities_[i] *= damping;
         positions_[i] += velocities_[i] * (dt * settings_.velocityScale);
-        if (settings_.respawn && (ages_[i] > settings_.lifetime || positions_[i].x < 0 || positions_[i].y < 0 ||
+        if (settings_.respawn && (ages_[i] > particleLifespanForIndex(settings_, index) || positions_[i].x < 0 || positions_[i].y < 0 ||
                                   positions_[i].x > width_ || positions_[i].y > height_)) {
-            ages_[i] = 0.0f;
+            if (settings_.resetAgeOnBirth) ages_[i] = 0.0f;
             const float a = static_cast<float>(i) * 2.3999632f;
             positions_[i] = tc::Vec2(width_ * 0.5f + std::cos(a) * settings_.spawnRadius,
                                      height_ * 0.5f + std::sin(a) * settings_.spawnRadius);
-            velocities_[i] = tc::Vec2(0, 0);
+            velocities_[i] = birthVelocityForPosition(fluid, positions_[i], index);
+            if (i < masses_.size()) masses_[i] = particleMassForIndex(settings_, index + cpuSpawnCursor_);
         }
     }
 }
@@ -99,12 +146,19 @@ void ParticleFlow::draw(float x, float y, float w, float h) const {
         return;
     }
     if (width_ <= 0 || height_ <= 0) return;
-    tc::setColor(settings_.particleColor);
     const float sx = w / width_;
     const float sy = h / height_;
     const std::size_t maxDraw = std::min<std::size_t>(positions_.size(), 4096);
     for (std::size_t i = 0; i < maxDraw; ++i) {
-        tc::drawCircle(x + positions_[i].x * sx, y + positions_[i].y * sy, settings_.particleSize);
+        const int index = static_cast<int>(i);
+        const float lifespan = particleLifespanForIndex(settings_, index);
+        const float normalizedAge = std::clamp(ages_[i] / std::max(0.0001f, lifespan), 0.0f, 1.0f);
+        const float fade = std::pow(1.0f - normalizedAge, std::max(0.0001f, settings_.ageFadePower));
+        const float mass = i < masses_.size() ? masses_[i] : particleMassForIndex(settings_, index);
+        tc::setColor(tc::Color(settings_.particleColor.r, settings_.particleColor.g, settings_.particleColor.b,
+                               settings_.particleColor.a * fade));
+        tc::drawCircle(x + positions_[i].x * sx, y + positions_[i].y * sy,
+                       particleSizeForIndex(settings_, index, mass));
     }
 }
 
@@ -119,23 +173,10 @@ bool ParticleFlow::setupGpu() {
     gpuState_.allocate(gpuSide_, gpuSide_, TextureFormat::RGBA32F, "particles-state");
     gpuState_.clear();
 
-    std::vector<float> seed(static_cast<std::size_t>(gpuParticleCount_) * 4, 0.0f);
-    for (int i = 0; i < gpuParticleCount_; ++i) {
-        const float a = static_cast<float>((i * 1103515245u + 12345u) & 0xffffu) / 65535.0f;
-        const float b = static_cast<float>((i * 214013u + 2531011u) & 0xffffu) / 65535.0f;
-        seed[static_cast<std::size_t>(i) * 4 + 0] = a;
-        seed[static_cast<std::size_t>(i) * 4 + 1] = b;
-        seed[static_cast<std::size_t>(i) * 4 + 2] = 0.0f;
-        seed[static_cast<std::size_t>(i) * 4 + 3] = 1.0f;
-    }
-    gpuSeedTexture_.allocate(gpuSide_, gpuSide_, TextureFormat::RGBA32F, tc::TextureUsage::Dynamic);
-    gpuSeedTexture_.setFilter(tc::TextureFilter::Nearest);
-    gpuSeedTexture_.loadData(seed.data(), gpuSide_, gpuSide_, 4);
-
     gpuSpawnPass_.setup(FlowPassKind::ParticlesSpawn);
     gpuUpdatePass_.setup(FlowPassKind::ParticlesUpdate);
-    gpuSpawnPass_.setTexture("tex0", gpuSeedTexture_);
-    gpuSpawnPass_.setColor(tc::Color(1.0f));
+    gpuSpawnPass_.setColor(tc::Color(1.0f, 1.0f, 1.0f, std::max(0.05f, settings_.mass)));
+    gpuSpawnPass_.setTexelExtra(std::max(0.0f, settings_.massSpread), std::max(0.0f, settings_.sizeSpread));
     gpuSpawnPass_.setOptions(0.37f, 0.61f, 0.19f, 0.83f);
     gpuSpawnPass_.render(gpuState_.write());
     gpuState_.swap();
@@ -194,10 +235,53 @@ bool ParticleFlow::setupGpu() {
     return true;
 }
 
+ParticleFlow::NormalizedSpawn ParticleFlow::normalizeSpawn(const SpawnRequest& request) const {
+    NormalizedSpawn spawn;
+    if (request.amount <= 0 || request.radius <= 0.0f) return spawn;
+    spawn.center = tc::Vec2(std::clamp(request.position.x / static_cast<float>(std::max(1, width_)), 0.0f, 1.0f),
+                            std::clamp(request.position.y / static_cast<float>(std::max(1, height_)), 0.0f, 1.0f));
+    spawn.radius = std::clamp(request.radius / static_cast<float>(std::max(1, std::max(width_, height_))), 0.0f, 1.0f);
+    spawn.probability = std::clamp(static_cast<float>(request.amount) /
+                                       static_cast<float>(std::max(1, particleCount())),
+                                   0.0f, 1.0f);
+    spawn.active = spawn.probability > 0.0f && spawn.radius > 0.0f;
+    return spawn;
+}
+
+tc::Vec2 ParticleFlow::birthVelocityForPosition(const Fluid2D& fluid, const tc::Vec2& position, int index) const {
+    if (!settings_.birthFromVelocity) return tc::Vec2(0, 0);
+    tc::Vec2 velocity = fluid.sampleVelocityAtPosition(position) * settings_.birthVelocityScale;
+    const float jitter = std::max(0.0f, settings_.birthVelocityJitter);
+    if (jitter > 0.0f) {
+        const float angle = hash01(index * 313 + 71) * 6.2831853f;
+        const float radius = (hash01(index * 337 + 97) * 2.0f - 1.0f) * jitter;
+        velocity += tc::Vec2(std::cos(angle), std::sin(angle)) * radius;
+    }
+    return velocity;
+}
+
+void ParticleFlow::applyCpuSpawns(const Fluid2D& fluid) {
+    if (pendingSpawns_.empty() || positions_.empty()) return;
+    for (const auto& request : pendingSpawns_) {
+        const int amount = std::max(0, request.amount);
+        for (int n = 0; n < amount; ++n) {
+            const int idx = cpuSpawnCursor_ % static_cast<int>(positions_.size());
+            cpuSpawnCursor_ = (cpuSpawnCursor_ + 1) % static_cast<int>(positions_.size());
+            const float a = hash01(idx * 17 + n * 31) * 6.2831853f;
+            const float r = std::sqrt(hash01(idx * 23 + n * 47)) * request.radius;
+            positions_[static_cast<std::size_t>(idx)] = tc::Vec2(
+                std::clamp(request.position.x + std::cos(a) * r, 0.0f, static_cast<float>(width_)),
+                std::clamp(request.position.y + std::sin(a) * r, 0.0f, static_cast<float>(height_)));
+            velocities_[static_cast<std::size_t>(idx)] = birthVelocityForPosition(fluid, positions_[static_cast<std::size_t>(idx)], idx);
+            if (settings_.resetAgeOnBirth) ages_[static_cast<std::size_t>(idx)] = 0.0f;
+        }
+    }
+    pendingSpawns_.clear();
+}
+
 void ParticleFlow::releaseGpu() {
     if (sg_isvalid()) {
         gpuState_.release();
-        gpuSeedTexture_.clear();
         if (gpuPointPipeline_.id) sg_destroy_pipeline(gpuPointPipeline_);
         if (gpuPointShader_.id) sg_destroy_shader(gpuPointShader_);
         if (gpuPointVertexBuffer_.id) sg_destroy_buffer(gpuPointVertexBuffer_);
@@ -214,15 +298,39 @@ void ParticleFlow::releaseGpu() {
 void ParticleFlow::updateGpu(const Fluid2D& fluid, float dt) {
     const tc::Texture* velocityTexture = fluid.getVelocityTexture();
     if (!velocityTexture) return;
+    const std::vector<SpawnRequest> spawns = std::move(pendingSpawns_);
+    pendingSpawns_.clear();
     gpuUpdatePass_.setTexture("tex0", gpuState_.read().getTexture());
     gpuUpdatePass_.setTexture("particleVelocityTex", *velocityTexture);
     const float normalizedVelocity = std::max(0.0f, dt) * settings_.velocityScale / std::max(1, std::max(width_, height_));
     gpuUpdatePass_.setColor(tc::Color(std::clamp(settings_.variantCenter.x, 0.0f, 1.0f),
                                       std::clamp(settings_.variantCenter.y, 0.0f, 1.0f),
                                       std::max(0.0f, settings_.variantStrength),
-                                      std::clamp(settings_.damping, 0.0f, 1.0f)));
+                                      settings_.birthFromVelocity ? 1.0f : 0.0f));
+    gpuUpdatePass_.setTexelExtra(0.0f, 0.0f);
     gpuUpdatePass_.setOptions(normalizedVelocity, std::max(0.0f, dt), settings_.lifetime,
                               static_cast<float>(variantCode(settings_.variant)));
+    gpuUpdatePass_.render(gpuState_.write());
+    gpuState_.swap();
+
+    for (const auto& request : spawns) {
+        applyGpuSpawn(normalizeSpawn(request), *velocityTexture);
+    }
+}
+
+void ParticleFlow::applyGpuSpawn(const NormalizedSpawn& spawn, const tc::Texture& velocityTexture) {
+    if (!spawn.active) return;
+    gpuUpdatePass_.setTexture("tex0", gpuState_.read().getTexture());
+    gpuUpdatePass_.setTexture("particleVelocityTex", velocityTexture);
+    gpuUpdatePass_.setColor(tc::Color(spawn.center.x, spawn.center.y,
+                                      std::max(0.0f, settings_.variantStrength),
+                                      settings_.birthFromVelocity ? 1.0f : 0.0f));
+    gpuUpdatePass_.setTexelExtra(spawn.radius, spawn.probability);
+    gpuUpdatePass_.setOptions(settings_.birthFromVelocity
+                                  ? std::max(0.0f, settings_.birthVelocityScale) /
+                                        static_cast<float>(std::max(1, std::max(width_, height_)))
+                                  : 0.0f,
+                              0.0f, settings_.lifetime, 0.0f);
     gpuUpdatePass_.render(gpuState_.write());
     gpuState_.swap();
 }
@@ -243,6 +351,8 @@ void ParticleFlow::drawGpu(float x, float y, float w, float h) const {
     params.resolution[3] = h;
     params.texel[0] = x;
     params.texel[1] = y;
+    params.options[0] = std::max(0.0f, settings_.sizeSpread);
+    params.options[1] = std::max(0.0001f, settings_.ageFadePower);
     params.options[2] = settings_.lifetime;
     params.options[3] = settings_.particleSize;
 

@@ -22,6 +22,7 @@ private:
     void drawObstacles() const;
 
     tcx::flow::Fluid2D fluid_;
+    tcx::flow::FlowVisualizer visualizer_;
     std::vector<tc::Vec2> windField_;
     std::vector<float> densitySourcePixels_;
     tc::Texture densitySourceTexture_;

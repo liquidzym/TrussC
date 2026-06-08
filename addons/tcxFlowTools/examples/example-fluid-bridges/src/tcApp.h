@@ -13,6 +13,7 @@ public:
 
 private:
     void resizeSystems();
+    void applyBridgeSettings();
     void updateInputTexture(float time);
 
     tcx::flow::Fluid2D fluid_;
@@ -22,4 +23,11 @@ private:
     tcx::flow::CombinedBridge combinedBridge_;
     tc::Fbo inputTexture_;
     int mode_ = 4;
+    bool invert_ = false;
+    bool useAlphaAsMask_ = false;
+    bool mirrorX_ = false;
+    bool mirrorY_ = false;
+    int maskSourceIndex_ = 0;
+    float maskSoftness_ = 0.0f;
+    float maskGamma_ = 1.0f;
 };
