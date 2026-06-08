@@ -105,6 +105,7 @@ RuntimeStats parseRuntimeStats(const Json& value, double receivedAtEpochMs) {
     stats.sourceFPS = statsValue->value("sourceFPS", 0.0f);
     stats.inferenceFPS = statsValue->value("inferenceFPS", 0.0f);
     stats.averageInferenceTimeMs = statsValue->value("averageInferenceTimeMs", stats.averageInferenceTimeMs);
+    stats.frameAgeMs = statsValue->value("frameAgeMs", 0.0f);
 
     const double explicitLatency = statsValue->value("bridgeLatencyMs", 0.0);
     const double sentAtEpochMs = statsValue->value("sentAtEpochMs", 0.0);

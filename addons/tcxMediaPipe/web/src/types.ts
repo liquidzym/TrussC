@@ -51,12 +51,15 @@ export type RuntimeStats = {
   sourceFPS: number;
   inferenceFPS: number;
   averageInferenceTimeMs: number;
+  frameAgeMs: number;
+  capturedAtEpochMs: number;
   sentAtEpochMs: number;
 };
 
 export type DetectVideoMessage = {
   type: "detect_video";
   timestampMs: number;
+  capturedAtEpochMs: number;
   sourceFPS: number;
   frame: ImageBitmap;
 };

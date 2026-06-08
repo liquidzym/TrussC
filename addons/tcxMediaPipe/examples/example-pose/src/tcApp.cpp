@@ -58,8 +58,9 @@ void tcApp::draw() {
     drawBitmapString("Inference FPS: " + toString(mediaPipe_.getInferenceFPS(), 1), 20, 115);
     drawBitmapString("Inference ms: " + toString(mediaPipe_.getAverageInferenceTimeMs(), 1), 20, 135);
     drawBitmapString("Bridge latency ms: " + toString(mediaPipe_.getBridgeLatencyMs(), 1), 20, 155);
-    drawBitmapString("GPU: " + compactRenderer(mediaPipe_.gpuInfo()), 20, 175);
-    int statusY = 205;
+    drawBitmapString("Frame age ms: " + toString(mediaPipe_.getFrameAgeMs(), 1), 20, 175);
+    drawBitmapString("GPU: " + compactRenderer(mediaPipe_.gpuInfo()), 20, 195);
+    int statusY = 225;
     if (!mediaPipe_.lastError().empty()) {
         setColor(colors::red);
         drawBitmapString(mediaPipe_.lastError(), 20, statusY);

@@ -19,7 +19,7 @@ export const defaultConfig: RuntimeConfig = {
   multiPerson: true,
   maxHands: 4,
   maxPoses: 2,
-  maxFaces: 2,
+  maxFaces: 1,
   maxGestures: 4,
   outputFaceBlendshapes: false,
   outputFaceTransformationMatrix: false

@@ -60,6 +60,7 @@ let pendingWorkerFrameMs = 0;
 const TASK_NAMES: readonly TaskName[] = ["hand", "pose", "face", "gesture"];
 const bridge = new Bridge();
 const workers: Partial<Record<TaskName, Worker>> = {};
+const taskFrameInFlight: Record<TaskName, boolean> = { hand: false, pose: false, face: false, gesture: false };
 const modelStatus: Record<TaskName, boolean> = { hand: false, pose: false, face: false, gesture: false };
 const resultStatus: Record<TaskName, boolean> = { hand: false, pose: false, face: false, gesture: false };
 const sourceRate = new RateCounter();
@@ -609,6 +610,7 @@ function createWorker(task: TaskName): Worker {
   worker.onmessage = (event: MessageEvent) => {
     const message = event.data as RuntimeStatus | Record<string, unknown>;
     if (message.type === "runtime_status") {
+      taskFrameInFlight[task] = false;
       const status = message as RuntimeStatus;
       if (status.activeDelegate) {
         currentActiveDelegate = status.activeDelegate;
@@ -633,6 +635,7 @@ function createWorker(task: TaskName): Worker {
     } else {
       const taskName = taskForResultType(message.type);
       if (taskName) {
+        taskFrameInFlight[taskName] = false;
         resultStatus[taskName] = true;
         reportPipelineReadyIfNeeded();
       }
@@ -640,6 +643,7 @@ function createWorker(task: TaskName): Worker {
     }
   };
   worker.onerror = (event) => {
+    taskFrameInFlight[task] = false;
     setStatus("error", `${task} worker error`, event.message || "Worker failed to initialize.");
     bridge.send(enrichStatus({
       type: "runtime_status",
@@ -814,7 +818,7 @@ async function postSourceFrameToTasks(
   sourceHeight: number,
   timestampMs: number
 ): Promise<void> {
-  const tasks = enabledTasks().filter((task) => workers[task]);
+  const tasks = enabledTasks().filter((task) => workers[task] && modelStatus[task] && !taskFrameInFlight[task]);
   if (tasks.length === 0) {
     return;
   }
@@ -829,7 +833,8 @@ async function postSourceFrameToTasks(
         frame?.close();
         return;
       }
-      worker.postMessage({ type: "detect_video", timestampMs, sourceFPS, frame }, [frame]);
+      taskFrameInFlight[task] = true;
+      worker.postMessage({ type: "detect_video", timestampMs, capturedAtEpochMs: Date.now(), sourceFPS, frame }, [frame]);
     });
   } catch (error) {
     for (const frame of frames) {

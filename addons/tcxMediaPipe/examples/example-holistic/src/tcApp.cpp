@@ -29,11 +29,11 @@ void tcApp::setup() {
     settings.enableFace = true;
     settings.inputWidth = 640;
     settings.inputHeight = 480;
-    settings.processingWidth = 480;
-    settings.processingHeight = 360;
-    settings.maxFPS = 30;
+    settings.processingWidth = 320;
+    settings.processingHeight = 240;
+    settings.maxFPS = 24;
     settings.maxPoses = 2;
-    settings.maxFaces = 2;
+    settings.maxFaces = 1;
 
     if (!mediaPipe_.setup(settings)) {
         setupError_ = mediaPipe_.lastError();
@@ -138,9 +138,10 @@ void tcApp::draw() {
     drawBitmapString("Inference FPS: " + toString(mediaPipe_.getInferenceFPS(), 1), 20, 115);
     drawBitmapString("Inference ms: " + toString(mediaPipe_.getAverageInferenceTimeMs(), 1), 20, 135);
     drawBitmapString("Bridge latency ms: " + toString(mediaPipe_.getBridgeLatencyMs(), 1), 20, 155);
-    drawBitmapString("GPU: " + compactRenderer(mediaPipe_.gpuInfo()), 20, 175);
+    drawBitmapString("Frame age ms: " + toString(mediaPipe_.getFrameAgeMs(), 1), 20, 175);
+    drawBitmapString("GPU: " + compactRenderer(mediaPipe_.gpuInfo()), 20, 195);
 
-    int statusY = 205;
+    int statusY = 225;
     if (!mediaPipe_.lastError().empty()) {
         setColor(colors::red);
         drawBitmapString(mediaPipe_.lastError(), 20, statusY);

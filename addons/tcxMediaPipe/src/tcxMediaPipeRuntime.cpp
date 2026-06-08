@@ -363,6 +363,11 @@ float MediaPipe::getAverageInferenceTimeMs() const {
     return averageInferenceTimeMs_;
 }
 
+float MediaPipe::getFrameAgeMs() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return frameAgeMs_;
+}
+
 float MediaPipe::getBridgeLatencyMs() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return bridgeLatencyMs_;
@@ -452,6 +457,7 @@ void MediaPipe::handleBridgeMessage(tcxCEF::WebSocketBridgeMessage& message) {
             sourceFPS_ = stats.sourceFPS;
             inferenceFPS_ = stats.inferenceFPS;
             averageInferenceTimeMs_ = stats.averageInferenceTimeMs;
+            frameAgeMs_ = stats.frameAgeMs;
             bridgeLatencyMs_ = stats.bridgeLatencyMs;
         }
     } catch (const std::exception& e) {

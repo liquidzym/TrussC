@@ -107,10 +107,12 @@ Do not run `trusscli update` on these examples unless you re-apply the
 the generated `CMakeLists.txt`; those lines are required for CEF, offline web
 assets, and macOS signing.
 
-The examples draw hand, pose, face, combined hand+pose+face, and gesture results. They display active delegate, source FPS, inference FPS, average inference time, and bridge latency.
+The examples draw hand, pose, face, combined hand+pose+face, and gesture results. They display active delegate, source FPS, inference FPS, average inference time, frame age, and bridge latency.
 
-By default the examples request a 640x480 camera stream for the CEF preview and
-resize inference frames to 480x360 before sending them to MediaPipe workers. Set
+By default the examples request a 640x480 camera stream for the CEF preview. Hand,
+pose, and gesture resize inference frames to 480x360. Face and holistic use
+320x240, single-face defaults, and a 24 FPS cap because the face landmarker is the
+heaviest path and otherwise tends to build visible lag. Set
 `Settings::processingWidth` and `Settings::processingHeight` to `0` to run
 inference at the captured camera size.
 
@@ -132,7 +134,7 @@ settings.enableGesture = true;
 settings.multiPerson = true;
 settings.maxHands = 4;
 settings.maxPoses = 2;
-settings.maxFaces = 2;
+settings.maxFaces = 1;
 settings.maxGestures = 4;
 settings.outputFaceBlendshapes = false;
 settings.outputFaceTransformationMatrix = false;

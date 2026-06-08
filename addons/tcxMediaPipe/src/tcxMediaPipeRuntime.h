@@ -56,6 +56,7 @@ public:
     float getSourceFPS() const;
     float getInferenceFPS() const;
     float getAverageInferenceTimeMs() const;
+    float getFrameAgeMs() const;
     float getBridgeLatencyMs() const;
 
     std::string activeDelegate() const;
@@ -86,6 +87,7 @@ private:
     float sourceFPS_ = 0.0f;
     float inferenceFPS_ = 0.0f;
     float averageInferenceTimeMs_ = 0.0f;
+    float frameAgeMs_ = 0.0f;
     float bridgeLatencyMs_ = 0.0f;
     std::string lastError_;
 

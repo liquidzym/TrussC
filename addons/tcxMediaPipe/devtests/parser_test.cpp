@@ -104,6 +104,7 @@ void testRuntimeStatsParser() {
         "sourceFPS": 29.5,
         "inferenceFPS": 27.25,
         "averageInferenceTimeMs": 9.75,
+        "frameAgeMs": 42.5,
         "sentAtEpochMs": 1710000000100.0
       },
       "hands": []
@@ -113,6 +114,7 @@ void testRuntimeStatsParser() {
     expectNear(stats.sourceFPS, 29.5f, 0.001f, "stats source fps");
     expectNear(stats.inferenceFPS, 27.25f, 0.001f, "stats inference fps");
     expectNear(stats.averageInferenceTimeMs, 9.75f, 0.001f, "stats average inference");
+    expectNear(stats.frameAgeMs, 42.5f, 0.001f, "stats frame age");
     expectNear(stats.bridgeLatencyMs, 25.0f, 0.001f, "stats bridge latency");
 }
 

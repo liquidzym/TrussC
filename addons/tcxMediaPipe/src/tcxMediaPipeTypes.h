@@ -101,6 +101,7 @@ struct RuntimeStats {
     float sourceFPS = 0.0f;
     float inferenceFPS = 0.0f;
     float averageInferenceTimeMs = 0.0f;
+    float frameAgeMs = 0.0f;
     float bridgeLatencyMs = 0.0f;
 };
 

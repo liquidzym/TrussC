@@ -47,6 +47,7 @@ self.onmessage = async (event: MessageEvent<WorkerInboundMessage>) => {
   try {
     const result = task.recognizeForVideo(message.frame, message.timestampMs);
     const inferenceTimeMs = performance.now() - started;
+    const sentAtEpochMs = Date.now();
     self.postMessage({
       type: "gesture_result",
       timestampMs: message.timestampMs,
@@ -55,9 +56,20 @@ self.onmessage = async (event: MessageEvent<WorkerInboundMessage>) => {
         sourceFPS: message.sourceFPS,
         inferenceFPS: inferenceRate.tick(),
         averageInferenceTimeMs: inferenceTimeMs,
-        sentAtEpochMs: Date.now()
+        frameAgeMs: sentAtEpochMs - message.capturedAtEpochMs,
+        capturedAtEpochMs: message.capturedAtEpochMs,
+        sentAtEpochMs
       },
       ...serializeGestureResult(result)
+    });
+  } catch (error) {
+    self.postMessage({
+      type: "runtime_status",
+      ready: false,
+      activeDelegate,
+      reason: error instanceof Error ? error.message : "GestureRecognizer detection failed",
+      wasmPath: "/wasm",
+      models: { hand: false, pose: false, face: false, gesture: false }
     });
   } finally {
     message.frame.close();
