@@ -241,6 +241,8 @@ void testSettingsJsonOverridesDetectionLimits() {
       "maxPoses": 3,
       "maxFaces": 5,
       "maxGestures": 7,
+      "outputFaceBlendshapes": true,
+      "outputFaceTransformationMatrix": true,
       "processingWidth": 320,
       "processingHeight": 240,
       "tasks": {
@@ -261,6 +263,8 @@ void testSettingsJsonOverridesDetectionLimits() {
     expect(settings.maxPoses == 3, "settings max poses");
     expect(settings.maxFaces == 5, "settings max faces");
     expect(settings.maxGestures == 7, "settings max gestures");
+    expect(settings.outputFaceBlendshapes, "settings face blendshape output");
+    expect(settings.outputFaceTransformationMatrix, "settings face transform output");
     expect(settings.processingWidth == 320, "settings processing width");
     expect(settings.processingHeight == 240, "settings processing height");
     expect(settings.enableHand, "settings hand task");

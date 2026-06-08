@@ -25,11 +25,6 @@ std::string inputModeToString(InputMode mode) {
     return mode == InputMode::WebCamera ? "WebCamera" : "ExternalFrame";
 }
 
-std::string messageType(const std::string& message) {
-    const Json value = Json::parse(message);
-    return value.value("type", "");
-}
-
 int detectionLimit(bool multiPerson, int requested) {
     return multiPerson ? std::max(1, requested) : 1;
 }
@@ -428,27 +423,28 @@ void MediaPipe::sendConfig() {
 
 void MediaPipe::handleBridgeMessage(tcxCEF::WebSocketBridgeMessage& message) {
     try {
-        const std::string type = messageType(message.text);
-        const RuntimeStats stats = parseRuntimeStats(message.text, currentEpochMs());
+        const Json value = parseBridgeMessageJson(message.text);
+        const std::string type = messageType(value);
+        const RuntimeStats stats = parseRuntimeStats(value, currentEpochMs());
         std::lock_guard<std::mutex> lock(mutex_);
         if (type == "runtime_status") {
-            runtimeStatus_ = parseRuntimeStatus(message.text);
+            runtimeStatus_ = parseRuntimeStatus(value);
             if (runtimeStatus_.ready) {
                 lastError_.clear();
             } else if (!runtimeStatus_.reason.empty()) {
                 lastError_ = runtimeStatus_.reason;
             }
         } else if (type == "hand_result") {
-            handResult_ = parseHandResult(message.text);
+            handResult_ = parseHandResult(value);
             newHandResult_ = true;
         } else if (type == "pose_result") {
-            poseResult_ = parsePoseResult(message.text);
+            poseResult_ = parsePoseResult(value);
             newPoseResult_ = true;
         } else if (type == "face_result") {
-            faceResult_ = parseFaceResult(message.text);
+            faceResult_ = parseFaceResult(value);
             newFaceResult_ = true;
         } else if (type == "gesture_result") {
-            gestureResult_ = parseGestureResult(message.text);
+            gestureResult_ = parseGestureResult(value);
             newGestureResult_ = true;
         }
 
@@ -487,6 +483,8 @@ std::string MediaPipe::makeConfigJson() const {
     config["maxPoses"] = detectionLimit(settings_.multiPerson, settings_.maxPoses);
     config["maxFaces"] = detectionLimit(settings_.multiPerson, settings_.maxFaces);
     config["maxGestures"] = detectionLimit(settings_.multiPerson, settings_.maxGestures);
+    config["outputFaceBlendshapes"] = settings_.outputFaceBlendshapes;
+    config["outputFaceTransformationMatrix"] = settings_.outputFaceTransformationMatrix;
     return config.dump();
 }
 

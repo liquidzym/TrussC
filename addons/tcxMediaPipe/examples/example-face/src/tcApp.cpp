@@ -1,11 +1,49 @@
 #include "tcApp.h"
 
 #include <array>
+#include <cmath>
+#include <utility>
+#include <vector>
 
 namespace {
 
 Vec2 toScreen(const tcx::mediapipe::Landmark& point, float width, float height) {
     return Vec2(point.x * width, point.y * height);
+}
+
+bool canConnect(const tcx::mediapipe::Landmark& a, const tcx::mediapipe::Landmark& b, float maxDistance) {
+    if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(b.x) || !std::isfinite(b.y)) {
+        return false;
+    }
+
+    const float dx = a.x - b.x;
+    const float dy = a.y - b.y;
+    return (dx * dx + dy * dy) <= (maxDistance * maxDistance);
+}
+
+void drawFaceMesh(const std::vector<tcx::mediapipe::Landmark>& landmarks, float width, float height) {
+    const array<pair<size_t, float>, 3> meshOffsets = {{
+        {1, 0.030f},
+        {2, 0.040f},
+        {4, 0.055f},
+    }};
+
+    for (const auto& [offset, maxDistance] : meshOffsets) {
+        if (offset >= landmarks.size()) {
+            continue;
+        }
+        for (size_t i = 0; i + offset < landmarks.size(); ++i) {
+            const auto& a = landmarks[i];
+            const auto& b = landmarks[i + offset];
+            if (!canConnect(a, b, maxDistance)) {
+                continue;
+            }
+
+            const Vec2 p0 = toScreen(a, width, height);
+            const Vec2 p1 = toScreen(b, width, height);
+            drawLine(p0.x, p0.y, p1.x, p1.y);
+        }
+    }
 }
 
 string compactRenderer(const tcx::mediapipe::RuntimeGpuInfo& gpu) {
@@ -30,6 +68,9 @@ void tcApp::setup() {
     settings.processingWidth = 480;
     settings.processingHeight = 360;
     settings.maxFPS = 30;
+    settings.maxFaces = 2;
+    settings.outputFaceBlendshapes = false;
+    settings.outputFaceTransformationMatrix = false;
 
     if (!mediaPipe_.setup(settings)) {
         setupError_ = mediaPipe_.lastError();
@@ -89,20 +130,20 @@ void tcApp::draw() {
     for (size_t faceIndex = 0; faceIndex < result->faces.size(); ++faceIndex) {
         const auto& face = result->faces[faceIndex];
         const auto& color = faceColors[faceIndex % faceColors.size()];
+        setColor(color[0] * 0.28f, color[1] * 0.28f, color[2] * 0.28f);
+        drawFaceMesh(face.landmarks, width, height);
+
         setColor(color[0], color[1], color[2]);
-        for (size_t i = 0; i < face.landmarks.size(); i += 4) {
+        for (size_t i = 0; i < face.landmarks.size(); ++i) {
             const Vec2 p = toScreen(face.landmarks[i], width, height);
-            drawCircle(p.x, p.y, 2.5f);
+            drawCircle(p.x, p.y, 1.7f);
         }
     }
 
     const auto& face = result->faces.front();
-    const auto jawOpen = face.blendshapes.find("jawOpen");
-    const auto smile = face.blendshapes.find("mouthSmileLeft");
     setColor(colors::yellow);
     drawBitmapString("Faces: " + toString(static_cast<int>(result->faces.size())), 20, statusY);
     drawBitmapString("Face 0 landmarks: " + toString(static_cast<int>(face.landmarks.size())), 20, statusY + 20);
-    drawBitmapString("jawOpen: " + toString(jawOpen == face.blendshapes.end() ? 0.0f : jawOpen->second, 2), 20, statusY + 40);
-    drawBitmapString("mouthSmileLeft: " + toString(smile == face.blendshapes.end() ? 0.0f : smile->second, 2), 20, statusY + 60);
-    drawBitmapString("Matrix available: " + string(face.facialTransformationMatrix[15] != 0.0f ? "yes" : "no"), 20, statusY + 80);
+    drawBitmapString("Blendshapes: " + string(face.blendshapes.empty() ? "disabled" : "enabled"), 20, statusY + 40);
+    drawBitmapString("Matrix available: " + string(face.facialTransformationMatrix[15] != 0.0f ? "yes" : "no"), 20, statusY + 60);
 }

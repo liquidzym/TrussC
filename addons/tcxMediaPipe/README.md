@@ -131,9 +131,11 @@ settings.enableFace = true;
 settings.enableGesture = true;
 settings.multiPerson = true;
 settings.maxHands = 4;
-settings.maxPoses = 4;
-settings.maxFaces = 4;
+settings.maxPoses = 2;
+settings.maxFaces = 2;
 settings.maxGestures = 4;
+settings.outputFaceBlendshapes = false;
+settings.outputFaceTransformationMatrix = false;
 ```
 
 The same values can be loaded from an optional JSON file:

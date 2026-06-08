@@ -9,7 +9,9 @@
   "mirror": true,
   "multiPerson": true,
   "maxHands": 4,
-  "maxPoses": 4,
-  "maxFaces": 4,
-  "maxGestures": 4
+  "maxPoses": 2,
+  "maxFaces": 2,
+  "maxGestures": 4,
+  "outputFaceBlendshapes": false,
+  "outputFaceTransformationMatrix": false
 }

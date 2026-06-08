@@ -1,3 +1,7 @@
+type SendOptions = {
+  dropIfBufferedBytes?: number;
+};
+
 export class Bridge {
   private socket: WebSocket | null = null;
   private queue: string[] = [];
@@ -24,12 +28,25 @@ export class Bridge {
     });
   }
 
-  send(value: unknown): void {
-    const text = JSON.stringify(value);
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(text);
-    } else {
+  send(value: unknown, options: SendOptions = {}): boolean {
+    const socket = this.socket;
+    const limit = options.dropIfBufferedBytes;
+    if (socket?.readyState === WebSocket.OPEN) {
+      if (limit !== undefined && socket.bufferedAmount > limit) {
+        return false;
+      }
+      const text = JSON.stringify(value);
+      if (limit !== undefined && socket.bufferedAmount + text.length > limit) {
+        return false;
+      }
+      socket.send(text);
+      return true;
+    }
+
+    if (limit === undefined) {
+      const text = JSON.stringify(value);
       this.queue.push(text);
     }
+    return false;
   }
 }

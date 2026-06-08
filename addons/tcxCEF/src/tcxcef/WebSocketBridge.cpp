@@ -4,6 +4,7 @@
 #include <array>
 #include <cctype>
 #include <sstream>
+#include <utility>
 
 namespace tcxCEF {
 namespace {
@@ -300,13 +301,36 @@ void WebSocketBridge::processFrames(int clientId,
                                     ClientState& state,
                                     std::vector<WebSocketBridgeMessage>& messages,
                                     bool& disconnectClient) {
+    auto failProtocol = [&]() {
+        state.buffer.clear();
+        state.hasFragmentedMessage = false;
+        state.fragmentedOpcode = 0;
+        state.fragmentedPayload.clear();
+        disconnectClient = true;
+    };
+
+    auto pushTextMessage = [&](std::string text) {
+        WebSocketBridgeMessage message;
+        message.clientId = clientId;
+        message.text = std::move(text);
+        messages.push_back(std::move(message));
+    };
+
     while (state.buffer.size() >= 2) {
         const std::uint8_t byte0 = state.buffer[0];
         const std::uint8_t byte1 = state.buffer[1];
+        const bool fin = (byte0 & 0x80) != 0;
+        const bool reservedBits = (byte0 & 0x70) != 0;
         const std::uint8_t opcode = byte0 & 0x0F;
+        const bool controlFrame = opcode >= 0x8;
         const bool masked = (byte1 & 0x80) != 0;
         uint64_t payloadLength = byte1 & 0x7F;
         size_t offset = 2;
+
+        if (reservedBits) {
+            failProtocol();
+            return;
+        }
 
         if (payloadLength == 126) {
             if (state.buffer.size() < offset + 2) {
@@ -326,9 +350,13 @@ void WebSocketBridge::processFrames(int clientId,
             offset += 8;
         }
 
+        if (controlFrame && (!fin || payloadLength > 125)) {
+            failProtocol();
+            return;
+        }
+
         if (payloadLength > kMaxTextFrameBytes) {
-            state.buffer.clear();
-            disconnectClient = true;
+            failProtocol();
             return;
         }
 
@@ -359,12 +387,47 @@ void WebSocketBridge::processFrames(int clientId,
                            state.buffer.begin() + static_cast<long>(offset + payloadLength));
 
         if (opcode == 0x1) {
-            WebSocketBridgeMessage message;
-            message.clientId = clientId;
-            message.text = std::move(payload);
-            messages.push_back(std::move(message));
+            if (state.hasFragmentedMessage) {
+                failProtocol();
+                return;
+            }
+            if (fin) {
+                pushTextMessage(std::move(payload));
+            } else {
+                state.hasFragmentedMessage = true;
+                state.fragmentedOpcode = opcode;
+                state.fragmentedPayload = std::move(payload);
+            }
+        } else if (opcode == 0x0) {
+            if (!state.hasFragmentedMessage) {
+                failProtocol();
+                return;
+            }
+            if (state.fragmentedPayload.size() > kMaxTextFrameBytes - payload.size()) {
+                failProtocol();
+                return;
+            }
+            state.fragmentedPayload.append(payload);
+            if (fin) {
+                if (state.fragmentedOpcode == 0x1) {
+                    pushTextMessage(std::move(state.fragmentedPayload));
+                }
+                state.hasFragmentedMessage = false;
+                state.fragmentedOpcode = 0;
+                state.fragmentedPayload.clear();
+            }
         } else if (opcode == 0x8) {
+            state.hasFragmentedMessage = false;
+            state.fragmentedOpcode = 0;
+            state.fragmentedPayload.clear();
             disconnectClient = true;
+            return;
+        } else if (opcode == 0x9) {
+            sendControlFrame(clientId, 0xA, payload);
+        } else if (opcode == 0xA) {
+            continue;
+        } else {
+            failProtocol();
             return;
         }
     }
@@ -389,6 +452,19 @@ bool WebSocketBridge::sendTextFrame(int clientId, const std::string& text) {
     }
 
     frame.insert(frame.end(), text.begin(), text.end());
+    return server_.send(clientId, frame);
+}
+
+bool WebSocketBridge::sendControlFrame(int clientId, std::uint8_t opcode, const std::string& payload) {
+    if (payload.size() > 125) {
+        return false;
+    }
+
+    std::vector<char> frame;
+    frame.reserve(2 + payload.size());
+    frame.push_back(static_cast<char>(0x80 | (opcode & 0x0F)));
+    frame.push_back(static_cast<char>(payload.size()));
+    frame.insert(frame.end(), payload.begin(), payload.end());
     return server_.send(clientId, frame);
 }
 

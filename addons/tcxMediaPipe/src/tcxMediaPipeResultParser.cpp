@@ -1,7 +1,5 @@
 #include "tcxMediaPipeResultParser.h"
 
-#include "nlohmann/json.hpp"
-
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
@@ -9,16 +7,12 @@
 namespace tcx::mediapipe {
 namespace {
 
-using Json = nlohmann::json;
-
-Json parseMessage(const std::string& message, const char* expectedType) {
-    Json value = Json::parse(message);
-    const std::string type = value.value("type", "");
+void requireMessageType(const Json& value, const char* expectedType) {
+    const std::string type = messageType(value);
     if (type != expectedType) {
         throw std::invalid_argument(std::string("Expected MediaPipe message type '") +
                                     expectedType + "', got '" + type + "'");
     }
-    return value;
 }
 
 Landmark parseLandmark(const Json& value) {
@@ -53,8 +47,16 @@ Pose parsePoseValue(const Json& value) {
 
 } // namespace
 
-RuntimeStatus parseRuntimeStatus(const std::string& message) {
-    const Json value = parseMessage(message, "runtime_status");
+Json parseBridgeMessageJson(const std::string& message) {
+    return Json::parse(message);
+}
+
+std::string messageType(const Json& value) {
+    return value.value("type", "");
+}
+
+RuntimeStatus parseRuntimeStatus(const Json& value) {
+    requireMessageType(value, "runtime_status");
     RuntimeStatus status;
     status.ready = value.value("ready", false);
     status.cameraReady = value.value("cameraReady", false);
@@ -87,8 +89,11 @@ RuntimeStatus parseRuntimeStatus(const std::string& message) {
     return status;
 }
 
-RuntimeStats parseRuntimeStats(const std::string& message, double receivedAtEpochMs) {
-    const Json value = Json::parse(message);
+RuntimeStatus parseRuntimeStatus(const std::string& message) {
+    return parseRuntimeStatus(parseBridgeMessageJson(message));
+}
+
+RuntimeStats parseRuntimeStats(const Json& value, double receivedAtEpochMs) {
     RuntimeStats stats;
     stats.averageInferenceTimeMs = value.value("inferenceTimeMs", 0.0f);
 
@@ -111,8 +116,12 @@ RuntimeStats parseRuntimeStats(const std::string& message, double receivedAtEpoc
     return stats;
 }
 
-HandResult parseHandResult(const std::string& message) {
-    const Json value = parseMessage(message, "hand_result");
+RuntimeStats parseRuntimeStats(const std::string& message, double receivedAtEpochMs) {
+    return parseRuntimeStats(parseBridgeMessageJson(message), receivedAtEpochMs);
+}
+
+HandResult parseHandResult(const Json& value) {
+    requireMessageType(value, "hand_result");
     HandResult result;
     result.timestampMs = value.value("timestampMs", 0.0);
     result.inferenceTimeMs = value.value("inferenceTimeMs", 0.0);
@@ -133,8 +142,12 @@ HandResult parseHandResult(const std::string& message) {
     return result;
 }
 
-GestureResult parseGestureResult(const std::string& message) {
-    const Json value = parseMessage(message, "gesture_result");
+HandResult parseHandResult(const std::string& message) {
+    return parseHandResult(parseBridgeMessageJson(message));
+}
+
+GestureResult parseGestureResult(const Json& value) {
+    requireMessageType(value, "gesture_result");
     GestureResult result;
     result.timestampMs = value.value("timestampMs", 0.0);
     result.inferenceTimeMs = value.value("inferenceTimeMs", 0.0);
@@ -158,8 +171,12 @@ GestureResult parseGestureResult(const std::string& message) {
     return result;
 }
 
-PoseResult parsePoseResult(const std::string& message) {
-    const Json value = parseMessage(message, "pose_result");
+GestureResult parseGestureResult(const std::string& message) {
+    return parseGestureResult(parseBridgeMessageJson(message));
+}
+
+PoseResult parsePoseResult(const Json& value) {
+    requireMessageType(value, "pose_result");
     PoseResult result;
     result.timestampMs = value.value("timestampMs", 0.0);
     result.inferenceTimeMs = value.value("inferenceTimeMs", 0.0);
@@ -185,8 +202,12 @@ PoseResult parsePoseResult(const std::string& message) {
     return result;
 }
 
-FaceResult parseFaceResult(const std::string& message) {
-    const Json value = parseMessage(message, "face_result");
+PoseResult parsePoseResult(const std::string& message) {
+    return parsePoseResult(parseBridgeMessageJson(message));
+}
+
+FaceResult parseFaceResult(const Json& value) {
+    requireMessageType(value, "face_result");
     FaceResult result;
     result.timestampMs = value.value("timestampMs", 0.0);
     result.inferenceTimeMs = value.value("inferenceTimeMs", 0.0);
@@ -218,6 +239,10 @@ FaceResult parseFaceResult(const std::string& message) {
     }
 
     return result;
+}
+
+FaceResult parseFaceResult(const std::string& message) {
+    return parseFaceResult(parseBridgeMessageJson(message));
 }
 
 } // namespace tcx::mediapipe

@@ -18,6 +18,8 @@ export type RuntimeConfig = {
   maxPoses: number;
   maxFaces: number;
   maxGestures: number;
+  outputFaceBlendshapes: boolean;
+  outputFaceTransformationMatrix: boolean;
 };
 
 export type RuntimeGpuInfo = {
@@ -66,6 +68,8 @@ export type ConfigureWorkerMessage = {
   maxPoses: number;
   maxFaces: number;
   maxGestures: number;
+  outputFaceBlendshapes: boolean;
+  outputFaceTransformationMatrix: boolean;
 };
 
 export type WorkerInboundMessage = DetectVideoMessage | ConfigureWorkerMessage;

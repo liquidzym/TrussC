@@ -30,9 +30,11 @@ struct Settings {
 
     bool multiPerson = true;
     int maxHands = 4;
-    int maxPoses = 4;
-    int maxFaces = 4;
+    int maxPoses = 2;
+    int maxFaces = 2;
     int maxGestures = 4;
+    bool outputFaceBlendshapes = false;
+    bool outputFaceTransformationMatrix = false;
 
     std::filesystem::path configPath;
     std::filesystem::path webRootOverride;
@@ -157,6 +159,8 @@ inline bool applySettingsJson(Settings& settings, const std::string& jsonText, s
             !detail::readPositiveInt(value, "maxPoses", settings.maxPoses, error) ||
             !detail::readPositiveInt(value, "maxFaces", settings.maxFaces, error) ||
             !detail::readPositiveInt(value, "maxGestures", settings.maxGestures, error) ||
+            !detail::readBool(value, "outputFaceBlendshapes", settings.outputFaceBlendshapes, error) ||
+            !detail::readBool(value, "outputFaceTransformationMatrix", settings.outputFaceTransformationMatrix, error) ||
             !detail::readBool(value, "enableHand", settings.enableHand, error) ||
             !detail::readBool(value, "enablePose", settings.enablePose, error) ||
             !detail::readBool(value, "enableFace", settings.enableFace, error) ||

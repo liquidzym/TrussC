@@ -32,6 +32,8 @@ void tcApp::setup() {
     settings.processingWidth = 480;
     settings.processingHeight = 360;
     settings.maxFPS = 30;
+    settings.maxPoses = 2;
+    settings.maxFaces = 2;
 
     if (!mediaPipe_.setup(settings)) {
         setupError_ = mediaPipe_.lastError();

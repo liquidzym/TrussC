@@ -11,7 +11,10 @@ self.onmessage = async (event: MessageEvent<WorkerInboundMessage>) => {
   const message = event.data;
   if (message.type === "config") {
     try {
-      const created = await createFace(message.delegate, message.maxFaces);
+      const created = await createFace(message.delegate, message.maxFaces, {
+        outputFaceBlendshapes: message.outputFaceBlendshapes,
+        outputFaceTransformationMatrix: message.outputFaceTransformationMatrix
+      });
       task = created.task;
       activeDelegate = created.activeDelegate;
       self.postMessage({

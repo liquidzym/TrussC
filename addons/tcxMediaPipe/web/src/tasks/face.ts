@@ -6,7 +6,12 @@ function normalizedLimit(value: number): number {
   return Math.max(1, Math.floor(value));
 }
 
-export async function createFace(delegate: Delegate, maxFaces: number) {
+type FaceOptions = {
+  outputFaceBlendshapes: boolean;
+  outputFaceTransformationMatrix: boolean;
+};
+
+export async function createFace(delegate: Delegate, maxFaces: number, options: FaceOptions) {
   return createWithFallback(delegate, (activeDelegate, vision) =>
     FaceLandmarker.createFromOptions(vision, {
       baseOptions: {
@@ -15,8 +20,8 @@ export async function createFace(delegate: Delegate, maxFaces: number) {
       },
       runningMode: "VIDEO",
       numFaces: normalizedLimit(maxFaces),
-      outputFaceBlendshapes: true,
-      outputFacialTransformationMatrixes: true
+      outputFaceBlendshapes: options.outputFaceBlendshapes,
+      outputFacialTransformationMatrixes: options.outputFaceTransformationMatrix
     })
   );
 }
@@ -28,11 +33,16 @@ export function serializeFaceResult(result: any) {
     for (const category of categories) {
       blendshapes[category.categoryName] = category.score;
     }
-    return {
-      landmarks,
-      blendshapes,
-      facialTransformationMatrix: result.facialTransformationMatrixes?.[index]?.data ?? []
-    };
+    const face: Record<string, unknown> = { landmarks };
+    if (categories.length > 0) {
+      face.blendshapes = blendshapes;
+    }
+
+    const matrix = result.facialTransformationMatrixes?.[index]?.data;
+    if (matrix && matrix.length > 0) {
+      face.facialTransformationMatrix = Array.from(matrix);
+    }
+    return face;
   });
   return { faces };
 }

@@ -50,6 +50,9 @@ private:
     struct ClientState {
         bool handshaken = false;
         std::vector<std::uint8_t> buffer;
+        bool hasFragmentedMessage = false;
+        std::uint8_t fragmentedOpcode = 0;
+        std::string fragmentedPayload;
     };
 
     bool tryStartPort(int port);
@@ -64,6 +67,7 @@ private:
                        std::vector<WebSocketBridgeMessage>& messages,
                        bool& disconnectClient);
     bool sendTextFrame(int clientId, const std::string& text);
+    bool sendControlFrame(int clientId, std::uint8_t opcode, const std::string& payload);
 
     tc::TcpServer server_;
     tc::EventListener connectListener_;

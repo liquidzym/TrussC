@@ -11,6 +11,7 @@ const statusTitle = document.getElementById("status-title") as HTMLParagraphElem
 const statusDetail = document.getElementById("status-detail") as HTMLParagraphElement;
 const context = canvas.getContext("2d");
 const FALLBACK_FRAME_TIMEOUT_MS = 1500;
+const RESULT_BUFFER_LIMIT_BYTES = 192 * 1024;
 
 let config = normalizeConfig({});
 let cameraStarted = false;
@@ -635,7 +636,7 @@ function createWorker(task: TaskName): Worker {
         resultStatus[taskName] = true;
         reportPipelineReadyIfNeeded();
       }
-      bridge.send(mirrorResultMessage(message));
+      bridge.send(mirrorResultMessage(message), { dropIfBufferedBytes: RESULT_BUFFER_LIMIT_BYTES });
     }
   };
   worker.onerror = (event) => {
@@ -686,7 +687,9 @@ async function applyConfig(nextConfig: RuntimeConfig): Promise<void> {
           maxHands: config.maxHands,
           maxPoses: config.maxPoses,
           maxFaces: config.maxFaces,
-          maxGestures: config.maxGestures
+          maxGestures: config.maxGestures,
+          outputFaceBlendshapes: config.outputFaceBlendshapes,
+          outputFaceTransformationMatrix: config.outputFaceTransformationMatrix
         });
       }
     }
