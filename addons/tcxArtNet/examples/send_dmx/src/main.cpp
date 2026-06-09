@@ -1,25 +1,22 @@
 #include <tcxArtNet.h>
 
-#include <array>
 #include <iostream>
 
 int main() {
-    tcx::artnet::Controller controller;
-    tcx::artnet::ControllerSettings settings;
-    settings.localPort = 0;
+    tcx::artnet::Sender sender;
     tcx::artnet::Error error;
-    if (!controller.setup(settings, &error)) {
+    if (!sender.setup(false, &error)) {
         std::cerr << error.message << "\n";
         return 1;
     }
 
-    std::array<uint8_t, 6> dmx { 255, 0, 0, 0, 255, 0 };
-    tcx::artnet::Endpoint endpoint { "127.0.0.1", tcx::artnet::DefaultPort };
-    tcx::artnet::UniverseAddress universe { 0, 0, 1 };
-    if (!controller.sendDmx(endpoint, universe, dmx, &error)) {
+    sender.setDestination({ "127.0.0.1", tcx::artnet::DefaultPort });
+    if (!sender.setColor(1, 0, trussc::Color(1.0f, 0.0f, 0.0f), &error) ||
+        !sender.setColor(1, 3, trussc::Color(0.0f, 1.0f, 0.0f), &error) ||
+        !sender.send(&error)) {
         std::cerr << error.message << "\n";
         return 1;
     }
-    std::cout << "sent ArtDmx universe 0:0:1 to 127.0.0.1:6454\n";
+    std::cout << "sent full ArtDmx universe 1 to 127.0.0.1:6454 using zero-based channels 0..5\n";
     return 0;
 }

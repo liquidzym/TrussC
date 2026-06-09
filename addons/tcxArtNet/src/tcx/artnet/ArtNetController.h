@@ -21,6 +21,18 @@ struct ControllerSettings {
     uint16_t targetPortAddressTop = 32767;
 };
 
+struct SessionSettings {
+    SenderSettings sender;
+    ReceiverSettings receiver;
+    ControllerSettings controller;
+    bool setupSender = true;
+    bool setupReceiver = true;
+    bool setupController = true;
+    bool startReceiverThread = false;
+
+    SessionSettings();
+};
+
 class Controller {
 public:
     bool setup(const ControllerSettings& settings, Error* error = nullptr);
@@ -63,6 +75,41 @@ private:
     std::chrono::steady_clock::time_point lastPoll_ {};
     std::vector<uint8_t> recvBuffer_;
     uint8_t nextDmxSequence_ = 1;
+};
+
+class Session {
+public:
+    Session() = default;
+    ~Session();
+
+    Session(const Session&) = delete;
+    Session& operator=(const Session&) = delete;
+
+    bool setup(const SessionSettings& settings = SessionSettings {}, Error* error = nullptr);
+    void close();
+    bool recover(Error* error = nullptr);
+    void update();
+    bool pollNodes(Error* error = nullptr);
+
+    [[nodiscard]] Sender& sender() noexcept { return sender_; }
+    [[nodiscard]] const Sender& sender() const noexcept { return sender_; }
+    [[nodiscard]] Receiver& receiver() noexcept { return receiver_; }
+    [[nodiscard]] const Receiver& receiver() const noexcept { return receiver_; }
+    [[nodiscard]] Controller& controller() noexcept { return controller_; }
+    [[nodiscard]] const Controller& controller() const noexcept { return controller_; }
+    [[nodiscard]] std::vector<NodeInfo> getDiscoveredNodes() const;
+    [[nodiscard]] bool isSenderReady() const noexcept { return senderReady_; }
+    [[nodiscard]] bool isReceiverReady() const noexcept { return receiverReady_; }
+    [[nodiscard]] bool isControllerReady() const noexcept { return controllerReady_; }
+
+private:
+    SessionSettings settings_;
+    Sender sender_;
+    Receiver receiver_;
+    Controller controller_;
+    bool senderReady_ = false;
+    bool receiverReady_ = false;
+    bool controllerReady_ = false;
 };
 
 } // namespace tcx::artnet

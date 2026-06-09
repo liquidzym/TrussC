@@ -1,8 +1,12 @@
 # tcxArtNet
 
+[![Build](https://github.com/TrussC-org/TrussC/actions/workflows/build.yml/badge.svg)](https://github.com/TrussC-org/TrussC/actions/workflows/build.yml)
+
 `tcxArtNet` is a TrussC C++20 addon for Art-Net 4 packet encoding, decoding, UDP transport, controller workflows, node emulation, and LED pixel-to-DMX splitting.
 
 It has no openFrameworks dependency and does not use Boost, asio, Poco, libartnet, sACN, or RDM libraries. The addon implements core Art-Net protocol packets directly and keeps RDM, firmware flashing, file transfer, video, and media-server business logic behind codec-only extension points.
+
+Interop notes: the ArtDmx sender/receiver paths use standard UDP 6454 and can be checked with lighting controllers such as QLC+ over loopback or a fixture network. The headless addon tests cover packet codec behavior plus local Sender/Receiver loopback paths; physical fixture and hardware Art-Net node coverage depends on the target network and device, so use the diagnostics examples when checking a real lighting rig.
 
 ## Include
 
@@ -19,15 +23,42 @@ Detailed protocol headers live under `src/tcx/artnet/` and are included by the u
 ```cpp
 #include <tcxArtNet.h>
 
-tcx::artnet::Controller controller;
-tcx::artnet::ControllerSettings settings;
-controller.setup(settings);
+tcx::artnet::Sender sender;
+tcx::artnet::Error error;
+sender.setup(false, &error);
+sender.setDestination({ "192.168.1.50", tcx::artnet::DefaultPort });
 
-std::array<uint8_t, 6> dmx { 255, 0, 0, 0, 255, 0 };
-tcx::artnet::Endpoint node { "192.168.1.50", tcx::artnet::DefaultPort };
-tcx::artnet::UniverseAddress universe { 0, 0, 1 };
-controller.sendDmx(node, universe, dmx);
+sender.setChannel(1, 0, 255);                         // universe 1, channel 0
+sender.setColor(1, 3, trussc::Color(0.0f, 0.2f, 1.0f)); // channels 3, 4, 5
+sender.startAutoSend(30.0, &error);                    // keep refreshing DMX
 ```
+
+High-level Sender channel APIs are zero-based: channel `0` is the first DMX slot and channel `511` is the last. Fixture manuals and lighting consoles usually label those same slots as `1..512`, so subtract one when copying addresses from a fixture profile. Low-level APIs such as `sendDmx(endpoint, universe, span)` send the span exactly as provided.
+
+## Integrated Session
+
+Use `Session` when one app needs normal DMX output, ArtDmx input, and node discovery at the same time:
+
+```cpp
+tcx::artnet::Session artnet;
+tcx::artnet::SessionSettings settings;
+settings.receiver.port = tcx::artnet::DefaultPort;      // listen for ArtDmx
+settings.controller.directedBroadcastIp = "2.255.255.255";
+artnet.setup(settings);
+
+artnet.sender().setDestination({ "192.168.1.50", tcx::artnet::DefaultPort });
+artnet.sender().setColor(0, 0, trussc::Color(1.0f, 0.2f, 0.0f));
+artnet.pollNodes();
+
+while (running) {
+    artnet.update(); // polls receiver + controller discovery
+    if (artnet.receiver().hasNewData()) {
+        uint8_t first = artnet.receiver().getChannel(0, 0);
+    }
+}
+```
+
+`Session` composes `Sender`, `Receiver`, and `Controller`; it does not change `Node`, which remains a node-emulation surface. By default, the session sender enables broadcast and the controller uses an ephemeral local port to avoid colliding with the receiver's default UDP 6454 bind. If a real site requires ArtPoll from UDP 6454, configure `SessionSettings::controller.localPort` explicitly and disable or move the receiver if the platform does not allow sharing that port.
 
 ## Minimal Node
 
@@ -47,6 +78,9 @@ while (running) {
 
 ## Runtime Helpers
 
+- `Session` is a high-level facade for apps that need output, input, and discovery in one object. It exposes `sender()`, `receiver()`, `controller()`, `pollNodes()`, `update()`, and `getDiscoveredNodes()`.
+- `Sender` supports state-oriented DMX output: `setChannel()`, `setChannels()`, `setColor()`, `clear()`, `removeUniverse()`, `send()`, and `startAutoSend()` for continuous refresh. It sends full 512-channel universes from the high-level API.
+- `Receiver` can cache the latest ArtDmx data per universe with `getChannel()`, `getDmx()`, `getUniverses()`, `hasUniverse()`, and `hasNewData()`. `hasNewData()` clears when read, so an app can skip work on frames where DMX did not change.
 - `Controller` can auto-poll and prune stale discovered nodes using `ControllerSettings::autoPoll`, `pollInterval`, and `pollTimeout`.
 - `Controller::networkDiagnostics()` reports the requested bind IP/port, actual local endpoint, last target endpoint, recent socket error, and recovery state. `Controller::recover()` rebuilds the socket from the last `ControllerSettings`.
 - `UdpSocket::diagnostics()` reports actual bind results after binding to a specific local interface or an ephemeral port.

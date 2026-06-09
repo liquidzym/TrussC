@@ -56,6 +56,93 @@ bool sendEncoded(
 
 } // namespace
 
+SessionSettings::SessionSettings() {
+    sender.enableBroadcast = true;
+    controller.localPort = 0;
+}
+
+Session::~Session() {
+    close();
+}
+
+bool Session::setup(const SessionSettings& settings, Error* error) {
+    close();
+    settings_ = settings;
+
+    if (settings.startReceiverThread && !settings.setupReceiver) {
+        setError(error, ErrorCode::InvalidConfiguration, "Session startReceiverThread requires setupReceiver");
+        return false;
+    }
+
+    if (settings.setupSender) {
+        if (!sender_.setup(settings.sender, error)) {
+            close();
+            return false;
+        }
+        senderReady_ = true;
+    }
+
+    if (settings.setupReceiver) {
+        if (!receiver_.setup(settings.receiver, error)) {
+            close();
+            return false;
+        }
+        receiverReady_ = true;
+        if (settings.startReceiverThread && !receiver_.startThread(error)) {
+            close();
+            return false;
+        }
+    }
+
+    if (settings.setupController) {
+        if (!controller_.setup(settings.controller, error)) {
+            close();
+            return false;
+        }
+        controllerReady_ = true;
+    }
+
+    return true;
+}
+
+void Session::close() {
+    receiver_.close();
+    controller_.close();
+    sender_.close();
+    senderReady_ = false;
+    receiverReady_ = false;
+    controllerReady_ = false;
+}
+
+bool Session::recover(Error* error) {
+    return setup(settings_, error);
+}
+
+void Session::update() {
+    Error error;
+    if (controllerReady_) {
+        controller_.update();
+    }
+    if (receiverReady_ && !settings_.startReceiverThread) {
+        receiver_.poll(&error);
+    }
+}
+
+bool Session::pollNodes(Error* error) {
+    if (!controllerReady_) {
+        setError(error, ErrorCode::InvalidConfiguration, "Session controller is not set up");
+        return false;
+    }
+    return controller_.pollNodes(error);
+}
+
+std::vector<NodeInfo> Session::getDiscoveredNodes() const {
+    if (!controllerReady_) {
+        return {};
+    }
+    return controller_.getDiscoveredNodes();
+}
+
 bool Controller::setup(const ControllerSettings& settings, Error* error) {
     close();
     settings_ = settings;
