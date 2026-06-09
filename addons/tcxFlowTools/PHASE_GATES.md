@@ -472,6 +472,7 @@ addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
 - Continue with PixelFlow Fluid/CFD: velocity encoding, multiple fluids, texture data transfer examples, custom-render streamlines, exact GPU ping-pong streamlines, slow buoyancy, and Verlet collision tuning.
 - Then continue with PixelFlow OpticalFlow: capture/movie fluid, capture-driven Verlet particles, and PFM export.
 - Then continue with PixelFlow FlowFieldParticles: cohesion, dam break, optical-flow capture particles, and sprite generator.
+- After the missing PixelFlow queue is covered, revisit exact ofx geometry-shader/mesh details and pixel-level shader behavior where the extra fidelity matters.
 
 2026-06-08 progress:
 
@@ -483,9 +484,9 @@ addons/tcxFlowTools/tests/build-macos/tcxFlowTools_core_contracts
 - Deep ofxFlowTools closure added later on 2026-06-08: bridge mask source/softness/gamma, styled pressure/temperature/velocity field drawing, split-velocity field overlay, AverageFlow history/settings serialization, `FlowHelperPipeline`, and particle birth-from-velocity/layout controls.
 - Particle GPU spawn initialization now uses procedural shader seeds instead of a CPU seed texture upload, fixing the same-frame `Texture::loadData()` warning seen in the three particle examples.
 - User-reported builds for `example-fluid-liquid-painting` and `example-softbody2d-cloth` were reconfigured and built successfully; no source failure was reproduced.
-- All 18 current `examples/example-*` apps were reconfigured and built successfully on macOS/Metal.
+- All then-current 18 `examples/example-*` apps were reconfigured and built successfully on macOS/Metal.
 - Example review finding fixed: `example-simple` now explicitly handles the expanded `FlowVisualizer::Mode` enum in its draw switch.
-- GUI screenshot review covered all 18 current examples. No black screens, stale texture bindings, or obvious wrong-output defaults were found in the sampled startup states. `example-simple` remains intentionally empty until drag injection.
+- GUI screenshot review covered all then-current 18 examples. No black screens, stale texture bindings, or obvious wrong-output defaults were found in the sampled startup states. `example-simple` remains intentionally empty until drag injection.
 
 ## Phase 11 Review
 
@@ -529,6 +530,52 @@ addons/tcxFlowTools/tests/build-macos/tcxFlowTools_softbody2d
 All passed. Visual screenshot `/tmp/example-fluid-liquid-text-tuned.png` showed the generated text source preview and live density/temperature fluid response. Visual screenshot `/tmp/example-fluid-liquid-painting-v4.png` showed the Escher source staying readable while the right edge pulled into liquid-smoke trails; user confirmed the effect is correct. Synthetic macOS keypresses were blocked by accessibility permissions, so visual toggle verification used startup state and direct inspection rather than `osascript` key events.
 
 Remaining gap: Phase 11 is still incomplete beyond the first liquid-text, liquid-painting, CPU-readback streamline, and custom fluid-particle examples. Verlet collision tuning, multiple fluids, velocity encoding, texture transfer, and exact GPU ping-pong/custom-render streamlines remain tracked parity targets.
+
+## Phase 11B OpenProcessing/GPU-IO Inspired Physarum Trails
+
+Reference source:
+
+- Local source path: `/Users/mac/Downloads/sketch2174194`.
+- OpenProcessing URL: `https://openprocessing.org/@u428391/2174194`.
+- Source mechanism: GPU-IO velocity/pressure layers, three Jacobi pressure iterations, particle position/age layers, RK2 particle advection, fading trail texture, and render modes for Fluid, Pressure, and Velocity.
+
+Implementation summary:
+
+- Added `example-fluid-physarum-trails`.
+- The implementation intentionally uses tcxFlowTools wrappers instead of copying the GPU-IO shader graph: `Fluid2D` supplies the low-resolution pressure-projected velocity field, then `PhysarumTrailFlow` keeps GPU particle position/age ping-pong state, samples velocity in shader, fades a trail FBO, and deposits short ink strokes through a GPU triangle batch.
+- Mouse movement and drag are injected as segmented velocity splats to match the reference pointer-driven velocity path. The example exposes `flowRangeScale_` / `flowStrengthScale_` plus `TCX_PHYSARUM_FLOW_RANGE` and `TCX_PHYSARUM_FLOW_STRENGTH` so the splat range can be tuned without changing addon-level fluid defaults.
+- The default mode uses a warm background, GPU trail FBO, and a uniform random particle field. It no longer enables autonomous vortices by default; the reference source is also pointer-driven. Keys `1`, `2`, and `3` switch Fluid, Pressure, and Velocity views; `+/-` changes trail length without rebuilding the system; `[` and `]` tune input range; `a`, `m`, `o`, `p`, `h`, and `r` toggle demo flow, move injection, particles, pause, HUD, and reset.
+- The HUD prints FPS, frame milliseconds, particle count, path, batch count, and trail vertex count. The default path is `gpu-pingpong + gpu-trail`; CPU velocity readback and batched mesh deposition remain fallback/comparison only.
+
+Implementation issues and final alignment:
+
+- The first visual-parity path used CPU velocity readback and CPU short-stroke particles. It helped validate the reference character, but it ran too slowly for production-scale particle counts and could overflow sokol-gl immediate command capacity when drawing individual points.
+- The accepted high-performance path moved particle position, age, velocity sampling, trail fade, and trail deposition to GPU passes. Particle age is stored in an `RGBA32F` ping-pong buffer rather than a single-channel float target to avoid backend-specific render-target support differences.
+- Early parameter changes rebuilt the whole example and could make the HUD/path logic appear to fall back to CPU. Trail-length changes now update the live GPU trail setting, and the visible path is selected from GPU resource readiness rather than the previous frame's update flag.
+- The final visual match came from preserving the reference invariants: 1/8-ish low-resolution velocity, max-clamped additive pointer splats, persistent pressure ping-pong, 1000-frame particle lifetime, three render substeps, fade-only trail accumulation, warm paper background, and dark blue ink. The main tuning variable was not shader complexity; it was constraining input range and strength so vortices remain readable and keep flowing instead of becoming whole-screen smears.
+
+Review checklist:
+
+- Core visual effect is represented through existing tcxFlowTools fluid/particle primitives: pass by code inspection and macOS build.
+- Reference render modes are represented: pass by `ViewMode::Fluid`, `ViewMode::Pressure`, and `ViewMode::Velocity`.
+- Exact GPU-IO layer naming/layout, CanvasCapture recording, PNG save behavior, and byte-for-byte shader behavior are intentionally not ported. The visual trail buffer is represented by a TrussC FBO and `PhysarumTrailFlow` GPU passes rather than GPU-IO `GPULayer` programs.
+- Production-performance status: particle position/age ping-pong, shader-side velocity sampling, trail fade, and trail deposition are now GPU-side. Remaining performance/fidelity work is project-specific tuning for larger particle counts and cross-platform runtime validation beyond macOS/Metal.
+
+Validation:
+
+```bash
+trusscli update -p /Users/mac/Desktop/TrussC/addons/tcxFlowTools/examples/example-fluid-physarum-trails
+trusscli build -p /Users/mac/Desktop/TrussC/addons/tcxFlowTools/examples/example-fluid-physarum-trails
+```
+
+Both passed on macOS/Metal. The generated fallback `TRUSSC_DIR` path from `trusscli update` was restored to the addon-example relative path used by the existing examples.
+
+Remaining queue after this effect:
+
+1. PixelFlow Fluid/CFD: `VelocityEncoding`, `MultipleFluids`, `TexDataTransfer1/2/3`, custom-render streamlines, exact GPU ping-pong streamlines, `SlowBuoyancy`, and Verlet tuning.
+2. PixelFlow OpticalFlow: capture/movie fluid, capture-driven Verlet particles, and PFM export.
+3. PixelFlow FlowFieldParticles: cohesion, dam break, optical-flow capture, and sprite generator.
+4. Reference-fidelity pass: geometry-shader/mesh visualizer details and pixel-level shader behavior after the missing functional queue is covered.
 
 ## Phase 12 Review
 

@@ -17,6 +17,7 @@ public:
     void allocate(int width, int height, TextureFormat format = TextureFormat::RGBA8, const char* label = nullptr);
     void resize(int width, int height);
     void clear(const tc::Color& color = tc::Color(0, 0, 0, 0));
+    void setWrap(tc::TextureWrap wrap);
     void swap();
     void release();
 

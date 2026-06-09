@@ -6,6 +6,7 @@
 #include "visualization/visualization.glsl.h"
 #include "particles/particles.glsl.h"
 #include "extensions/extensions.glsl.h"
+#include "physarum/physarum.glsl.h"
 
 #include <algorithm>
 #include <array>
@@ -23,7 +24,7 @@ struct PassInfo {
     ShaderDescFn desc = nullptr;
 };
 
-constexpr std::array<PassInfo, 55> kCommonPasses = {{
+constexpr auto kCommonPasses = std::to_array<PassInfo>({
     {FlowPassKind::Copy, "copy", "shaders/common/copy.glsl", tcx_flow_copy_shader_desc},
     {FlowPassKind::Clear, "clear", "shaders/common/clear.glsl", tcx_flow_clear_shader_desc},
     {FlowPassKind::Multiply, "multiply", "shaders/common/multiply.glsl", tcx_flow_multiply_shader_desc},
@@ -79,7 +80,11 @@ constexpr std::array<PassInfo, 55> kCommonPasses = {{
     {FlowPassKind::ExtensionInverseWarp, "extension_inverse_warp", "shaders/extensions/inverse_warp.glsl", tcx_flow_extensions_inverse_warp_shader_desc},
     {FlowPassKind::ExtensionEase, "extension_ease", "shaders/extensions/ease.glsl", tcx_flow_extensions_ease_shader_desc},
     {FlowPassKind::ExtensionTimeBlur, "extension_time_blur", "shaders/extensions/time_blur.glsl", tcx_flow_extensions_time_blur_shader_desc},
-}};
+    {FlowPassKind::PhysarumSpawn, "physarum_spawn", "shaders/physarum/physarum.glsl", tcx_flow_physarum_spawn_shader_desc},
+    {FlowPassKind::PhysarumAgeSpawn, "physarum_age_spawn", "shaders/physarum/physarum.glsl", tcx_flow_physarum_age_spawn_shader_desc},
+    {FlowPassKind::PhysarumAgeUpdate, "physarum_age_update", "shaders/physarum/physarum.glsl", tcx_flow_physarum_age_update_shader_desc},
+    {FlowPassKind::PhysarumUpdate, "physarum_update", "shaders/physarum/physarum.glsl", tcx_flow_physarum_update_shader_desc},
+});
 
 const PassInfo* findPass(FlowPassKind kind) {
     for (const auto& pass : kCommonPasses) {
@@ -102,14 +107,17 @@ const PassInfo* findPass(const std::string& shaderPath, const std::string& label
 }
 
 int textureSlotForName(const std::string& name) {
-    if (name == "tex3" || name == "obstacleOffset" || name == "obstacleOffsetTex") return 3;
-    if (name == "tex2" || name == "density" || name == "densityTex") return 2;
+    if (name == "tex3" || name == "obstacleOffset" || name == "obstacleOffsetTex" ||
+        name == "physarumInitialTex") return 3;
+    if (name == "tex2" || name == "density" || name == "densityTex" ||
+        name == "physarumAgeTex") return 2;
     if (name == "tex1" || name == "previous" || name == "prev" || name == "b" ||
         name == "fluidSourceTex" || name == "pressureTex" ||
         name == "divergence" || name == "divergenceTex" || name == "curl" || name == "curlTex" ||
         name == "obstacle" || name == "obstacleTex" ||
         name == "temperature" || name == "temperatureTex" || name == "oflowPreviousTex" ||
-        name == "oflowPreviousFlowTex" || name == "previousFlow" || name == "particleVelocityTex") return 1;
+        name == "oflowPreviousFlowTex" || name == "previousFlow" || name == "particleVelocityTex" ||
+        name == "physarumVelocityTex") return 1;
     return 0;
 }
 

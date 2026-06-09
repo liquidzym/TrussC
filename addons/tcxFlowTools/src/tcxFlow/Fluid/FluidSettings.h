@@ -2,6 +2,11 @@
 
 namespace tcx::flow {
 
+enum class FluidVelocitySplatMode {
+    MaxMagnitudeMix,
+    AdditiveClamp
+};
+
 struct FluidSettings {
     int solverIterations = 20;
     float timestep = 0.125f;
@@ -18,11 +23,15 @@ struct FluidSettings {
     float inputVelocityScale = 1.0f;
     float inputDensityScale = 1.0f;
     float inputTemperatureScale = 1.0f;
+    float velocitySplatClamp = 0.0f;
+    FluidVelocitySplatMode velocitySplatMode = FluidVelocitySplatMode::MaxMagnitudeMix;
     bool enableVorticity = true;
     bool enableTemperature = true;
     bool enableObstacles = false;
     bool enableBuoyancy = false;
     bool autoClearForces = true;
+    bool persistentPressure = false;
+    bool wrapEdges = false;
     bool useGpu = true;
     bool allowCpuFallback = true;
 };

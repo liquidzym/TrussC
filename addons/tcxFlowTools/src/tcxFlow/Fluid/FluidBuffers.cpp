@@ -46,6 +46,18 @@ void FluidBuffers::clear() {
     curl_.end();
 }
 
+void FluidBuffers::setWrap(tc::TextureWrap wrap) {
+    if (!allocated_) return;
+    velocity_.setWrap(wrap);
+    density_.setWrap(wrap);
+    temperature_.setWrap(wrap);
+    pressure_.setWrap(wrap);
+    obstacle_.setWrap(wrap);
+    obstacleOffset_.getTexture().setWrap(wrap);
+    divergence_.getTexture().setWrap(wrap);
+    curl_.getTexture().setWrap(wrap);
+}
+
 void FluidBuffers::release() {
     velocity_.release();
     density_.release();

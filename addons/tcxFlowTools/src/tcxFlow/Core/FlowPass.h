@@ -62,7 +62,11 @@ enum class FlowPassKind {
     ExtensionErode,
     ExtensionInverseWarp,
     ExtensionEase,
-    ExtensionTimeBlur
+    ExtensionTimeBlur,
+    PhysarumSpawn,
+    PhysarumAgeSpawn,
+    PhysarumAgeUpdate,
+    PhysarumUpdate
 };
 
 struct FlowPassParams {

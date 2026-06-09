@@ -28,7 +28,7 @@ Implemented now:
 - Extension helper passes include colorize luminance, colorize velocity, colorize gradient, decay, dilate, erode, inverse warp, vector normalization, ease, and first-pass time blur. `FlowHelperPipeline` wraps these fullscreen passes for reusable high-level helper pipelines.
 - `SoftBody2D` adds an independent PixelFlow Softbody Dynamics foundation inside tcxFlowTools: Verlet particles, structural/shear/bend constraints, fixed particles, bounds, drag, and constraint cutting.
 - `example-simple` with mouse injection and density/velocity/pressure/temperature view switching.
-- `example-core-pingpong`, `example-optical-flow`, `example-fluid-bridges`, `example-camera-fluid`, `example-particles`, `example-particle-variants`, `example-average-flow`, `example-lic-streamlines`, `example-split-velocity`, `example-fluid-liquid-text`, `example-fluid-liquid-painting`, `example-fluid-streamlines`, `example-fluid-custom-particles`, `example-fluid-verlet-collision`, `example-softbody2d-cloth`, `example-wind-tunnel`, and `example-hd`.
+- `example-core-pingpong`, `example-optical-flow`, `example-fluid-bridges`, `example-camera-fluid`, `example-particles`, `example-particle-variants`, `example-average-flow`, `example-lic-streamlines`, `example-split-velocity`, `example-fluid-liquid-text`, `example-fluid-liquid-painting`, `example-fluid-streamlines`, `example-fluid-custom-particles`, `example-fluid-physarum-trails`, `example-fluid-verlet-collision`, `example-softbody2d-cloth`, `example-wind-tunnel`, and `example-hd`.
 - Basic tests for settings, resize, density injection, and procedural optical-flow state.
 
 Still limited:
@@ -159,20 +159,29 @@ Additional examples:
 - `example-fluid-liquid-painting`: PixelFlow `Fluid_LiquidPainting` parity example; the local PixelFlow Escher image is injected into GPU fluid density while edge flow and mouse drag pull it into liquid-smoke trails.
 - `example-fluid-streamlines`: PixelFlow `Fluid_StreamLines` / `FlowField_LIC_StreamLines` first-pass example; GPU fluid velocity is read back to a regular CPU seed grid and drawn as bidirectional streamline segments. Controls cover pause, background mode, velocity vectors, seed particles, seed density, and line length. Exact PixelFlow GPU ping-pong/custom-render parity remains future work.
 - `example-fluid-custom-particles`: PixelFlow `Fluid_CustomParticles` first-pass example; `ParticleFlow::spawn()` respawns GPU texture particles into local fluid sources, with left velocity+particles, middle heat+particles, and right particles-only input.
+- `example-fluid-physarum-trails`: OpenProcessing `2174194` / GPU-IO Physarum-inspired example; uses tcxFlowTools `Fluid2D` pressure-projected velocity plus GPU particle position/age ping-pong and a GPU trail-deposition pass. It is not a line-by-line GPU-IO layer/program port.
 - `example-fluid-verlet-collision`: PixelFlow `Fluid_VerletParticleCollisionSystem` first-pass example; GPU fluid velocity drives Verlet particles with collisions and obstacles. Fluid/particle tuning remains open.
 - `example-softbody2d-cloth`: PixelFlow `SoftBody2D_Cloth` parity example; two independent spring cloths hang from fixed top corners with structural/shear/bend constraints, wind, particle dragging, and constraint cutting.
 - `example-hd`: GPU fluid with 1x / 0.5x / 0.25x simulation scale and independently toggled output resolution.
 
 2026-06-08 example audit:
 
-- All 18 current `examples/example-*` apps rebuilt successfully on macOS/Metal.
+- All then-current 18 `examples/example-*` apps rebuilt successfully on macOS/Metal.
 - GUI screenshot review covered every example. No black screens, stale texture bindings, or obvious wrong-output defaults were found. `example-simple` is intentionally blank until user injection; `example-fluid-liquid-painting` starts in a readable source-image/liquid-mask state and remains a tuning target rather than a compile/runtime failure.
 - The three GPU particle examples were rerun after removing the CPU seed texture upload path; their rerun logs no longer contain the prior `Texture::loadData()` same-frame warning.
 
 2026-06-08 ofxFlowTools deep parity closure:
 
 - Completed the requested deeper ofxFlowTools pass for bridge masks, styled velocity/pressure/temperature field drawing, split-velocity field overlay, AverageFlow history/settings persistence, helper shader pipeline wrappers, and particle birth-from-velocity/layout controls.
-- Rebuilt all 18 current examples on macOS/Metal after the new source files triggered CMake GLOB refresh.
+- Rebuilt all then-current 18 examples on macOS/Metal after the new source files triggered CMake GLOB refresh.
+
+2026-06-08 OpenProcessing/GPU-IO inspired addition:
+
+- Added `example-fluid-physarum-trails`, based on local source `/Users/mac/Downloads/sketch2174194`. The reference uses GPU-IO velocity/pressure layers, particle aging, RK2 advection, trail fade, and Fluid/Pressure/Velocity render modes. The TrussC example preserves the core effect through existing `Fluid2D` pressure-projected velocity plus GPU particle position/age ping-pong, shader-side velocity sampling, and GPU trail fade/deposition instead of copying the GPU-IO shader graph line by line.
+- The Physarum example HUD prints FPS, frame milliseconds, particle count, batch count, current path, and trail vertices. The default path is now `gpu-pingpong + gpu-trail`; the CPU velocity-readback/batched mesh path remains a fallback and comparison path only.
+- Final visual alignment notes: the reference is strongly shaped by a low-resolution velocity field, max-clamped additive pointer splats, persistent pressure ping-pong, 1000-frame particle lifetimes, three particle render substeps, fade-only trail accumulation, and dark blue ink on warm paper. The TrussC version reached the accepted visual direction by keeping those invariants while tuning the example-level `flowRangeScale_` and `flowStrengthScale_` so pointer/demo input stays local enough to form readable vortices instead of spreading into a whole-screen smear. `TCX_PHYSARUM_FLOW_RANGE` and `TCX_PHYSARUM_FLOW_STRENGTH` can override the defaults for future project tuning.
+- Implementation issues encountered: the first CPU-readback prototype matched the brush/stroke character but was too slow for production particle counts; immediate point drawing could overflow sokol-gl command capacity; a single-channel float age target was not a safe assumption across backends, so the GPU age ping-pong buffer uses `RGBA32F`; and early HUD/path selection used the previous frame's update status, which made trail-length changes appear to fall back to CPU. The final version uses GPU resource readiness for the visible path, keeps `+/-` as a trail-length setting update, and leaves CPU readback as an explicit fallback.
+- Remaining follow-up after this addition: PixelFlow Fluid/CFD queue (`VelocityEncoding`, `MultipleFluids`, `TexDataTransfer1/2/3`, custom-render streamlines, exact GPU ping-pong streamlines, `SlowBuoyancy`, Verlet tuning), PixelFlow OpticalFlow capture/movie/PFM work, PixelFlow FlowFieldParticles cohesion/dam-break/sprite-generator work, and exact reference geometry-shader plus byte-for-byte shader-behavior tuning where it is worth the cost.
 
 ## Notes
 

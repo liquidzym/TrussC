@@ -17,6 +17,7 @@ public:
     void allocate(int width, int height, TextureFormat format = TextureFormat::RGBA8);
     void resize(int width, int height);
     void clear();
+    void setWrap(tc::TextureWrap wrap);
     void release();
 
     bool isAllocated() const { return allocated_; }

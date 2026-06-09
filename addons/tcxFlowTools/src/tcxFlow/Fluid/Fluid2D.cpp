@@ -735,6 +735,7 @@ bool Fluid2D::ensureGpu() {
         gpuBuffers_.allocate(simWidth_, simHeight_, chooseRenderableFlowFormat(true));
         gpuBuffers_.clear();
     }
+    gpuBuffers_.setWrap(settings_.wrapEdges ? tc::TextureWrap::Repeat : tc::TextureWrap::ClampToEdge);
     setupGpuPasses();
     return gpuBuffers_.isAllocated();
 }
@@ -899,8 +900,11 @@ bool Fluid2D::updateGpu(float dt) {
     }
 
     for (const auto& splat : pendingVelocitySplats_) {
+        const bool additiveClamp = settings_.velocitySplatMode == FluidVelocitySplatMode::AdditiveClamp;
         renderSplat(gpuBuffers_.velocity(), splat.position, splat.radius,
-                    tc::Color(splat.velocity.x, splat.velocity.y, 0.5f, 1.0f), 1.0f, 2.0f, false);
+                    tc::Color(splat.velocity.x, splat.velocity.y, 0.5f,
+                              additiveClamp ? std::max(0.0f, settings_.velocitySplatClamp) : 1.0f),
+                    1.0f, additiveClamp ? 3.0f : 2.0f, false);
     }
     if (pendingVelocityTexture_) {
         renderVelocityTexture(*pendingVelocityTexture_, pendingVelocityTextureScale_, pendingVelocityTextureMixMode_);
@@ -954,7 +958,9 @@ bool Fluid2D::updateGpu(float dt) {
     passDivergence_.setOptions(1.0f, 0.0f, 1.0f, 0.5f);
     passDivergence_.render(gpuBuffers_.divergence());
 
-    gpuBuffers_.pressure().clear(tc::Color(0, 0, 0, 1));
+    if (!settings_.persistentPressure) {
+        gpuBuffers_.pressure().clear(tc::Color(0, 0, 0, 1));
+    }
     const int iterations = std::max(0, settings_.solverIterations);
     for (int iter = 0; iter < iterations; ++iter) {
         passJacobiPressure_.setTexture("tex0", gpuBuffers_.pressure().read().getTexture());

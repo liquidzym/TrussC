@@ -36,8 +36,9 @@ Verified on 2026-06-08:
 - macOS/Metal configure/build for `example-fluid-liquid-painting` after the user reported it had not compiled earlier.
 - macOS/Metal configure/build for `example-softbody2d-cloth` after the user reported it had not compiled earlier.
 - macOS/Metal configure/build for `example-split-velocity` after adding the fuller split-velocity graph.
-- macOS/Metal configure/build for every current `examples/example-*` app; all 18 examples passed.
-- macOS/Metal rebuild for every current `examples/example-*` app after adding `FlowHelperPipeline`, deeper bridge masks, styled field drawing, AverageFlow history/settings support, split field overlay, and particle birth-from-velocity controls; all 18 examples passed.
+- macOS/Metal configure/build for `example-fluid-physarum-trails` after moving the OpenProcessing/GPU-IO inspired path to GPU particle position/age ping-pong and GPU trail deposition.
+- macOS/Metal configure/build for every then-current `examples/example-*` app; all 18 examples passed.
+- macOS/Metal rebuild for every then-current `examples/example-*` app after adding `FlowHelperPipeline`, deeper bridge masks, styled field drawing, AverageFlow history/settings support, split field overlay, and particle birth-from-velocity controls; all 18 examples passed.
 - `example-simple` was rebuilt after fixing the newly exposed enum coverage warning from expanded visualizer modes.
 - Shader source generation for `metal_macos:hlsl5:glsl300es:wgsl` succeeded for all addon shader groups.
 - GUI screenshot review covered every current example. The review did not find black screens, stale texture bindings, or obvious wrong-output defaults in the sampled startup states.
@@ -50,6 +51,7 @@ Verified on 2026-06-08:
 - The CPU density texture upload path uses TrussC `tc::Image` / `tc::TextureFilter::Linear` and does not require a core API addition.
 - `Fluid2D::refreshVelocityReadback()` uses TrussC `Fbo::readPixelsFloat()` on the current GPU velocity buffer so CPU particle examples can sample real GPU fluid velocity.
 - `ParticleFlow` GPU spawn does not require a CPU seed texture upload, avoiding TrussC's same-frame dynamic texture update guard on all backends.
+- `PhysarumTrailFlow` keeps particle age in an `RGBA32F` ping-pong buffer instead of a single-channel float target so the pass does not depend on backend-specific single-channel render-target support.
 - `FlowVisualizer` and `SplitVelocity::drawField()` use TrussC immediate 2D drawing instead of geometry shaders, so the first-pass field styling avoids OpenGL-only geometry-stage dependencies.
 
 ## Windows
@@ -74,6 +76,7 @@ Verified on 2026-06-08:
 
 - Current CPU fallback drawing is screen-space and does not sample textures.
 - Future shader passes must explicitly handle backend UV origin differences.
+- Exact reference shader behavior should be treated as backend-sensitive. Geometry-shader or Processing/OpenGL effects should be ported through sokol-compatible mesh/fullscreen passes first, then tuned per backend after macOS/Windows/Linux/Web runs prove the texture origin, precision, and blending behavior.
 
 ## Webcam Fallback
 

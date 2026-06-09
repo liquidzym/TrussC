@@ -7,6 +7,10 @@
 int main() {
     tcx::flow::FluidSettings settings;
     assert(settings.solverIterations == 20);
+    assert(settings.velocitySplatMode == tcx::flow::FluidVelocitySplatMode::MaxMagnitudeMix);
+    assert(settings.velocitySplatClamp == 0.0f);
+    assert(!settings.persistentPressure);
+    assert(!settings.wrapEdges);
     settings.resolutionScale = 0.5f;
 
     tcx::flow::Fluid2D fluid;
@@ -163,5 +167,28 @@ int main() {
     particles.spawn(tc::Vec2(160, 100), 30.0f, 24);
     particles.update(fluid, 1.0f / 60.0f);
     assert(particles.particleCount() == 128);
+
+    tcx::flow::PhysarumTrailFlowSettings physarumSettings;
+    assert(physarumSettings.particleCount == 100000);
+    assert(physarumSettings.trailLength == 15.0f);
+    assert(physarumSettings.trailFadeScale == 0.78f);
+    assert(std::abs(physarumSettings.lifetime - (1000.0f / 60.0f)) < 0.0001f);
+    assert(physarumSettings.velocityScale == 1.0f);
+    assert(physarumSettings.renderSubsteps == 3);
+    assert(physarumSettings.maxParticleStep == 10.0f);
+    assert(physarumSettings.strokeThickness == 1.15f);
+    assert(physarumSettings.inkStrength == 1.12f);
+    assert(physarumSettings.useGpuParticles);
+    assert(tcx::flow::PhysarumTrailFlow::textureSideForParticleCount(1) == 1);
+    assert(tcx::flow::PhysarumTrailFlow::textureSideForParticleCount(100000) == 317);
+    assert(tcx::flow::PhysarumTrailFlow::strokeDepositVerticesPerParticle() == 6);
+    const tc::Vec2 wrappedForward = tcx::flow::PhysarumTrailFlow::wrappedNormalizedDelta(
+        tc::Vec2(0.02f, 0.50f), tc::Vec2(0.98f, 0.50f));
+    assert(std::abs(wrappedForward.x - 0.04f) < 0.0001f);
+    assert(std::abs(wrappedForward.y) < 0.0001f);
+    const tc::Vec2 wrappedBackward = tcx::flow::PhysarumTrailFlow::wrappedNormalizedDelta(
+        tc::Vec2(0.98f, 0.50f), tc::Vec2(0.02f, 0.50f));
+    assert(std::abs(wrappedBackward.x + 0.04f) < 0.0001f);
+    assert(std::abs(wrappedBackward.y) < 0.0001f);
     return 0;
 }

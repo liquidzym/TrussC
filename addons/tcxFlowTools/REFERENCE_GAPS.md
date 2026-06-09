@@ -33,6 +33,7 @@ Visual parity target:
 - First-pass PixelFlow `Fluid_LiquidPainting` CFD example: `example-fluid-liquid-painting` injects the local PixelFlow Escher image into GPU density and uses procedural edge flow plus mouse drag to create liquid-smoke image smearing.
 - First-pass PixelFlow streamline example: `example-fluid-streamlines` samples GPU fluid velocity through `Fluid2D::refreshVelocityReadback()` and renders bidirectional regular-grid CPU streamlines based on `Fluid_StreamLines` / `FlowField_LIC_StreamLines`, with controls for pause, background display mode, velocity vectors, seed particles, seed density, and line length.
 - First-pass PixelFlow `Fluid_CustomParticles` example: `example-fluid-custom-particles` uses `ParticleFlow::spawn()` to inject GPU texture particles into fluid sources, with left velocity+particles, middle heat+particles, and right particles-only input.
+- OpenProcessing/GPU-IO inspired Physarum trails example: `example-fluid-physarum-trails` references local source `/Users/mac/Downloads/sketch2174194` and preserves the core low-resolution velocity, pressure projection, particle aging, trail fade, and Fluid/Pressure/Velocity view character using tcxFlowTools `Fluid2D` plus GPU particle position/age ping-pong and a GPU trail-deposition pass.
 - First-pass independent PixelFlow SoftBody2D foundation: `SoftBody2D` and `example-softbody2d-cloth` cover Verlet particles, structural/shear/bend constraints, fixed cloth anchors, wind, particle dragging, and spring cutting without depending on `tcxTraerPhysics`.
 - Examples are centralized under `examples/`.
 
@@ -43,6 +44,7 @@ Visual parity target:
 - ofxFlowTools extensions: `AverageFlowWatcher`-style history/settings support, fuller split-velocity GPU graph/field overlay, helper shader suite, and high-level helper-pipeline wrappers exist. Exact ofx GUI panels and mesh-rendering details remain partial.
 - ofxFlowTools particle parity: age/lifespan/mass/draw/move controls and birth-from-velocity behavior have first-pass GPU and CPU support. Exact ofx/OpenGL particle shader byte-for-byte layout remains partial.
 - ofxFlowTools HD parity: separate GPU visualization/output resolution exists; exact HD shader-family parity remains partial.
+- OpenProcessing/GPU-IO Physarum parity: `example-fluid-physarum-trails` covers the core visual effect through tcxFlowTools abstractions and exposes FPS/frame/path/batch/vertex counters in the HUD. Exact GPU-IO `GPULayer` naming/layout, CanvasCapture recording, PNG save behavior, and byte-for-byte shader behavior are not ported. The current default path is GPU particle position/age ping-pong plus GPU trail fade/deposit; CPU velocity readback remains fallback/comparison only. Remaining fidelity work is final shader/colorize nuance and cross-platform runtime validation beyond macOS/Metal.
 - PixelFlow flow-field visuals: first-pass LIC and CPU-readback streamlines are present; exact GPU ping-pong streamline particles, wind-tunnel LIC, image LIC, and optical-flow LIC examples are not ported.
 - PixelFlow fluid examples: liquid text, liquid painting, CPU-readback streamlines, and custom fluid particles have first-pass parity examples; multiple fluids, custom render streamlines, Verlet/collision follow-up tuning, velocity encoding, and texture transfer examples remain candidates.
 - PixelFlow optical-flow examples: movie/capture optical flow into fluid/particles and PFM export are not ported.
@@ -70,5 +72,6 @@ The next parity work should proceed in this order unless a build/runtime blocker
 2. PixelFlow Fluid/CFD: `Fluid_VelocityEncoding`, `Fluid_MultipleFluids`, `Fluid_GetStarted_TexDataTransfer1/2/3`, `Fluid_StreamLines_CustomRender`, more exact GPU ping-pong streamlines, `Fluid_SlowBuoyancy`, and follow-up tuning for `Fluid_VerletParticleCollisionSystem`.
 3. PixelFlow OpticalFlow: capture/movie fluid examples, capture-driven Verlet particles, and PFM export.
 4. PixelFlow FlowFieldParticles: cohesion, dam break, optical-flow capture particles, and sprite generator examples.
+5. Reference-fidelity tuning: ofxFlowTools geometry-shader/mesh details and pixel-level shader behavior should be revisited only after the missing PixelFlow queue is covered, because the TrussC/sokol graph intentionally differs from the original OpenGL/Processing implementations.
 
 No TrussC core API changes were made for this audit.

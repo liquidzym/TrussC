@@ -30,6 +30,12 @@ void PingPongBuffer::clear(const tc::Color& color) {
     }
 }
 
+void PingPongBuffer::setWrap(tc::TextureWrap wrap) {
+    if (!allocated_) return;
+    buffers_[0].getTexture().setWrap(wrap);
+    buffers_[1].getTexture().setWrap(wrap);
+}
+
 void PingPongBuffer::swap() {
     readIndex_ = 1 - readIndex_;
 }

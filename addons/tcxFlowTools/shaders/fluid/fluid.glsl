@@ -68,13 +68,21 @@ void main() {
     } else if (options.y < 1.5) {
         float falloff = sqrt(sqrt(distNorm));
         value = max(base, color * falloff * options.x);
-    } else {
+    } else if (options.y < 2.5) {
         vec2 oldVelocity = base.xy;
         vec2 newVelocity = color.xy * distNorm * options.x;
         vec2 mixedVelocity = length(oldVelocity) > length(newVelocity)
             ? oldVelocity
             : mix(oldVelocity, newVelocity, clamp(color.b, 0.0, 1.0));
         value = vec4(mixedVelocity, 0.0, 1.0);
+    } else {
+        vec2 velocity = base.xy + color.xy * distNorm * options.x;
+        float velocityMag = length(velocity);
+        float maxVelocity = max(color.a, 0.0);
+        if (maxVelocity > 0.0 && velocityMag > 0.000001) {
+            velocity = velocity / velocityMag * min(velocityMag, maxVelocity);
+        }
+        value = vec4(velocity, 0.0, 1.0);
     }
     frag_color = options.w > 0.5 ? clamp(value, 0.0, 1.0) : value;
 }
