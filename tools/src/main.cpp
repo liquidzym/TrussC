@@ -2531,6 +2531,96 @@ static vector<string> readEnabledTargets(const string& projectPath) {
     return out;
 }
 
+struct ConfigurePresetInfo {
+    bool found = false;
+    string name;
+    string generator;
+    string binaryDir;
+};
+
+static string replaceAll(string text, const string& from, const string& to) {
+    if (from.empty()) return text;
+    size_t pos = 0;
+    while ((pos = text.find(from, pos)) != string::npos) {
+        text.replace(pos, from.length(), to);
+        pos += to.length();
+    }
+    return text;
+}
+
+static string expandPresetPath(string value, const string& projectPath) {
+    fs::path sourceDir = fs::absolute(projectPath);
+    fs::path sourceParent = sourceDir.parent_path();
+    value = replaceAll(value, "${sourceDir}", sourceDir.generic_string());
+    value = replaceAll(value, "${sourceParentDir}", sourceParent.generic_string());
+    return value;
+}
+
+static bool isMultiConfigGenerator(const string& generator) {
+    return generator.find("Visual Studio") != string::npos ||
+           generator.find("Xcode") != string::npos ||
+           generator.find("Multi-Config") != string::npos;
+}
+
+static ConfigurePresetInfo readConfigurePresetInfo(const string& projectPath, const string& buildPresetName) {
+    ConfigurePresetInfo info;
+    string presetsPath = projectPath + "/CMakePresets.json";
+    if (!fs::exists(presetsPath)) return info;
+
+    try {
+        ifstream file(presetsPath);
+        Json data = Json::parse(file);
+
+        string configurePresetName = buildPresetName;
+        if (data.contains("buildPresets") && data["buildPresets"].is_array()) {
+            for (const auto& p : data["buildPresets"]) {
+                if (p.contains("name") && p["name"].is_string() &&
+                    p["name"].get<string>() == buildPresetName &&
+                    p.contains("configurePreset") && p["configurePreset"].is_string()) {
+                    configurePresetName = p["configurePreset"].get<string>();
+                    break;
+                }
+            }
+        }
+
+        if (data.contains("configurePresets") && data["configurePresets"].is_array()) {
+            for (const auto& p : data["configurePresets"]) {
+                if (!p.contains("name") || !p["name"].is_string() ||
+                    p["name"].get<string>() != configurePresetName) {
+                    continue;
+                }
+                info.found = true;
+                info.name = configurePresetName;
+                if (p.contains("generator") && p["generator"].is_string()) {
+                    info.generator = p["generator"].get<string>();
+                }
+                if (p.contains("binaryDir") && p["binaryDir"].is_string()) {
+                    info.binaryDir = expandPresetPath(p["binaryDir"].get<string>(), projectPath);
+                }
+                break;
+            }
+        }
+    } catch (...) {
+        return ConfigurePresetInfo{};
+    }
+
+    return info;
+}
+
+static string readCacheBuildType(const string& binaryDir) {
+    if (binaryDir.empty()) return "";
+    ifstream file(fs::path(binaryDir) / "CMakeCache.txt");
+    string line;
+    while (getline(file, line)) {
+        const string prefix = "CMAKE_BUILD_TYPE:";
+        if (line.rfind(prefix, 0) != 0) continue;
+        size_t eq = line.find('=');
+        if (eq == string::npos) return "";
+        return line.substr(eq + 1);
+    }
+    return "";
+}
+
 // Read the addons listed in addons.make (in order).
 static vector<string> readProjectAddons(const string& projectPath) {
     vector<string> out;
@@ -3164,6 +3254,30 @@ static int cmdBuild(const vector<string>& args) {
         }
     }
 #endif
+
+    if (release) {
+        ConfigurePresetInfo presetInfo = readConfigurePresetInfo(projectPath, targetPreset);
+        if (presetInfo.found && !isMultiConfigGenerator(presetInfo.generator)) {
+            string currentBuildType = readCacheBuildType(presetInfo.binaryDir);
+            if (currentBuildType != "Release") {
+                cout << "[configure] Switching single-config preset '" << presetInfo.name
+                     << "' to CMAKE_BUILD_TYPE=Release";
+                if (!currentBuildType.empty()) {
+                    cout << " (was " << currentBuildType << ")";
+                }
+                cout << "\n";
+
+                string savedCwd = fs::current_path().string();
+                fs::current_path(projectPath);
+                int crc = runProcess({cmake, "--preset", presetInfo.name, "-DCMAKE_BUILD_TYPE=Release"});
+                fs::current_path(savedCwd);
+                if (crc != 0) {
+                    cerr << "Configure failed (exit code " << crc << ").\n";
+                    return crc;
+                }
+            }
+        }
+    }
 
     // cmake --build --preset <target> --parallel[=N] [--config Release] [--clean-first]
     vector<string> cmd = {cmake, "--build", "--preset", targetPreset, parallelArg};

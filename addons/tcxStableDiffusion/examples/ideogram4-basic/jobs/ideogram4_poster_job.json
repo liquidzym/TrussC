@@ -1,0 +1,51 @@
+{
+  "model": "ideogram4-q4_0",
+  "model_dir": "../models",
+  "native_dir": "../../../libs/stable-diffusion/current",
+  "output_dir": "../outputs/jobs",
+  "output_name": "ideogram4_poster_job",
+  "prompt_json": {
+    "high_level_description": "A clean futuristic product poster for tcxStableDiffusion, a modular local AI image addon for creative coders. Include the exact readable text \"tcxStableDiffusion\".",
+    "style_description": {
+      "aesthetics": "premium technical product poster, refined typography, elegant studio lighting, precise interface details",
+      "lighting": "soft studio key light, crisp rim light on important edges, readable contrast for all text",
+      "medium": "mixed media product photography, refined editorial graphic design, and precise software UI illustration",
+      "color_palette": ["#F7F4EC", "#111111", "#2F80ED", "#27AE60", "#FFFFFF"]
+    },
+    "compositional_deconstruction": {
+      "canvas": "upright image canvas; do not rotate the image or any text",
+      "background": "clean dark-to-light studio background with subtle grid hints and restrained interface texture",
+      "layout": "upright poster layout with a clear title zone, central product/addon metaphor, visible interface fragments, and balanced technical details",
+      "elements": [
+        {
+          "type": "obj",
+          "desc": "A tasteful local AI workstation or abstract addon module that suggests Windows CUDA acceleration without showing noisy hardware clutter."
+        },
+        {
+          "type": "text",
+          "desc": "Print the exact text \"tcxStableDiffusion\" horizontally, upright, and readable from left to right. The spelling must be exact, with no missing, extra, mirrored, rotated, or distorted characters."
+        }
+      ]
+    }
+  },
+  "negative_prompt": "low quality, blurry, cluttered layout, misspelled text, unreadable text, mirrored text, rotated text, extra words",
+  "width": 512,
+  "height": 512,
+  "steps": 3,
+  "seed": 47,
+  "cfg_scale": 1.0,
+  "sampler": "euler",
+  "runtime": {
+    "backend": "cuda0",
+    "params_backend": "cpu",
+    "offload_to_cpu": true,
+    "diffusion_flash_attention": true,
+    "mmap": true,
+    "timeout_seconds": 300
+  },
+  "metadata": {
+    "source": "examples/ideogram4-basic/jobs/ideogram4_poster_job.json",
+    "prompt_profile": "ideogram4",
+    "prompt_kind": "poster"
+  }
+}

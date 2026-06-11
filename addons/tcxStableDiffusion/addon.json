@@ -1,0 +1,18 @@
+{
+  "name": "tcxStableDiffusion",
+  "description": "Stable Diffusion local AI generation addon for TrussC, backed by stable-diffusion.cpp with Windows CUDA and macOS Metal profiles.",
+  "author": "TrussC",
+  "license": "MIT",
+  "category": "ai",
+  "keywords": [
+    "stable-diffusion",
+    "ai",
+    "image-generation",
+    "cuda",
+    "metal",
+    "gguf",
+    "flux",
+    "ideogram",
+    "z-image"
+  ]
+}

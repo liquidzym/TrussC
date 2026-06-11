@@ -221,3 +221,44 @@ core/include/tc/gpu/shaders/*.glsl.h
 .cline/
 .clinerules/
 .aider*
+
+# =============================================================================
+# tcxStableDiffusion shared addon sources
+# =============================================================================
+!addons/tcxStableDiffusion/
+!addons/tcxStableDiffusion/**
+addons/tcxStableDiffusion/.vs/
+addons/tcxStableDiffusion/.vs/**
+addons/tcxStableDiffusion/.codex-logs/
+addons/tcxStableDiffusion/.codex-logs/**
+addons/tcxStableDiffusion/build/
+addons/tcxStableDiffusion/build/**
+addons/tcxStableDiffusion/libs/stable-diffusion/current/
+addons/tcxStableDiffusion/libs/stable-diffusion/current/**
+addons/tcxStableDiffusion/libs/stable-diffusion/build/
+addons/tcxStableDiffusion/libs/stable-diffusion/build/**
+addons/tcxStableDiffusion/libs/stable-diffusion/source/
+addons/tcxStableDiffusion/libs/stable-diffusion/source/**
+addons/tcxStableDiffusion/libs/variants/
+addons/tcxStableDiffusion/libs/variants/**
+addons/tcxStableDiffusion/examples/**/bin/
+addons/tcxStableDiffusion/examples/**/bin/**
+addons/tcxStableDiffusion/examples/**/build/
+addons/tcxStableDiffusion/examples/**/build/**
+addons/tcxStableDiffusion/examples/**/build-*/
+addons/tcxStableDiffusion/examples/**/build-*/**
+addons/tcxStableDiffusion/examples/**/.vscode/
+addons/tcxStableDiffusion/examples/**/.vscode/**
+addons/tcxStableDiffusion/examples/**/CMakePresets.json
+addons/tcxStableDiffusion/examples/**/build-web.command
+addons/tcxStableDiffusion/examples/**/build-web.bat
+addons/tcxStableDiffusion/examples/**/build-web.sh
+addons/tcxStableDiffusion/examples/**/models/
+addons/tcxStableDiffusion/examples/**/models/**
+addons/tcxStableDiffusion/examples/**/data/models/
+addons/tcxStableDiffusion/examples/**/data/models/**
+addons/tcxStableDiffusion/examples/**/outputs/
+addons/tcxStableDiffusion/examples/**/outputs/**
+addons/tcxStableDiffusion/**/__pycache__/
+addons/tcxStableDiffusion/**/__pycache__/**
+addons/tcxStableDiffusion/**/*.pyc
