@@ -74,6 +74,17 @@ The first pure Node package lives in `node/` and talks directly to `sd-server.ex
 cd node
 npm test
 node .\bin\tcxsd-node.mjs --job ..\examples\flux2-klein-basic\jobs\flux2_klein_product_job.json
+node .\bin\tcxsd-node.mjs --prompt "一张中文海报，文字写着本地生图" --quality draft --runtime-preset lowVram --sidecar .\outputs\cn.json
+```
+
+The Node package exports TypeScript declarations, structured `TcxSdError` errors with remediation hints, sidecar writing, task cancellation through `/cancel`, reusable `TcxSdServerSession`, storage cleanup helpers, prompt packs, and quality checks.
+
+For script workflows:
+
+```powershell
+python tools\tcxsd_storage.py roots --output-root .\outputs --temp-root .\tmp --cache-root .\cache
+python tools\tcxsd_storage.py cleanup --output-root .\outputs --temp-root .\tmp --cache-root .\cache --older-than-seconds 86400
+python tools\tcxsd_sidecar.py summary examples\ideogram4-basic\outputs\jobs\ideogram4_poster_job.json --json
 ```
 
 Detailed docs:

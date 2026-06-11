@@ -22,6 +22,48 @@ class ModelAsset:
 
 
 @dataclasses.dataclass(frozen=True)
+class GenerationDefaults:
+    width: int
+    height: int
+    steps: int
+    cfg_scale: float
+    sampler: str = "euler"
+
+    def as_job_fields(self) -> Dict[str, object]:
+        return {
+            "width": self.width,
+            "height": self.height,
+            "steps": self.steps,
+            "cfg_scale": self.cfg_scale,
+            "sampler": self.sampler,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
+class RuntimeDefaults:
+    backend: str
+    params_backend: str
+    offload_to_cpu: bool
+    diffusion_flash_attention: bool = True
+    mmap: bool = True
+    stream_layers: bool = False
+    max_vram_gib: float = 0.0
+    execution_mode: str = "persistent_server"
+
+    def as_runtime_fields(self) -> Dict[str, object]:
+        return {
+            "execution_mode": self.execution_mode,
+            "backend": self.backend,
+            "params_backend": self.params_backend,
+            "offload_to_cpu": self.offload_to_cpu,
+            "diffusion_flash_attention": self.diffusion_flash_attention,
+            "mmap": self.mmap,
+            "stream_layers": self.stream_layers,
+            "max_vram_gib": self.max_vram_gib,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
 class ModelSpec:
     id: str
     family: str
@@ -30,6 +72,10 @@ class ModelSpec:
     files: List[ModelAsset]
     notes: List[str] = dataclasses.field(default_factory=list)
     recommended_args: Mapping[str, str] = dataclasses.field(default_factory=dict)
+    quality_presets: Mapping[str, GenerationDefaults] = dataclasses.field(default_factory=dict)
+    runtime_presets: Mapping[str, RuntimeDefaults] = dataclasses.field(default_factory=dict)
+    default_quality: str = "balanced"
+    default_runtime: str = "default"
 
     @property
     def manual_urls(self) -> Dict[str, str]:
@@ -115,10 +161,38 @@ def load_model_registry() -> ModelRegistry:
         recommended_args={
             "width": "1024",
             "height": "1024",
-            "steps": "8",
-            "cfg_scale": "1.0",
+            "steps": "20",
+            "cfg_scale": "7.0",
             "diffusion_flash_attention": "true",
             "offload_to_cpu": "true",
+        },
+        quality_presets={
+            "draft": GenerationDefaults(width=512, height=512, steps=8, cfg_scale=7.0),
+            "balanced": GenerationDefaults(width=1024, height=1024, steps=20, cfg_scale=7.0),
+            "final": GenerationDefaults(width=1024, height=1024, steps=28, cfg_scale=7.0),
+        },
+        runtime_presets={
+            "default": RuntimeDefaults(
+                backend="cuda0,te=cpu",
+                params_backend="cpu",
+                offload_to_cpu=True,
+                stream_layers=True,
+                max_vram_gib=8.0,
+            ),
+            "low_vram": RuntimeDefaults(
+                backend="cuda0,te=cpu",
+                params_backend="cpu",
+                offload_to_cpu=True,
+                stream_layers=True,
+                max_vram_gib=8.0,
+            ),
+            "rtx4090_full_speed": RuntimeDefaults(
+                backend="cuda0",
+                params_backend="cuda0",
+                offload_to_cpu=False,
+                stream_layers=False,
+                max_vram_gib=0.0,
+            ),
         },
     )
 
@@ -148,12 +222,40 @@ def load_model_registry() -> ModelRegistry:
             "Use cfg scale 1 and low step counts for the non-base klein model.",
         ],
         recommended_args={
-            "width": "1024",
-            "height": "1024",
+            "width": "512",
+            "height": "512",
             "steps": "4",
             "cfg_scale": "1.0",
             "diffusion_flash_attention": "true",
             "offload_to_cpu": "true",
+        },
+        quality_presets={
+            "draft": GenerationDefaults(width=512, height=512, steps=4, cfg_scale=1.0),
+            "balanced": GenerationDefaults(width=768, height=768, steps=6, cfg_scale=1.0),
+            "final": GenerationDefaults(width=1024, height=1024, steps=8, cfg_scale=1.0),
+        },
+        runtime_presets={
+            "default": RuntimeDefaults(
+                backend="cuda0",
+                params_backend="cpu",
+                offload_to_cpu=True,
+                stream_layers=False,
+                max_vram_gib=0.0,
+            ),
+            "low_vram": RuntimeDefaults(
+                backend="cuda0,te=cpu",
+                params_backend="cpu",
+                offload_to_cpu=True,
+                stream_layers=True,
+                max_vram_gib=6.0,
+            ),
+            "rtx4090_full_speed": RuntimeDefaults(
+                backend="cuda0",
+                params_backend="cuda0",
+                offload_to_cpu=False,
+                stream_layers=False,
+                max_vram_gib=0.0,
+            ),
         },
     )
 
@@ -193,12 +295,101 @@ def load_model_registry() -> ModelRegistry:
             "diffusion_flash_attention": "true",
             "offload_to_cpu": "true",
         },
+        quality_presets={
+            "draft": GenerationDefaults(width=768, height=512, steps=4, cfg_scale=1.0),
+            "balanced": GenerationDefaults(width=1024, height=512, steps=8, cfg_scale=1.0),
+            "final": GenerationDefaults(width=1280, height=768, steps=12, cfg_scale=1.0),
+        },
+        runtime_presets={
+            "default": RuntimeDefaults(
+                backend="cuda0,te=cpu",
+                params_backend="cpu",
+                offload_to_cpu=True,
+                stream_layers=True,
+                max_vram_gib=8.0,
+            ),
+            "low_vram": RuntimeDefaults(
+                backend="cuda0,te=cpu",
+                params_backend="cpu",
+                offload_to_cpu=True,
+                stream_layers=True,
+                max_vram_gib=6.0,
+            ),
+            "rtx4090_full_speed": RuntimeDefaults(
+                backend="cuda0",
+                params_backend="cuda0",
+                offload_to_cpu=False,
+                stream_layers=False,
+                max_vram_gib=0.0,
+            ),
+        },
     )
 
     return ModelRegistry(
         models=(ideogram, flux2_klein, z_image),
         priority=("ideogram4-q4_0", "flux2-klein-4b-q4_0", "z-image-turbo-q3_k"),
     )
+
+
+def _registry_model(model_id: str) -> ModelSpec:
+    return load_model_registry().model(model_id)
+
+
+def model_generation_defaults(model_id: str, quality: str | None = None) -> Dict[str, object]:
+    model = _registry_model(model_id)
+    quality_key = (quality or model.default_quality).strip().lower()
+    try:
+        return model.quality_presets[quality_key].as_job_fields()
+    except KeyError as exc:
+        known = ", ".join(sorted(model.quality_presets))
+        raise KeyError(f"Unknown quality preset '{quality_key}' for {model_id}. Known presets: {known}") from exc
+
+
+def model_runtime_defaults(model_id: str, preset: str | None = None) -> Dict[str, object]:
+    model = _registry_model(model_id)
+    preset_key = (preset or model.default_runtime).strip().lower().replace("-", "_")
+    aliases = {
+        "lowvram": "low_vram",
+        "low_vram_cuda": "low_vram",
+        "4090": "rtx4090_full_speed",
+        "rtx_4090": "rtx4090_full_speed",
+        "rtx4090": "rtx4090_full_speed",
+        "full_speed": "rtx4090_full_speed",
+    }
+    preset_key = aliases.get(preset_key, preset_key)
+    try:
+        return model.runtime_presets[preset_key].as_runtime_fields()
+    except KeyError as exc:
+        known = ", ".join(sorted(model.runtime_presets))
+        raise KeyError(f"Unknown runtime preset '{preset_key}' for {model_id}. Known presets: {known}") from exc
+
+
+def apply_model_profile_defaults(job: Mapping[str, object]) -> Dict[str, object]:
+    result: Dict[str, object] = dict(job)
+    model_id = str(result.get("model", "ideogram4-q4_0"))
+
+    quality = str(result.get("quality", "") or "")
+    generation = model_generation_defaults(model_id, quality or None)
+    for key, value in generation.items():
+        if result.get(key) in (None, ""):
+            result[key] = value
+
+    runtime_raw = result.get("runtime", {}) or {}
+    runtime = dict(runtime_raw) if isinstance(runtime_raw, Mapping) else {}
+    preset = runtime.get("preset") or runtime.get("profile")
+    if preset:
+        defaults = model_runtime_defaults(model_id, str(preset))
+        for key, value in defaults.items():
+            if runtime.get(key) in (None, ""):
+                runtime[key] = value
+        result["runtime"] = runtime
+
+    metadata_raw = result.get("metadata", {}) or {}
+    metadata = dict(metadata_raw) if isinstance(metadata_raw, Mapping) else {}
+    metadata.setdefault("model", model_id)
+    metadata.setdefault("quality", quality or _registry_model(model_id).default_quality)
+    result["metadata"] = metadata
+    return result
 
 
 def stable_diffusion_cmake_flags(profile: str) -> List[str]:

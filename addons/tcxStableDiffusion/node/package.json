@@ -7,8 +7,12 @@
     "tcxsd-node": "./bin/tcxsd-node.mjs"
   },
   "exports": {
-    ".": "./src/index.mjs"
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.mjs"
+    }
   },
+  "types": "./src/index.d.ts",
   "scripts": {
     "test": "node --test"
   },

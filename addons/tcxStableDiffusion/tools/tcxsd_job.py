@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Sequence
 
 import setup_sd
+import tcxsd_errors
 import tcxsd_models
+import tcxsd_storage
 
 
 ADDON_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -198,6 +200,7 @@ def resolve_user_path(job: Mapping[str, Any], key: str) -> pathlib.Path | None:
 
 
 def resolve_job(job: Mapping[str, Any], addon_root: pathlib.Path = ADDON_ROOT) -> ResolvedJob:
+    job = tcxsd_models.apply_model_profile_defaults(job)
     failures = validate_job(job)
     if failures:
         raise JobError("; ".join(failures))
@@ -207,7 +210,8 @@ def resolve_job(job: Mapping[str, Any], addon_root: pathlib.Path = ADDON_ROOT) -
     model = registry.model(model_id)
 
     model_dir = resolve_user_path(job, "model_dir") or setup_sd.model_target_dir(model, None)
-    output_dir = resolve_user_path(job, "output_dir") or (addon_root / "examples" / model.example / "outputs" / "jobs").resolve()
+    roots = tcxsd_storage.resolve_storage_roots(job, addon_root=addon_root)
+    output_dir = resolve_user_path(job, "output_dir") or (roots.output_root / "jobs").resolve()
     output_name = str(job.get("output_name") or default_output_name())
     output_path = output_dir / f"{output_name}.png"
     sidecar_path = output_dir / f"{output_name}.json"
@@ -247,6 +251,12 @@ def _add_bool(args: List[str], key: str, enabled: bool) -> None:
 def build_sd_cli_args(resolved: ResolvedJob) -> List[str]:
     job = resolved.job
     runtime = job.get("runtime", {}) or {}
+    if job.get("loras"):
+        raise JobError(tcxsd_errors.unsupported_backend_message(
+            "CliProcess",
+            "per-request LoRA stacks",
+            "PersistentServer",
+        ))
     args: List[str] = [str(resolved.cli_path)]
 
     for role, path in resolved.asset_paths.items():
@@ -274,6 +284,19 @@ def build_sd_cli_args(resolved: ResolvedJob) -> List[str]:
         args.extend(["--seed", str(job.get("seed"))])
     if job.get("sampler"):
         args.extend(["--sampling-method", str(job["sampler"])])
+    init_image = resolve_user_path(job, "init_image")
+    if init_image:
+        args.extend(["--init-img", str(init_image)])
+    mask_image = resolve_user_path(job, "mask_image")
+    if mask_image:
+        args.extend(["--mask", str(mask_image)])
+    control_image = resolve_user_path(job, "control_image")
+    if control_image:
+        args.extend(["--control-image", str(control_image)])
+    if job.get("strength") is not None:
+        args.extend(["--strength", str(as_float(job.get("strength"), 0.75))])
+    if job.get("control_strength") is not None:
+        args.extend(["--control-strength", str(as_float(job.get("control_strength"), 1.0))])
 
     if runtime.get("backend"):
         args.extend(["--backend", str(runtime["backend"])])
@@ -283,6 +306,9 @@ def build_sd_cli_args(resolved: ResolvedJob) -> List[str]:
         args.extend(["--threads", str(runtime["threads"])])
     if as_float(runtime.get("max_vram_gib"), 0.0) != 0.0:
         args.extend(["--max-vram", str(runtime["max_vram_gib"])])
+    lora_dir = runtime.get("lora_model_dir")
+    if lora_dir:
+        args.extend(["--lora-model-dir", str(resolve_user_path({"_job_dir": job.get("_job_dir"), "lora_model_dir": lora_dir}, "lora_model_dir"))])
 
     _add_bool(args, "--mmap", as_bool(runtime.get("mmap"), True))
     _add_bool(args, "--offload-to-cpu", as_bool(runtime.get("offload_to_cpu"), False))
@@ -356,6 +382,14 @@ def sidecar_for_result(
         "cli_executable": str(resolved.cli_path),
         "duration_seconds": f"{duration_seconds:.6f}",
     })
+    for key in ("init_image", "mask_image", "control_image"):
+        resolved_path = resolve_user_path(job, key)
+        if resolved_path:
+            metadata[key] = str(resolved_path)
+    if job.get("control_strength") is not None:
+        metadata["control_strength"] = str(job.get("control_strength"))
+    if job.get("strength") is not None:
+        metadata["strength"] = str(job.get("strength"))
     if exit_code is not None:
         metadata["cli_exit_code"] = str(exit_code)
     for role, path in resolved.asset_paths.items():
@@ -372,6 +406,10 @@ def sidecar_for_result(
         "native_output_path": str(resolved.output_path),
         "metadata": metadata,
     }
+    if error:
+        payload = tcxsd_errors.error_payload(error)
+        sidecar["error_code"] = payload["code"]
+        sidecar["remediation_hints"] = payload["remediation_hints"]
     if ok:
         sidecar["saved_image_path"] = str(resolved.output_path)
         if image_size:

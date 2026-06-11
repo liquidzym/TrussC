@@ -26,20 +26,9 @@ The in-process upstream progress callback does not return a cancellation decisio
 
 The persistent server backend can cancel queued jobs through `/sdcpp/v1/jobs/{id}/cancel`, but upstream currently reports active generation as non-interruptible. The addon returns a cancelled result when the user asks to stop, but the server may keep the active native job busy until upstream completes it.
 
-### P2 - Input image APIs are backend-dependent
+### P2 - Direct InProcess image-input APIs remain backend-dependent
 
-`PersistentServer` wires `imageToImage`, `mask`, `control`, and `lora` through upstream's `/sdcpp/v1/img_gen` API. `CliProcess` and direct `InProcess` still reject those fields until their image loading/argument paths are implemented.
-
-### P2 - Node package needs production hardening
-
-The first Node-facing package now exists in `node/` and talks directly to `sd-server.exe` without Python. It resolves shared model paths, starts the server, submits image jobs, polls status, and writes PNG output.
-
-Remaining hardening:
-
-- npm package naming/versioning policy,
-- generated sidecar parity with the Python job runner,
-- richer error types and cancellation,
-- optional long-lived server reuse across many Node calls.
+`PersistentServer` wires `imageToImage`, `mask`, `control`, and per-request `lora` through upstream's `/sdcpp/v1/img_gen` API. `CliProcess` now maps init image, mask, ControlNet image, strength, and control strength to upstream `sd-cli` flags. Direct `InProcess` still returns structured `BACKEND_UNSUPPORTED` errors for image inputs and per-request LoRA.
 
 ### P2 - Ideogram4 prompt quality needs calibration
 
@@ -158,6 +147,20 @@ node/src/index.mjs
 node/bin/tcxsd-node.mjs
 node/test/model-paths.test.mjs
 ```
+
+### Resolved - Node package production hardening
+
+The Node package now includes:
+
+- per-model quality and runtime profiles,
+- TypeScript declarations,
+- structured `TcxSdError` errors with remediation hints,
+- sidecar parity for success and failure paths,
+- `/cancel` support,
+- reusable `TcxSdServerSession`,
+- explicit storage roots and cleanup helpers,
+- prompt packs and quality checks,
+- Chinese prompt round-trip coverage.
 
 It uses the shared data-model layout and direct `sd-server.exe` HTTP calls. It does not require Python.
 

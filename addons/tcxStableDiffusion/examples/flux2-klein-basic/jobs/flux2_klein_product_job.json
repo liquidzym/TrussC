@@ -6,6 +6,7 @@
   "output_name": "flux2_klein_product_job",
   "prompt": "A clean product visualization of a modular local AI image generation addon running on a Windows workstation, crisp interface panels, refined studio lighting, professional software-tool aesthetic",
   "negative_prompt": "low quality, blurry, noisy text, cluttered layout, watermark, signature",
+  "quality": "draft",
   "width": 512,
   "height": 512,
   "steps": 4,
@@ -13,6 +14,7 @@
   "cfg_scale": 1.0,
   "sampler": "euler",
   "runtime": {
+    "preset": "default",
     "execution_mode": "persistent_server",
     "server_host": "127.0.0.1",
     "server_port": 1234,

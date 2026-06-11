@@ -268,6 +268,73 @@ std::string boolText(bool value) {
     return value ? "true" : "false";
 }
 
+std::string lowerText(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return text;
+}
+
+std::string errorCodeForText(const std::string& message) {
+    const std::string text = lowerText(message);
+    if (text.find("out of memory") != std::string::npos || text.find("cuda oom") != std::string::npos) {
+        return "CUDA_OOM";
+    }
+    if (text.find("does not exist") != std::string::npos || text.find("was not found") != std::string::npos || text.find("missing model") != std::string::npos) {
+        return "MODEL_ASSET_MISSING";
+    }
+    if (text.find("sd-server did not become ready") != std::string::npos || text.find("failed to start sd-server") != std::string::npos || text.find("not reachable") != std::string::npos) {
+        return "SERVER_START_FAILED";
+    }
+    if (text.find("backend_unsupported") != std::string::npos || text.find("unsupported") != std::string::npos || text.find("not supported") != std::string::npos) {
+        return "BACKEND_UNSUPPORTED";
+    }
+    if (text.find("may not interrupt") != std::string::npos || (text.find("cancel") != std::string::npos && text.find("interrupt") != std::string::npos)) {
+        return "CANCEL_NOT_INTERRUPTIBLE";
+    }
+    if (text.find("no image payload") != std::string::npos || text.find("returned no images") != std::string::npos || text.find("did not create") != std::string::npos) {
+        return "OUTPUT_MISSING";
+    }
+    if (text.find("timed out") != std::string::npos || text.find("timeout") != std::string::npos) {
+        return "TIMEOUT";
+    }
+    return "UNKNOWN";
+}
+
+std::string remediationForCode(const std::string& code) {
+    if (code == "CUDA_OOM") {
+        return "Use RuntimeSettings::lowVramCuda() or ModelProfile::runtime(RuntimePreset::LowVram); reduce width, height, steps, or batchCount; close other GPU-heavy apps.";
+    }
+    if (code == "MODEL_ASSET_MISSING") {
+        return "Run python tools/setup_sd.py download-model --model <model-id>; check modelDir points at every required asset.";
+    }
+    if (code == "SERVER_START_FAILED") {
+        return "Confirm sd-server.exe exists, check server_log metadata, or choose another serverPort.";
+    }
+    if (code == "BACKEND_UNSUPPORTED") {
+        return "Switch to ExecutionMode::PersistentServer for this request, or remove the unsupported field.";
+    }
+    if (code == "CANCEL_NOT_INTERRUPTIBLE") {
+        return "Cancel was requested, but active upstream generation may finish its current step; use shorter processTimeoutSeconds or restart the managed server.";
+    }
+    if (code == "OUTPUT_MISSING") {
+        return "Open the backend log recorded in metadata and check outputDirectory permissions and disk space.";
+    }
+    if (code == "TIMEOUT") {
+        return "Increase processTimeoutSeconds or use a smaller draft request first.";
+    }
+    return "Check backend logs and inspect resolved runtime/model paths.";
+}
+
+void annotateError(ImageResult& result) {
+    if (result.error.empty()) {
+        return;
+    }
+    const std::string code = errorCodeForText(result.error);
+    result.metadata["error_code"] = code;
+    result.metadata["remediation_hint"] = remediationForCode(code);
+}
+
 void addPathMetadata(std::map<std::string, std::string>& metadata, const std::string& key, const fs::path& path) {
     if (!path.empty()) {
         metadata[key] = pathString(path);
@@ -321,6 +388,9 @@ std::map<std::string, std::string> resultMetadata(
         }
         addPathMetadata(metadata, "lora_model_directory", settings->loraModelDirectory);
         addPathMetadata(metadata, "hires_upscalers_directory", settings->hiresUpscalersDirectory);
+        addPathMetadata(metadata, "output_root", settings->outputDirectory);
+        addPathMetadata(metadata, "temp_root", settings->tempDirectory);
+        addPathMetadata(metadata, "cache_root", settings->cacheDirectory);
         metadata["server_port"] = std::to_string(settings->serverPort);
         metadata["server_startup_timeout_seconds"] = std::to_string(settings->serverStartupTimeoutSeconds);
         metadata["server_poll_interval_ms"] = std::to_string(settings->serverPollIntervalMs);
@@ -1217,6 +1287,7 @@ ImageResult generateImageWithPersistentServer(
     auto finish = [&](ImageResult&& value) {
         value.durationSeconds = elapsedSecondsSince(started);
         value.metadata["duration_seconds"] = std::to_string(value.durationSeconds);
+        annotateError(value);
         return std::move(value);
     };
 
@@ -1378,6 +1449,7 @@ ImageResult generateImageWithCli(
     auto finish = [&](ImageResult&& value) {
         value.durationSeconds = elapsedSecondsSince(started);
         value.metadata["duration_seconds"] = std::to_string(value.durationSeconds);
+        annotateError(value);
         return std::move(value);
     };
 
@@ -1387,12 +1459,8 @@ ImageResult generateImageWithCli(
         return finish(std::move(result));
     }
 
-    if (!request.initImage.empty() || !request.maskImage.empty() || !request.controlImage.empty()) {
-        result.error = "Image-to-image, inpainting, and ControlNet request inputs are reserved in the API but not wired in this first implementation.";
-        return finish(std::move(result));
-    }
     if (!request.loras.empty()) {
-        result.error = "LoRA request inputs are reserved in the API but not wired in this first implementation.";
+        result.error = "BACKEND_UNSUPPORTED: per-request LoRA stacks are not supported by CliProcess. Use PersistentServer for LoRA requests.";
         return finish(std::move(result));
     }
     if (request.batchCount != 1) {
@@ -1430,6 +1498,7 @@ ImageResult generateImageWithCli(
     addPathArgument(args, "--audio-vae", paths.audioVae);
     addPathArgument(args, "--control-net", paths.controlNet);
     addPathArgument(args, "--photo-maker", paths.photoMaker);
+    addPathArgument(args, "--lora-model-dir", settings.loraModelDirectory);
 
     addStringArgument(args, "-p", request.prompt);
     addStringArgument(args, "-n", request.negativePrompt);
@@ -1444,6 +1513,17 @@ ImageResult generateImageWithCli(
     if (request.seed >= 0) {
         args.emplace_back("--seed");
         args.emplace_back(std::to_string(request.seed));
+    }
+    addPathArgument(args, "--init-img", request.initImage);
+    addPathArgument(args, "--mask", request.maskImage);
+    addPathArgument(args, "--control-image", request.controlImage);
+    if (!request.initImage.empty()) {
+        args.emplace_back("--strength");
+        args.emplace_back(std::to_string(request.strength));
+    }
+    if (!request.controlImage.empty()) {
+        args.emplace_back("--control-strength");
+        args.emplace_back(std::to_string(request.controlStrength));
     }
     const char* sampler = cliSamplerName(request.sampler);
     if (sampler && *sampler) {
@@ -1870,6 +1950,7 @@ ImageResult NativeRuntime::generateImage(
     auto finish = [&](ImageResult&& value) {
         value.durationSeconds = elapsedSecondsSince(started);
         value.metadata["duration_seconds"] = std::to_string(value.durationSeconds);
+        annotateError(value);
         return std::move(value);
     };
 
@@ -1879,11 +1960,11 @@ ImageResult NativeRuntime::generateImage(
     }
 
     if (!request.initImage.empty() || !request.maskImage.empty() || !request.controlImage.empty()) {
-        result.error = "Image-to-image, inpainting, and ControlNet request inputs are reserved in the API but not wired in this first implementation.";
+        result.error = "BACKEND_UNSUPPORTED: image-to-image, inpainting, and ControlNet inputs are not supported by InProcess. Use PersistentServer or CliProcess for this request.";
         return finish(std::move(result));
     }
     if (!request.loras.empty()) {
-        result.error = "LoRA request inputs are reserved in the API but not wired in this first implementation.";
+        result.error = "BACKEND_UNSUPPORTED: per-request LoRA stacks are not supported by InProcess. Use PersistentServer for LoRA requests.";
         return finish(std::move(result));
     }
 

@@ -44,6 +44,12 @@ enum class Quality {
     Final,
 };
 
+enum class RuntimePreset {
+    Default,
+    LowVram,
+    Rtx4090FullSpeed,
+};
+
 enum class Sampler {
     Euler,
     EulerA,
@@ -114,11 +120,60 @@ struct RuntimeSettings {
     bool serverReuseExisting = false;
     bool keepServerRunning = false;
     fs::path outputDirectory;
+    fs::path tempDirectory;
+    fs::path cacheDirectory;
     int processTimeoutSeconds = 0;
 
     static RuntimeSettings windowsCuda();
     static RuntimeSettings lowVramCuda();
     static RuntimeSettings macMetal();
+};
+
+struct QualityDefaults {
+    int width = 1024;
+    int height = 1024;
+    int steps = 8;
+    float cfgScale = 1.0f;
+    Sampler sampler = Sampler::Euler;
+};
+
+struct ImageRequest;
+
+struct ModelProfile {
+    std::string id;
+    std::string family;
+    QualityDefaults draft;
+    QualityDefaults balanced;
+    QualityDefaults final;
+
+    QualityDefaults defaults(Quality quality = Quality::Balanced) const;
+    RuntimeSettings runtime(RuntimePreset preset = RuntimePreset::Default) const;
+    ImageRequest request(Quality quality = Quality::Balanced) const;
+    ModelPaths paths(const fs::path& modelDir = "models") const;
+
+    static ModelProfile ideogram4();
+    static ModelProfile flux2Klein();
+    static ModelProfile zImageTurbo();
+    static ModelProfile byId(const std::string& modelId);
+};
+
+struct StorageRoots {
+    fs::path outputRoot;
+    fs::path tempRoot;
+    fs::path cacheRoot;
+
+    static StorageRoots fromRuntime(const RuntimeSettings& settings);
+};
+
+struct CleanupOptions {
+    StorageRoots roots;
+    int olderThanSeconds = 24 * 60 * 60;
+    bool dryRun = true;
+};
+
+struct CleanupResult {
+    std::vector<fs::path> removed;
+    std::vector<std::string> errors;
 };
 
 struct Lora {
@@ -240,7 +295,10 @@ const char* toString(Backend backend);
 const char* toString(ExecutionMode mode);
 const char* toString(JobState state);
 const char* toString(Quality quality);
+const char* toString(RuntimePreset preset);
 const char* toString(Sampler sampler);
 const char* toString(IdeogramPromptKind kind);
+
+CleanupResult cleanupRuntimeStorage(const CleanupOptions& options);
 
 } // namespace tcx::sd

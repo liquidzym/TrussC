@@ -2,7 +2,7 @@
 
 ## Current State
 
-This addon is in the first implementation pass, with the core structure, scripts, CMake integration, C++ API, worker queue, Windows CUDA native build, pure C++ persistent `sd-server` backend, process-isolated CLI fallback, first Ideogram4 prompt composer, result sidecar JSON, and first Chinese ImGui example in place. Ideogram4 starter models are present and real smoke generations completed through the TrussC example.
+This addon now has the core C++ runtime, Python tooling, and Node package surfaces in place. Windows CUDA uses the managed pure C++ `sd-server` backend by default when available, with `sd-cli` as process-isolated fallback. The current API includes per-model profiles, runtime presets, sidecar JSON, explicit output/temp/cache roots, cleanup helpers, structured error codes, prompt packs, quality checks, and a Chinese multi-model ImGui workbench.
 
 ## 2026-06-11 Immediate Handoff Addendum
 
@@ -81,19 +81,19 @@ Latest smoke evidence:
 
 This pass has already been verified with `trusscli build --release`, full Python/Node tests, model path validation, and a short FLUX.2-klein GUI smoke from the relocated `bin/data/models` folder.
 
-Next continuation focus: turn the roadmap below into model-profile presets, storage/runtime cleanup APIs, Node sidecar/cancellation hardening, and image-input parity across backends.
+Next continuation focus: curate real quality examples for each model/preset, add focused img2img/ControlNet/LoRA examples, and continue upstream diagnostics for the direct in-process CUDA hang.
 
 ## Persistent Encapsulation Roadmap
 
 High-priority encapsulation work to keep iterating:
 
 - Model profiles:
-  - Add per-model runtime defaults instead of using one global low-VRAM profile for all models.
-  - Expose validated presets: fast preview, balanced, high-quality, low-VRAM, and dedicated 4090 full-speed.
+  - Keep tuning per-model runtime defaults based on real smoke and final-quality outputs.
+  - Existing presets cover draft, balanced, final, low-VRAM, and dedicated 4090 full-speed.
   - Store model capability metadata: text encoder type, native resolution, recommended size, step range, CFG/guidance range, VAE format, prompt style, and known caveats.
 - Runtime and storage:
-  - Make output/temp/cache roots explicit in `RuntimeSettings`, with no hidden C-drive fallback.
-  - Add a cleanup API for native logs, temporary outputs, and old sidecars.
+  - Keep output/temp/cache roots explicit in `RuntimeSettings`, Node, and Python job tooling.
+  - Expand cleanup policy only with user-visible controls; avoid deleting final output PNGs from output roots.
   - Add GPU memory policy knobs: `te=cpu`, `vae=cpu`, `stream_layers`, `max_vram`, persistent model reuse, and server reuse.
   - Detect CUDA OOM and return structured remediation hints instead of generic failed generation text.
 - Prompt and quality:
@@ -102,9 +102,9 @@ High-priority encapsulation work to keep iterating:
   - Add a result quality classifier for placeholder images, blank images, severe text failure, and wrong aspect output.
   - Record prompt profile/version in every sidecar for reproducibility.
 - Node-facing package:
-  - Turn the current `node/` package into a stable public API around job creation, model profiles, progress events, cancellation, sidecar parsing, and path resolution.
+  - Continue hardening the stable public API around progress events and examples.
   - Keep Node pure process/server based; do not depend on Python for normal runtime.
-  - Add TypeScript declarations and examples.
+  - TypeScript declarations, cancellation, sidecars, server reuse, storage roots, and prompt packs are in place.
 - C++ API:
   - Add strongly typed request structs for text-to-image, image-to-image, inpainting, ControlNet, LoRA, upscale, and future video/audio.
   - Keep designer-friendly high-level helpers, but preserve low-level escape hatches for professional tuning.

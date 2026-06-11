@@ -156,25 +156,27 @@ On Windows, the generated preset currently uses Ninja. `trusscli build --release
 
 ## Runtime Profiles
 
-Windows CUDA default for RTX 4090:
+Model profiles now carry their own generation defaults and runtime presets:
 
 ```cpp
-auto settings = tcx::sd::RuntimeSettings::windowsCuda();
-settings.backendAssignment = "cuda0";
-settings.paramsBackendAssignment = "cuda0";
-settings.diffusionFlashAttention = true;
+auto profile = tcx::sd::ModelProfile::ideogram4();
+auto request = profile.request(tcx::sd::Quality::Balanced);
+auto lowVram = profile.runtime(tcx::sd::RuntimePreset::LowVram);
+auto fullSpeed4090 = profile.runtime(tcx::sd::RuntimePreset::Rtx4090FullSpeed);
 ```
 
-Safer Ideogram4 profile, matching the upstream `--offload-to-cpu` workflow:
+The built-in profiles are:
+
+- `ideogram4-q4_0`: draft 512x512/8 steps/CFG 7, balanced 1024x1024/20 steps/CFG 7, final 1024x1024/28 steps/CFG 7.
+- `flux2-klein-4b-q4_0`: draft 512x512/4 steps/CFG 1, balanced 768x768/6 steps/CFG 1, final 1024x1024/8 steps/CFG 1.
+- `z-image-turbo-q3_k`: draft 768x512/4 steps/CFG 1, balanced 1024x512/8 steps/CFG 1, final 1280x768/12 steps/CFG 1.
+
+Legacy helpers remain available:
 
 ```cpp
-auto settings = tcx::sd::RuntimeSettings::lowVramCuda();
-```
-
-macOS profile:
-
-```cpp
-auto settings = tcx::sd::RuntimeSettings::macMetal();
+auto cudaSettings = tcx::sd::RuntimeSettings::windowsCuda();
+auto lowVramSettings = tcx::sd::RuntimeSettings::lowVramCuda();
+auto metalSettings = tcx::sd::RuntimeSettings::macMetal();
 ```
 
 ## Execution Modes
@@ -207,6 +209,8 @@ Optional CLI controls:
 settings.cliExecutable = "path/to/sd-cli.exe";
 settings.cliWorkDir = "path/to/runtime/bin";
 settings.outputDirectory = "outputs/native";
+settings.tempDirectory = "outputs/tmp";
+settings.cacheDirectory = "outputs/cache";
 settings.processTimeoutSeconds = 300;
 ```
 
@@ -227,7 +231,7 @@ sd.createImage("Keep the composition, redesign as a polished product poster")
     .run();
 ```
 
-`CliProcess` and direct `InProcess` still reject these fields until their image-loading paths are implemented. Use `PersistentServer` for these extended workflows on Windows.
+`PersistentServer` supports image inputs and per-request LoRA stacks. `CliProcess` now supports image-to-image, mask/inpaint, and ControlNet through upstream `sd-cli` flags. Direct `InProcess` still returns a structured `BACKEND_UNSUPPORTED` error for those fields. Per-request LoRA also returns `BACKEND_UNSUPPORTED` outside `PersistentServer`.
 
 For LoRA, upstream `sd-server` scans `settings.loraModelDirectory`; pass `.lora(...)` paths relative to that folder, or pass absolute paths that live under that folder so the addon can convert them to server-relative names.
 
@@ -250,12 +254,67 @@ while (sd.pollResult(result)) {
 ```
 
 The sidecar includes job id, state, error text, duration, image dimensions, saved image path, native output path, prompt, seed, steps, CFG, execution mode, backend settings, model paths, and the `sd-cli` log path when using `CliProcess`.
+Failures also include stable error metadata such as `error_code` and `remediation_hint`/`remediation_hints` for common cases like CUDA OOM, missing model files, server startup failures, backend unsupported requests, cancellation that cannot interrupt an active generation, timeouts, and missing output images.
 
 Inspect a sidecar from scripts or Node-adjacent tooling:
 
 ```powershell
 python tools\tcxsd_sidecar.py validate examples\ideogram4-basic\outputs\ideogram4_job_1.json --require-success-image
 python tools\tcxsd_sidecar.py summary examples\ideogram4-basic\outputs\ideogram4_job_1.json --json
+```
+
+Storage cleanup for batch/script workflows:
+
+```powershell
+python tools\tcxsd_storage.py roots --output-root .\outputs --temp-root .\tmp --cache-root .\cache
+python tools\tcxsd_storage.py cleanup --output-root .\outputs --temp-root .\tmp --cache-root .\cache --older-than-seconds 86400
+```
+
+Quality checks are available from Python and Node. They flag placeholder prompts, invalid/tiny output files, size mismatches, and text-check failures or missing verification:
+
+```python
+import tcxsd_quality
+report = tcxsd_quality.assess_sidecar(sidecar_json)
+```
+
+The prompt pack helpers preserve Chinese prompt text as UTF-8:
+
+```python
+import tcxsd_prompts
+packed = tcxsd_prompts.ideogram4_poster("一张展示本地 AI 生图工作流的中文海报", "本地生图", language="zh")
+```
+
+## Node Package
+
+```js
+import {
+  TcxSdError,
+  createServerSession,
+  promptPacks,
+  runTextToImage
+} from "@trussc/tcx-stable-diffusion";
+
+const packed = promptPacks.ideogram4Poster({
+  subject: "一张展示本地 AI 生图工作流的中文海报",
+  visibleText: "本地生图",
+  language: "zh"
+});
+
+const session = await createServerSession({ model: "ideogram4-q4_0", runtimePreset: "lowVram" }).start();
+try {
+  await session.generate({
+    prompt: JSON.stringify(packed.prompt_json),
+    negativePrompt: packed.negative_prompt,
+    quality: "draft",
+    output: "outputs/chinese-poster.png"
+  });
+} catch (error) {
+  if (error instanceof TcxSdError) {
+    console.error(error.code, error.remediationHints);
+  }
+} finally {
+  session.close();
+}
 ```
 
 ## JSON Job Runner

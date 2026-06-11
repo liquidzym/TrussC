@@ -6,6 +6,7 @@
   "output_name": "z_image_turbo_wide_job",
   "prompt": "A cinematic wide composition of a local creative coding studio, a Windows CUDA workstation generating images in real time, polished technical atmosphere, clear subject hierarchy, refined color and lighting",
   "negative_prompt": "low quality, blurry, distorted perspective, clutter, watermark, signature",
+  "quality": "balanced",
   "width": 1024,
   "height": 512,
   "steps": 8,
@@ -13,6 +14,7 @@
   "cfg_scale": 1.0,
   "sampler": "euler",
   "runtime": {
+    "preset": "default",
     "execution_mode": "persistent_server",
     "server_host": "127.0.0.1",
     "server_port": 1234,

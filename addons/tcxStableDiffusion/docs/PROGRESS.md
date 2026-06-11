@@ -314,3 +314,44 @@
   - launched `bin/ideogram4-basic.exe`,
   - captured the window to `examples/ideogram4-basic/outputs/ui_cjk_check.png`,
   - confirmed the UI shows correct Chinese labels and the updated modern theme.
+
+## 2026-06-12 Profile, Node, Storage, And Quality Pass
+
+### Completed
+
+- Added per-model profile data for Ideogram4, FLUX.2-klein, and Z-Image Turbo:
+  - draft/balanced/final quality defaults,
+  - default/low-VRAM/RTX 4090 full-speed runtime presets,
+  - C++ `ModelProfile`, Python model registry helpers, and Node `modelProfiles`.
+- Productionized the Node package:
+  - TypeScript declarations,
+  - structured `TcxSdError` errors with remediation hints,
+  - sidecar parity,
+  - `/cancel` support,
+  - reusable `TcxSdServerSession`,
+  - storage roots and cleanup helpers,
+  - prompt packs and quality checks.
+- Added explicit runtime/storage lifecycle controls:
+  - C++ `outputDirectory`, `tempDirectory`, `cacheDirectory`, `StorageRoots`, and `cleanupRuntimeStorage`,
+  - Python `tools/tcxsd_storage.py`,
+  - Node `resolveStorageRoots()` and `cleanupStorage()`.
+- Unified backend handling for extended image requests:
+  - `PersistentServer` supports init/mask/control/LoRA,
+  - `CliProcess` supports init/mask/control through `sd-cli`,
+  - LoRA outside `PersistentServer` and direct `InProcess` image inputs return structured `BACKEND_UNSUPPORTED` errors.
+- Added prompt quality and result quality checks:
+  - placeholder prompt detection,
+  - tiny/invalid image detection,
+  - size mismatch detection,
+  - text verification warning/failure hooks,
+  - Chinese Ideogram4 prompt pack round-trip coverage.
+- Added stable error codes and remediation hints for CUDA OOM, missing model assets, server startup failures, unsupported backend fields, cancellation limits, timeouts, and missing outputs.
+
+### Verified
+
+- `python -m unittest discover -s tests -p 'test_*.py'`
+- `npm test` in `node/`
+- `python -m py_compile tools/setup_sd.py tools/tcxsd_models.py tools/verify_sd.py tools/tcxsd_sidecar.py tools/tcxsd_job.py tools/tcxsd_server.py tools/tcxsd_errors.py tools/tcxsd_storage.py tools/tcxsd_prompts.py tools/tcxsd_quality.py`
+- `node --check src/index.mjs`
+- `node --check bin/tcxsd-node.mjs`
+- `G:/TrussC/tools/bin/trusscli.exe build` in `examples/ideogram4-basic`

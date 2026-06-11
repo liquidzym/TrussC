@@ -1,5 +1,6 @@
 #include "tcxsd/Types.h"
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <fstream>
@@ -253,6 +254,212 @@ RuntimeSettings RuntimeSettings::macMetal() {
     settings.paramsBackendAssignment = "metal";
     settings.diffusionFlashAttention = true;
     return settings;
+}
+
+QualityDefaults ModelProfile::defaults(Quality quality) const {
+    switch (quality) {
+        case Quality::Draft: return draft;
+        case Quality::Balanced: return balanced;
+        case Quality::Final: return final;
+    }
+    return balanced;
+}
+
+RuntimeSettings ModelProfile::runtime(RuntimePreset preset) const {
+    RuntimeSettings settings = RuntimeSettings::windowsCuda();
+    settings.executionMode = ExecutionMode::PersistentServer;
+
+    if (id == "ideogram4-q4_0") {
+        if (preset == RuntimePreset::Rtx4090FullSpeed) {
+            settings.backendAssignment = "cuda0";
+            settings.paramsBackendAssignment = "cuda0";
+            settings.offloadParamsToCpu = false;
+            settings.keepTextEncoderOnCpu = false;
+            settings.maxVramGiB = 0.0f;
+            settings.streamLayers = false;
+        } else {
+            settings.backendAssignment = "cuda0,te=cpu";
+            settings.paramsBackendAssignment = "cpu";
+            settings.offloadParamsToCpu = true;
+            settings.keepTextEncoderOnCpu = true;
+            settings.maxVramGiB = 8.0f;
+            settings.streamLayers = true;
+        }
+        return settings;
+    }
+
+    if (id == "flux2-klein-4b-q4_0") {
+        if (preset == RuntimePreset::LowVram) {
+            settings.backendAssignment = "cuda0,te=cpu";
+            settings.paramsBackendAssignment = "cpu";
+            settings.offloadParamsToCpu = true;
+            settings.keepTextEncoderOnCpu = true;
+            settings.maxVramGiB = 6.0f;
+            settings.streamLayers = true;
+        } else if (preset == RuntimePreset::Rtx4090FullSpeed) {
+            settings.backendAssignment = "cuda0";
+            settings.paramsBackendAssignment = "cuda0";
+            settings.offloadParamsToCpu = false;
+            settings.maxVramGiB = 0.0f;
+            settings.streamLayers = false;
+        } else {
+            settings.backendAssignment = "cuda0";
+            settings.paramsBackendAssignment = "cpu";
+            settings.offloadParamsToCpu = true;
+            settings.maxVramGiB = 0.0f;
+            settings.streamLayers = false;
+        }
+        return settings;
+    }
+
+    if (id == "z-image-turbo-q3_k") {
+        if (preset == RuntimePreset::Rtx4090FullSpeed) {
+            settings.backendAssignment = "cuda0";
+            settings.paramsBackendAssignment = "cuda0";
+            settings.offloadParamsToCpu = false;
+            settings.maxVramGiB = 0.0f;
+            settings.streamLayers = false;
+        } else {
+            settings.backendAssignment = "cuda0,te=cpu";
+            settings.paramsBackendAssignment = "cpu";
+            settings.offloadParamsToCpu = true;
+            settings.keepTextEncoderOnCpu = true;
+            settings.maxVramGiB = preset == RuntimePreset::LowVram ? 6.0f : 8.0f;
+            settings.streamLayers = true;
+        }
+        return settings;
+    }
+
+    return settings;
+}
+
+ImageRequest ModelProfile::request(Quality quality) const {
+    ImageRequest request;
+    const QualityDefaults values = defaults(quality);
+    request.width = values.width;
+    request.height = values.height;
+    request.steps = values.steps;
+    request.cfgScale = values.cfgScale;
+    request.sampler = values.sampler;
+    request.quality = quality;
+    request.metadata["model"] = id;
+    request.metadata["model_family"] = family;
+    return request;
+}
+
+ModelPaths ModelProfile::paths(const fs::path& modelDir) const {
+    if (id == "ideogram4-q4_0") {
+        return ModelPaths::ideogram4Example(modelDir);
+    }
+    if (id == "flux2-klein-4b-q4_0") {
+        return ModelPaths::flux2KleinExample(modelDir);
+    }
+    if (id == "z-image-turbo-q3_k") {
+        return ModelPaths::zImageTurboExample(modelDir);
+    }
+    return {};
+}
+
+ModelProfile ModelProfile::ideogram4() {
+    return {
+        "ideogram4-q4_0",
+        "Ideogram4",
+        {512, 512, 8, 7.0f, Sampler::Euler},
+        {1024, 1024, 20, 7.0f, Sampler::Euler},
+        {1024, 1024, 28, 7.0f, Sampler::Euler},
+    };
+}
+
+ModelProfile ModelProfile::flux2Klein() {
+    return {
+        "flux2-klein-4b-q4_0",
+        "FLUX.2-klein",
+        {512, 512, 4, 1.0f, Sampler::Euler},
+        {768, 768, 6, 1.0f, Sampler::Euler},
+        {1024, 1024, 8, 1.0f, Sampler::Euler},
+    };
+}
+
+ModelProfile ModelProfile::zImageTurbo() {
+    return {
+        "z-image-turbo-q3_k",
+        "Z-Image",
+        {768, 512, 4, 1.0f, Sampler::Euler},
+        {1024, 512, 8, 1.0f, Sampler::Euler},
+        {1280, 768, 12, 1.0f, Sampler::Euler},
+    };
+}
+
+ModelProfile ModelProfile::byId(const std::string& modelId) {
+    if (modelId == "ideogram4-q4_0" || modelId == "ideogram4") {
+        return ideogram4();
+    }
+    if (modelId == "flux2-klein-4b-q4_0" || modelId == "flux2-klein" || modelId == "flux2") {
+        return flux2Klein();
+    }
+    if (modelId == "z-image-turbo-q3_k" || modelId == "z-image" || modelId == "zimage") {
+        return zImageTurbo();
+    }
+    return ideogram4();
+}
+
+StorageRoots StorageRoots::fromRuntime(const RuntimeSettings& settings) {
+    StorageRoots roots;
+    roots.outputRoot = settings.outputDirectory;
+    if (roots.outputRoot.empty()) {
+        roots.outputRoot = "tcxStableDiffusionOutputs";
+    }
+    roots.tempRoot = settings.tempDirectory.empty() ? roots.outputRoot / "tmp" : settings.tempDirectory;
+    roots.cacheRoot = settings.cacheDirectory.empty() ? roots.outputRoot / "cache" : settings.cacheDirectory;
+    return roots;
+}
+
+CleanupResult cleanupRuntimeStorage(const CleanupOptions& options) {
+    CleanupResult result;
+    const auto now = fs::file_time_type::clock::now();
+    const auto age = std::chrono::seconds(std::max(0, options.olderThanSeconds));
+    const bool ignoreAge = options.olderThanSeconds <= 0;
+    const std::vector<std::pair<fs::path, std::vector<std::string>>> groups = {
+        {options.roots.outputRoot, {".json", ".log"}},
+        {options.roots.tempRoot, {".json", ".log", ".tmp", ".part", ".png"}},
+        {options.roots.cacheRoot, {".tmp", ".part"}},
+    };
+
+    for (const auto& [root, extensions] : groups) {
+        if (root.empty()) {
+            continue;
+        }
+        std::error_code ec;
+        if (!fs::exists(root, ec)) {
+            continue;
+        }
+        for (fs::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+            if (ec || !it->is_regular_file(ec)) {
+                continue;
+            }
+            const fs::path path = it->path();
+            const std::string ext = path.extension().string();
+            if (std::find(extensions.begin(), extensions.end(), ext) == extensions.end()) {
+                continue;
+            }
+            const auto modified = fs::last_write_time(path, ec);
+            if (ec || (!ignoreAge && modified + age > now)) {
+                continue;
+            }
+            result.removed.push_back(path);
+            if (!options.dryRun) {
+                fs::remove(path, ec);
+                if (ec) {
+                    result.errors.push_back(path.string() + ": " + ec.message());
+                    ec.clear();
+                }
+            }
+        }
+        if (ec) {
+            result.errors.push_back(root.string() + ": " + ec.message());
+        }
+    }
+    return result;
 }
 
 IdeogramPrompt IdeogramPrompt::general(std::string subjectText) {
@@ -639,6 +846,15 @@ const char* toString(Quality quality) {
         case Quality::Draft: return "draft";
         case Quality::Balanced: return "balanced";
         case Quality::Final: return "final";
+    }
+    return "unknown";
+}
+
+const char* toString(RuntimePreset preset) {
+    switch (preset) {
+        case RuntimePreset::Default: return "default";
+        case RuntimePreset::LowVram: return "low_vram";
+        case RuntimePreset::Rtx4090FullSpeed: return "rtx4090_full_speed";
     }
     return "unknown";
 }
