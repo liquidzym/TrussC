@@ -62,13 +62,20 @@ def check_native(failures: List[str], allow_missing: bool = False) -> None:
         _fail(f"Missing stable-diffusion native library under {CURRENT_DIR}", failures)
 
     cli = setup_sd.find_cli_file(CURRENT_DIR)
+    server = setup_sd.find_server_file(CURRENT_DIR)
     if profile == "windows-cuda":
         if cli:
             _ok(f"sd-cli process backend exists: {cli}")
         else:
             _fail(f"Missing sd-cli process backend under {CURRENT_DIR}", failures)
+        if server:
+            _ok(f"sd-server persistent backend exists: {server}")
+        else:
+            _fail(f"Missing sd-server persistent backend under {CURRENT_DIR}", failures)
     elif cli:
         _ok(f"optional sd-cli process backend exists: {cli}")
+    if profile != "windows-cuda" and server:
+        _ok(f"optional sd-server persistent backend exists: {server}")
 
 
 def check_model(model_id: str, target: str | None, failures: List[str], allow_missing: bool) -> None:

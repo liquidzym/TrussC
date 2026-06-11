@@ -81,6 +81,8 @@ def summarize_sidecar(data: Mapping[str, Any]) -> Dict[str, Any]:
     metadata = data.get("metadata")
     if not isinstance(metadata, Mapping):
         metadata = {}
+    execution_mode = metadata.get("execution_mode")
+    backend_log = metadata.get("backend_log") or metadata.get("server_log") or metadata.get("cli_log")
 
     return {
         "job_id": data.get("job_id"),
@@ -100,7 +102,9 @@ def summarize_sidecar(data: Mapping[str, Any]) -> Dict[str, Any]:
         "steps": metadata.get("steps"),
         "seed": metadata.get("seed"),
         "cfg_scale": metadata.get("cfg_scale"),
-        "cli_log": metadata.get("cli_log"),
+        "backend_log": backend_log,
+        "server_log": metadata.get("server_log"),
+        "cli_log": metadata.get("cli_log") if execution_mode == "cli_process" else None,
     }
 
 

@@ -277,7 +277,7 @@ def install_native(profile: str, force: bool = False) -> None:
 
 def native_build_targets(profile: str) -> List[str]:
     if profile == "windows-cuda":
-        return ["stable-diffusion", "sd-cli"]
+        return ["stable-diffusion", "sd-cli", "sd-server"]
     return []
 
 
@@ -302,7 +302,7 @@ def stage_extra_artifacts(build_dir: pathlib.Path, install_dir: pathlib.Path) ->
             shutil.copy2(candidate, bin_dir / candidate.name)
         elif suffix in {".lib", ".a"} and "stable-diffusion" in name:
             shutil.copy2(candidate, lib_dir / candidate.name)
-        elif candidate.name.lower() in {"sd-cli", "sd-cli.exe"}:
+        elif candidate.name.lower() in {"sd-cli", "sd-cli.exe", "sd-server", "sd-server.exe"}:
             shutil.copy2(candidate, bin_dir / candidate.name)
 
 
@@ -327,7 +327,7 @@ def runtime_files(install_dir: pathlib.Path) -> List[pathlib.Path]:
             continue
         for suffix in ("*.dll", "*.dylib", "*.so"):
             files.extend(folder.glob(suffix))
-        for executable in ("sd-cli.exe", "sd-cli"):
+        for executable in ("sd-cli.exe", "sd-cli", "sd-server.exe", "sd-server"):
             files.extend(folder.glob(executable))
     return sorted(files)
 
@@ -343,10 +343,22 @@ def find_cli_file(install_dir: pathlib.Path) -> pathlib.Path | None:
     return None
 
 
+def find_server_file(install_dir: pathlib.Path) -> pathlib.Path | None:
+    candidates = []
+    for folder in (install_dir / "bin", install_dir):
+        candidates.extend(folder.glob("sd-server.exe"))
+        candidates.extend(folder.glob("sd-server"))
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def write_cmake_paths(profile: str, install_dir: pathlib.Path) -> None:
     include_dir = install_dir / "include"
     library = find_library_file(install_dir)
     cli = find_cli_file(install_dir)
+    server = find_server_file(install_dir)
     runtimes = runtime_files(install_dir)
     path_file = install_dir / "tcxStableDiffusionPaths.cmake"
 
@@ -360,6 +372,7 @@ def write_cmake_paths(profile: str, install_dir: pathlib.Path) -> None:
                 f'set(TCXSD_NATIVE_INCLUDE_DIR "{_cmake_path(include_dir)}")',
                 f'set(TCXSD_NATIVE_LIBRARY "{_cmake_path(library) if library else ""}")',
                 f'set(TCXSD_NATIVE_CLI "{_cmake_path(cli) if cli else ""}")',
+                f'set(TCXSD_NATIVE_SERVER "{_cmake_path(server) if server else ""}")',
                 "set(TCXSD_NATIVE_RUNTIME_FILES",
                 runtime_lines,
                 ")",
@@ -387,6 +400,7 @@ def write_manifest(
         "runtime_files": [str(path) for path in runtime_files(install_dir)],
         "library": str(find_library_file(install_dir) or ""),
         "cli": str(find_cli_file(install_dir) or ""),
+        "server": str(find_server_file(install_dir) or ""),
     }
     (install_dir / "build_manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False),

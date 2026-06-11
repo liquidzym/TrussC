@@ -1,9 +1,16 @@
 #include "tcxsd/NativeRuntime.h"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
+#include <iterator>
+#include <sstream>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -12,6 +19,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <wincrypt.h>
+#include <winhttp.h>
 #endif
 
 #ifndef TCXSD_HAS_NATIVE
@@ -24,6 +33,10 @@
 
 #ifndef TCXSD_NATIVE_CLI
 #define TCXSD_NATIVE_CLI ""
+#endif
+
+#ifndef TCXSD_NATIVE_SERVER
+#define TCXSD_NATIVE_SERVER ""
 #endif
 
 #if TCXSD_HAS_NATIVE
@@ -100,11 +113,26 @@ fs::path configuredCliCandidate() {
     return configured.empty() ? fs::path() : fs::path(configured);
 }
 
+fs::path configuredServerCandidate() {
+    const std::string configured = TCXSD_NATIVE_SERVER;
+    return configured.empty() ? fs::path() : fs::path(configured);
+}
+
 fs::path addonCliCandidate() {
 #if defined(_WIN32)
     const char* name = "sd-cli.exe";
 #else
     const char* name = "sd-cli";
+#endif
+    const std::string root = TCXSD_ADDON_ROOT;
+    return root.empty() ? fs::path() : fs::path(root) / "libs" / "stable-diffusion" / "current" / "bin" / name;
+}
+
+fs::path addonServerCandidate() {
+#if defined(_WIN32)
+    const char* name = "sd-server.exe";
+#else
+    const char* name = "sd-server";
 #endif
     const std::string root = TCXSD_ADDON_ROOT;
     return root.empty() ? fs::path() : fs::path(root) / "libs" / "stable-diffusion" / "current" / "bin" / name;
@@ -129,6 +157,24 @@ fs::path resolveCliExecutable(const RuntimeSettings& settings) {
     return configured.empty() ? absolutePath(addonCliCandidate()) : absolutePath(configured);
 }
 
+fs::path resolveServerExecutable(const RuntimeSettings& settings) {
+    if (!settings.serverExecutable.empty()) {
+        return absolutePath(settings.serverExecutable);
+    }
+
+    for (const fs::path& candidate : {
+             configuredServerCandidate(),
+             addonServerCandidate(),
+         }) {
+        if (existingFile(candidate)) {
+            return absolutePath(candidate);
+        }
+    }
+
+    const fs::path configured = configuredServerCandidate();
+    return configured.empty() ? absolutePath(addonServerCandidate()) : absolutePath(configured);
+}
+
 bool autoPrefersCliProcess(const RuntimeSettings& settings) {
 #if defined(_WIN32)
     return settings.backend == Backend::Cuda || settings.backend == Backend::Auto;
@@ -136,6 +182,25 @@ bool autoPrefersCliProcess(const RuntimeSettings& settings) {
     (void)settings;
     return false;
 #endif
+}
+
+bool autoPrefersPersistentServer(const RuntimeSettings& settings) {
+#if defined(_WIN32)
+    return settings.keepModelLoaded && (settings.backend == Backend::Cuda || settings.backend == Backend::Auto);
+#else
+    (void)settings;
+    return false;
+#endif
+}
+
+bool shouldUsePersistentServer(const RuntimeSettings& settings, const fs::path& serverExecutable) {
+    if (settings.executionMode == ExecutionMode::PersistentServer) {
+        return true;
+    }
+    if (settings.executionMode == ExecutionMode::CliProcess || settings.executionMode == ExecutionMode::InProcess) {
+        return false;
+    }
+    return autoPrefersPersistentServer(settings) && existingFile(serverExecutable);
 }
 
 bool shouldUseCliProcess(const RuntimeSettings& settings, const fs::path& cliExecutable) {
@@ -238,6 +303,16 @@ std::map<std::string, std::string> resultMetadata(
         if (!settings->paramsBackendAssignment.empty()) {
             metadata["params_backend_assignment"] = settings->paramsBackendAssignment;
         }
+        if (!settings->serverHost.empty()) {
+            metadata["server_host"] = settings->serverHost;
+        }
+        addPathMetadata(metadata, "lora_model_directory", settings->loraModelDirectory);
+        addPathMetadata(metadata, "hires_upscalers_directory", settings->hiresUpscalersDirectory);
+        metadata["server_port"] = std::to_string(settings->serverPort);
+        metadata["server_startup_timeout_seconds"] = std::to_string(settings->serverStartupTimeoutSeconds);
+        metadata["server_poll_interval_ms"] = std::to_string(settings->serverPollIntervalMs);
+        metadata["server_reuse_existing"] = boolText(settings->serverReuseExisting);
+        metadata["keep_server_running"] = boolText(settings->keepServerRunning);
     }
     if (paths) {
         addPathMetadata(metadata, "model_path", paths->model);
@@ -505,6 +580,784 @@ bool runCliProcess(
 }
 #endif
 
+#if defined(_WIN32)
+struct PersistentServerProcess {
+    PROCESS_INFORMATION process{};
+    bool started = false;
+    fs::path logPath;
+};
+
+struct HttpResponse {
+    bool ok = false;
+    int status = 0;
+    std::string body;
+    std::string error;
+};
+
+std::string jsonEscape(const std::string& text) {
+    std::ostringstream out;
+    for (unsigned char c : text) {
+        switch (c) {
+            case '"': out << "\\\""; break;
+            case '\\': out << "\\\\"; break;
+            case '\b': out << "\\b"; break;
+            case '\f': out << "\\f"; break;
+            case '\n': out << "\\n"; break;
+            case '\r': out << "\\r"; break;
+            case '\t': out << "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    out << "\\u"
+                        << std::uppercase << std::hex << std::setw(4) << std::setfill('0')
+                        << static_cast<int>(c)
+                        << std::nouppercase << std::dec;
+                } else {
+                    out << static_cast<char>(c);
+                }
+                break;
+        }
+    }
+    return out.str();
+}
+
+std::string jsonString(const std::string& value) {
+    return "\"" + jsonEscape(value) + "\"";
+}
+
+std::string serverUrl(const RuntimeSettings& settings) {
+    return "http://" + settings.serverHost + ":" + std::to_string(settings.serverPort);
+}
+
+std::string mimeTypeForPath(const fs::path& path) {
+    std::string ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (ext == ".jpg" || ext == ".jpeg") {
+        return "image/jpeg";
+    }
+    if (ext == ".webp") {
+        return "image/webp";
+    }
+    return "image/png";
+}
+
+bool readFileBytes(const fs::path& path, std::vector<unsigned char>& bytes, std::string* error) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        if (error) {
+            *error = "Could not read file: " + pathArg(path);
+        }
+        return false;
+    }
+    bytes.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    return true;
+}
+
+bool writeFileBytes(const fs::path& path, const std::vector<unsigned char>& bytes, std::string* error) {
+    std::error_code ec;
+    const fs::path parent = path.parent_path();
+    if (!parent.empty()) {
+        fs::create_directories(parent, ec);
+        if (ec) {
+            if (error) {
+                *error = "Could not create output directory: " + parent.string() + " (" + ec.message() + ")";
+            }
+            return false;
+        }
+    }
+
+    std::ofstream out(path, std::ios::binary);
+    if (!out) {
+        if (error) {
+            *error = "Could not write file: " + pathArg(path);
+        }
+        return false;
+    }
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    return static_cast<bool>(out);
+}
+
+bool binaryToBase64(const std::vector<unsigned char>& bytes, std::string& encoded, std::string* error) {
+    DWORD size = 0;
+    if (!CryptBinaryToStringA(
+            bytes.empty() ? nullptr : bytes.data(),
+            static_cast<DWORD>(bytes.size()),
+            CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
+            nullptr,
+            &size)) {
+        if (error) {
+            *error = "CryptBinaryToStringA failed: " + windowsErrorMessage(GetLastError());
+        }
+        return false;
+    }
+
+    encoded.assign(size, '\0');
+    if (!CryptBinaryToStringA(
+            bytes.empty() ? nullptr : bytes.data(),
+            static_cast<DWORD>(bytes.size()),
+            CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
+            encoded.data(),
+            &size)) {
+        if (error) {
+            *error = "CryptBinaryToStringA failed: " + windowsErrorMessage(GetLastError());
+        }
+        return false;
+    }
+    if (!encoded.empty() && encoded.back() == '\0') {
+        encoded.pop_back();
+    }
+    return true;
+}
+
+bool base64ToBinary(const std::string& encoded, std::vector<unsigned char>& bytes, std::string* error) {
+    DWORD size = 0;
+    if (!CryptStringToBinaryA(
+            encoded.c_str(),
+            static_cast<DWORD>(encoded.size()),
+            CRYPT_STRING_BASE64,
+            nullptr,
+            &size,
+            nullptr,
+            nullptr)) {
+        if (error) {
+            *error = "CryptStringToBinaryA failed: " + windowsErrorMessage(GetLastError());
+        }
+        return false;
+    }
+
+    bytes.assign(size, 0);
+    if (!CryptStringToBinaryA(
+            encoded.c_str(),
+            static_cast<DWORD>(encoded.size()),
+            CRYPT_STRING_BASE64,
+            bytes.data(),
+            &size,
+            nullptr,
+            nullptr)) {
+        if (error) {
+            *error = "CryptStringToBinaryA failed: " + windowsErrorMessage(GetLastError());
+        }
+        return false;
+    }
+    bytes.resize(size);
+    return true;
+}
+
+std::string fileToDataUrl(const fs::path& path, std::string* error) {
+    std::vector<unsigned char> bytes;
+    if (!readFileBytes(path, bytes, error)) {
+        return {};
+    }
+    std::string encoded;
+    if (!binaryToBase64(bytes, encoded, error)) {
+        return {};
+    }
+    return "data:" + mimeTypeForPath(path) + ";base64," + encoded;
+}
+
+bool parseJsonStringAt(const std::string& json, size_t quote, std::string& value) {
+    if (quote >= json.size() || json[quote] != '"') {
+        return false;
+    }
+    value.clear();
+    for (size_t i = quote + 1; i < json.size(); ++i) {
+        const char ch = json[i];
+        if (ch == '"') {
+            return true;
+        }
+        if (ch != '\\') {
+            value.push_back(ch);
+            continue;
+        }
+        if (++i >= json.size()) {
+            return false;
+        }
+        const char escaped = json[i];
+        switch (escaped) {
+            case '"': value.push_back('"'); break;
+            case '\\': value.push_back('\\'); break;
+            case '/': value.push_back('/'); break;
+            case 'b': value.push_back('\b'); break;
+            case 'f': value.push_back('\f'); break;
+            case 'n': value.push_back('\n'); break;
+            case 'r': value.push_back('\r'); break;
+            case 't': value.push_back('\t'); break;
+            case 'u':
+                value.push_back('?');
+                i += std::min<size_t>(4, json.size() - i - 1);
+                break;
+            default:
+                value.push_back(escaped);
+                break;
+        }
+    }
+    return false;
+}
+
+std::string jsonStringValue(const std::string& json, const std::string& key, size_t start = 0) {
+    const std::string needle = "\"" + key + "\"";
+    size_t keyPos = json.find(needle, start);
+    if (keyPos == std::string::npos) {
+        return {};
+    }
+    size_t colon = json.find(':', keyPos + needle.size());
+    if (colon == std::string::npos) {
+        return {};
+    }
+    size_t quote = json.find('"', colon + 1);
+    if (quote == std::string::npos) {
+        return {};
+    }
+    std::string value;
+    return parseJsonStringAt(json, quote, value) ? value : std::string();
+}
+
+bool serverStatusIsTerminal(const std::string& status) {
+    return status == "completed" || status == "failed" || status == "cancelled";
+}
+
+HttpResponse httpRequest(
+    const std::string& method,
+    const std::string& host,
+    int port,
+    const std::string& path,
+    const std::string& body,
+    int timeoutSeconds) {
+    HttpResponse response;
+    HINTERNET session = WinHttpOpen(
+        L"tcxStableDiffusion/0.1",
+        WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+        WINHTTP_NO_PROXY_NAME,
+        WINHTTP_NO_PROXY_BYPASS,
+        0);
+    if (!session) {
+        response.error = "WinHttpOpen failed: " + windowsErrorMessage(GetLastError());
+        return response;
+    }
+
+    const int timeoutMs = timeoutSeconds > 0 ? timeoutSeconds * 1000 : 30000;
+    WinHttpSetTimeouts(session, 5000, 5000, timeoutMs, timeoutMs);
+
+    const std::wstring wideHost = utf8ToWide(host);
+    HINTERNET connect = WinHttpConnect(session, wideHost.c_str(), static_cast<INTERNET_PORT>(port), 0);
+    if (!connect) {
+        response.error = "WinHttpConnect failed: " + windowsErrorMessage(GetLastError());
+        WinHttpCloseHandle(session);
+        return response;
+    }
+
+    const std::wstring wideMethod = utf8ToWide(method);
+    const std::wstring widePath = utf8ToWide(path);
+    HINTERNET request = WinHttpOpenRequest(
+        connect,
+        wideMethod.c_str(),
+        widePath.c_str(),
+        nullptr,
+        WINHTTP_NO_REFERER,
+        WINHTTP_DEFAULT_ACCEPT_TYPES,
+        0);
+    if (!request) {
+        response.error = "WinHttpOpenRequest failed: " + windowsErrorMessage(GetLastError());
+        WinHttpCloseHandle(connect);
+        WinHttpCloseHandle(session);
+        return response;
+    }
+
+    std::wstring headers;
+    if (!body.empty()) {
+        headers = L"Content-Type: application/json\r\nAccept: application/json\r\n";
+    }
+    const BOOL sent = WinHttpSendRequest(
+        request,
+        headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
+        headers.empty() ? 0 : static_cast<DWORD>(headers.size()),
+        body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char*>(body.data()),
+        static_cast<DWORD>(body.size()),
+        static_cast<DWORD>(body.size()),
+        0);
+    if (!sent || !WinHttpReceiveResponse(request, nullptr)) {
+        response.error = "WinHTTP request failed: " + windowsErrorMessage(GetLastError());
+        WinHttpCloseHandle(request);
+        WinHttpCloseHandle(connect);
+        WinHttpCloseHandle(session);
+        return response;
+    }
+
+    DWORD status = 0;
+    DWORD statusSize = sizeof(status);
+    WinHttpQueryHeaders(
+        request,
+        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+        WINHTTP_HEADER_NAME_BY_INDEX,
+        &status,
+        &statusSize,
+        WINHTTP_NO_HEADER_INDEX);
+    response.status = static_cast<int>(status);
+
+    for (;;) {
+        DWORD available = 0;
+        if (!WinHttpQueryDataAvailable(request, &available)) {
+            response.error = "WinHttpQueryDataAvailable failed: " + windowsErrorMessage(GetLastError());
+            break;
+        }
+        if (available == 0) {
+            break;
+        }
+        std::string chunk(available, '\0');
+        DWORD read = 0;
+        if (!WinHttpReadData(request, chunk.data(), available, &read)) {
+            response.error = "WinHttpReadData failed: " + windowsErrorMessage(GetLastError());
+            break;
+        }
+        chunk.resize(read);
+        response.body += chunk;
+    }
+
+    response.ok = response.error.empty() && response.status >= 200 && response.status < 300;
+    WinHttpCloseHandle(request);
+    WinHttpCloseHandle(connect);
+    WinHttpCloseHandle(session);
+    return response;
+}
+
+HttpResponse serverGet(const RuntimeSettings& settings, const std::string& path, int timeoutSeconds = 10) {
+    return httpRequest("GET", settings.serverHost, settings.serverPort, path, {}, timeoutSeconds);
+}
+
+HttpResponse serverPost(const RuntimeSettings& settings, const std::string& path, const std::string& body, int timeoutSeconds = 30) {
+    return httpRequest("POST", settings.serverHost, settings.serverPort, path, body, timeoutSeconds);
+}
+
+std::vector<std::string> buildServerArguments(const ModelPaths& paths, const RuntimeSettings& settings) {
+    std::vector<std::string> args;
+    addStringArgument(args, "--listen-ip", settings.serverHost.empty() ? "127.0.0.1" : settings.serverHost);
+    args.emplace_back("--listen-port");
+    args.emplace_back(std::to_string(settings.serverPort > 0 ? settings.serverPort : 1234));
+    addPathArgument(args, "-m", paths.model);
+    addPathArgument(args, "--diffusion-model", paths.diffusionModel);
+    addPathArgument(args, "--high-noise-diffusion-model", paths.highNoiseDiffusionModel);
+    addPathArgument(args, "--uncond-diffusion-model", paths.unconditionalDiffusionModel);
+    addPathArgument(args, "--clip_l", paths.clipL);
+    addPathArgument(args, "--clip_g", paths.clipG);
+    addPathArgument(args, "--clip_vision", paths.clipVision);
+    addPathArgument(args, "--t5xxl", paths.t5xxl);
+    addPathArgument(args, "--llm", paths.llm);
+    addPathArgument(args, "--llm_vision", paths.llmVision);
+    addPathArgument(args, "--vae", paths.vae);
+    addPathArgument(args, "--audio-vae", paths.audioVae);
+    addPathArgument(args, "--control-net", paths.controlNet);
+    addPathArgument(args, "--photo-maker", paths.photoMaker);
+    addPathArgument(args, "--lora-model-dir", settings.loraModelDirectory);
+    addPathArgument(args, "--hires-upscalers-dir", settings.hiresUpscalersDirectory);
+    addStringArgument(args, "--backend", settings.backendAssignment);
+    addStringArgument(args, "--params-backend", settings.paramsBackendAssignment);
+    if (settings.cpuThreads > 0) {
+        args.emplace_back("--threads");
+        args.emplace_back(std::to_string(settings.cpuThreads));
+    }
+    if (settings.maxVramGiB != 0.0f) {
+        args.emplace_back("--max-vram");
+        args.emplace_back(std::to_string(settings.maxVramGiB));
+    }
+    addBoolArgument(args, "--mmap", settings.mmap);
+    addBoolArgument(args, "--offload-to-cpu", settings.offloadParamsToCpu);
+    addBoolArgument(args, "--clip-on-cpu", settings.keepTextEncoderOnCpu);
+    addBoolArgument(args, "--vae-on-cpu", settings.keepVaeOnCpu);
+    addBoolArgument(args, "--control-net-cpu", settings.keepControlNetOnCpu);
+    addBoolArgument(args, "--stream-layers", settings.streamLayers);
+    addBoolArgument(args, "--fa", settings.flashAttention);
+    addBoolArgument(args, "--diffusion-fa", settings.diffusionFlashAttention);
+    addBoolArgument(args, "--diffusion-conv-direct", settings.diffusionConvDirect);
+    addBoolArgument(args, "--vae-conv-direct", settings.vaeConvDirect);
+    args.emplace_back("-v");
+    return args;
+}
+
+std::string serverLoraPath(const fs::path& path, const RuntimeSettings& settings) {
+    if (path.empty()) {
+        return {};
+    }
+    if (path.is_relative()) {
+        return path.generic_string();
+    }
+    if (!settings.loraModelDirectory.empty()) {
+        std::error_code ec;
+        const fs::path base = fs::absolute(settings.loraModelDirectory, ec);
+        const fs::path item = fs::absolute(path, ec);
+        const fs::path relative = fs::relative(item, base, ec);
+        if (!ec && !relative.empty()) {
+            const std::string generic = relative.generic_string();
+            if (generic != "." && generic.rfind("..", 0) != 0) {
+                return generic;
+            }
+        }
+    }
+    return path.generic_string();
+}
+
+fs::path serverLogPathForSettings(const RuntimeSettings& settings) {
+    std::error_code ec;
+    fs::path outputDir = settings.outputDirectory.empty()
+        ? fs::temp_directory_path(ec) / "tcxStableDiffusion"
+        : settings.outputDirectory;
+    if (ec) {
+        outputDir = fs::path("tcxStableDiffusionOutputs");
+    }
+    fs::create_directories(outputDir, ec);
+    return outputDir / ("tcxsd_server_" + makeOutputStem(0) + ".log");
+}
+
+void stopPersistentServerProcess(PersistentServerProcess& server, bool keepRunning);
+
+bool startPersistentServerProcess(
+    const ModelPaths& paths,
+    const RuntimeSettings& settings,
+    const fs::path& executable,
+    const fs::path& workDir,
+    PersistentServerProcess& server,
+    std::string* error) {
+    if (settings.serverReuseExisting) {
+        const HttpResponse health = serverGet(settings, "/sdcpp/v1/capabilities", 5);
+        if (health.ok) {
+            return true;
+        }
+        if (error) {
+            *error = "Existing sd-server is not reachable at " + serverUrl(settings) + ": " + health.error;
+        }
+        return false;
+    }
+
+    std::wstring command = quoteWindowsArg(executable.wstring());
+    for (const std::string& arg : buildServerArguments(paths, settings)) {
+        command.push_back(L' ');
+        command += quoteWindowsArg(utf8ToWide(arg));
+    }
+
+    server.logPath = serverLogPathForSettings(settings);
+
+    SECURITY_ATTRIBUTES security{};
+    security.nLength = sizeof(security);
+    security.bInheritHandle = TRUE;
+
+    HANDLE logHandle = CreateFileW(
+        server.logPath.wstring().c_str(),
+        GENERIC_WRITE,
+        FILE_SHARE_READ,
+        &security,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+    if (logHandle == INVALID_HANDLE_VALUE) {
+        if (error) {
+            *error = "Failed to create sd-server log file: " + pathArg(server.logPath) + " (" + windowsErrorMessage(GetLastError()) + ")";
+        }
+        return false;
+    }
+
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdOutput = logHandle;
+    startup.hStdError = logHandle;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+
+    std::wstring mutableCommand = command;
+    const std::wstring work = workDir.empty() ? executable.parent_path().wstring() : workDir.wstring();
+    PROCESS_INFORMATION process{};
+    const BOOL created = CreateProcessW(
+        nullptr,
+        mutableCommand.data(),
+        nullptr,
+        nullptr,
+        TRUE,
+        CREATE_NO_WINDOW,
+        nullptr,
+        work.empty() ? nullptr : work.c_str(),
+        &startup,
+        &process);
+    CloseHandle(logHandle);
+
+    if (!created) {
+        if (error) {
+            *error = "Failed to start sd-server: " + windowsErrorMessage(GetLastError());
+        }
+        return false;
+    }
+
+    server.process = process;
+    server.started = true;
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(settings.serverStartupTimeoutSeconds > 0 ? settings.serverStartupTimeoutSeconds : 120);
+    while (std::chrono::steady_clock::now() < deadline) {
+        DWORD exitCode = STILL_ACTIVE;
+        if (GetExitCodeProcess(server.process.hProcess, &exitCode) && exitCode != STILL_ACTIVE) {
+            if (error) {
+                *error = "sd-server exited during startup with code " + std::to_string(static_cast<int>(exitCode)) + ". Log: " + pathArg(server.logPath);
+            }
+            stopPersistentServerProcess(server, false);
+            return false;
+        }
+
+        const HttpResponse health = serverGet(settings, "/sdcpp/v1/capabilities", 3);
+        if (health.ok) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+
+    if (error) {
+        *error = "sd-server did not become ready at " + serverUrl(settings) + ". Log: " + pathArg(server.logPath);
+    }
+    stopPersistentServerProcess(server, false);
+    return false;
+}
+
+void stopPersistentServerProcess(PersistentServerProcess& server, bool keepRunning) {
+    if (!server.started) {
+        return;
+    }
+    if (!keepRunning) {
+        DWORD exitCode = STILL_ACTIVE;
+        if (GetExitCodeProcess(server.process.hProcess, &exitCode) && exitCode == STILL_ACTIVE) {
+            TerminateProcess(server.process.hProcess, 0);
+            WaitForSingleObject(server.process.hProcess, 5000);
+        }
+    }
+    CloseHandle(server.process.hThread);
+    CloseHandle(server.process.hProcess);
+    server.process = {};
+    server.started = false;
+}
+
+std::string buildSdcppImageRequest(const ImageRequest& request, const RuntimeSettings& settings, std::string* error) {
+    std::ostringstream out;
+    out << "{";
+    out << "\"prompt\":" << jsonString(request.prompt) << ",";
+    out << "\"negative_prompt\":" << jsonString(request.negativePrompt) << ",";
+    out << "\"width\":" << request.width << ",";
+    out << "\"height\":" << request.height << ",";
+    out << "\"strength\":" << request.strength << ",";
+    out << "\"seed\":" << request.seed << ",";
+    out << "\"batch_count\":" << (request.batchCount > 0 ? request.batchCount : 1) << ",";
+    out << "\"control_strength\":" << request.controlStrength << ",";
+    out << "\"sample_params\":{";
+    const char* sampler = cliSamplerName(request.sampler);
+    if (sampler && *sampler) {
+        out << "\"sample_method\":" << jsonString(sampler) << ",";
+    }
+    out << "\"sample_steps\":" << request.steps << ",";
+    out << "\"guidance\":{\"txt_cfg\":" << request.cfgScale << "}},";
+
+    if (!request.initImage.empty()) {
+        const std::string dataUrl = fileToDataUrl(request.initImage, error);
+        if (dataUrl.empty()) {
+            return {};
+        }
+        out << "\"init_image\":" << jsonString(dataUrl) << ",";
+    }
+    if (!request.maskImage.empty()) {
+        const std::string dataUrl = fileToDataUrl(request.maskImage, error);
+        if (dataUrl.empty()) {
+            return {};
+        }
+        out << "\"mask_image\":" << jsonString(dataUrl) << ",";
+    }
+    if (!request.controlImage.empty()) {
+        const std::string dataUrl = fileToDataUrl(request.controlImage, error);
+        if (dataUrl.empty()) {
+            return {};
+        }
+        out << "\"control_image\":" << jsonString(dataUrl) << ",";
+    }
+
+    out << "\"lora\":[";
+    for (size_t i = 0; i < request.loras.size(); ++i) {
+        if (i > 0) {
+            out << ",";
+        }
+        out << "{\"path\":" << jsonString(serverLoraPath(request.loras[i].path, settings))
+            << ",\"multiplier\":" << request.loras[i].weight
+            << ",\"is_high_noise\":false}";
+    }
+    out << "],";
+    out << "\"output_format\":\"png\",";
+    out << "\"output_compression\":100";
+    out << "}";
+    return out.str();
+}
+
+ImageResult generateImageWithPersistentServer(
+    const ModelPaths& paths,
+    const RuntimeSettings& settings,
+    const fs::path& serverExecutable,
+    const fs::path& serverLogPath,
+    JobId jobId,
+    const ImageRequest& request,
+    const ProgressCallback& progress,
+    const std::atomic<bool>& cancelRequested) {
+    ImageResult result;
+    result.jobId = jobId;
+    result.metadata = resultMetadata(request, ExecutionMode::PersistentServer, &paths, &settings);
+    result.metadata["server_url"] = serverUrl(settings);
+    result.metadata["server_executable"] = pathString(serverExecutable);
+    if (!serverLogPath.empty()) {
+        result.metadata["server_log"] = pathArg(serverLogPath);
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    auto finish = [&](ImageResult&& value) {
+        value.durationSeconds = elapsedSecondsSince(started);
+        value.metadata["duration_seconds"] = std::to_string(value.durationSeconds);
+        return std::move(value);
+    };
+
+    if (cancelRequested.load()) {
+        result.state = JobState::Cancelled;
+        result.error = "Job was cancelled before it started.";
+        return finish(std::move(result));
+    }
+
+    if (request.batchCount != 1) {
+        result.error = "The persistent server backend currently returns the first image only. Use batchCount == 1 until batch result plumbing is added.";
+        return finish(std::move(result));
+    }
+
+    std::error_code ec;
+    fs::path outputDir = settings.outputDirectory.empty()
+        ? fs::temp_directory_path(ec) / "tcxStableDiffusion"
+        : settings.outputDirectory;
+    if (ec) {
+        outputDir = fs::path("tcxStableDiffusionOutputs");
+    }
+    fs::create_directories(outputDir, ec);
+    if (ec) {
+        result.error = "Failed to create output directory: " + outputDir.string() + " (" + ec.message() + ")";
+        return finish(std::move(result));
+    }
+
+    const std::string stem = makeOutputStem(jobId);
+    const fs::path outputPath = outputDir / (stem + ".png");
+    result.outputPath = outputPath;
+    result.metadata["native_output_path"] = pathArg(outputPath);
+
+    const HttpResponse health = serverGet(settings, "/sdcpp/v1/capabilities", 10);
+    if (!health.ok) {
+        result.error = "sd-server is not reachable at " + serverUrl(settings) + ": " + (health.error.empty() ? health.body : health.error);
+        return finish(std::move(result));
+    }
+
+    std::string requestError;
+    const std::string body = buildSdcppImageRequest(request, settings, &requestError);
+    if (body.empty()) {
+        result.error = requestError.empty() ? "Failed to build sd-server request body." : requestError;
+        return finish(std::move(result));
+    }
+    result.metadata["server_request_api"] = "/sdcpp/v1/img_gen";
+
+    sendProgress(progress, jobId, JobState::Running, "sd-server job submit: " + serverUrl(settings));
+    const HttpResponse submit = serverPost(settings, "/sdcpp/v1/img_gen", body, 30);
+    if (!submit.ok) {
+        result.error = "sd-server submit failed with HTTP " + std::to_string(submit.status) + ": " + (submit.error.empty() ? submit.body : submit.error);
+        return finish(std::move(result));
+    }
+
+    std::string serverJobId = jsonStringValue(submit.body, "id");
+    std::string pollUrl = jsonStringValue(submit.body, "poll_url");
+    std::string status = jsonStringValue(submit.body, "status");
+    if (pollUrl.empty() && !serverJobId.empty()) {
+        pollUrl = "/sdcpp/v1/jobs/" + serverJobId;
+    }
+    if (pollUrl.empty()) {
+        result.error = "sd-server submit response did not include poll_url. Response: " + submit.body;
+        return finish(std::move(result));
+    }
+    result.metadata["server_job_id"] = serverJobId;
+
+    const auto deadline = settings.processTimeoutSeconds > 0
+        ? std::chrono::steady_clock::now() + std::chrono::seconds(settings.processTimeoutSeconds)
+        : std::chrono::steady_clock::time_point::max();
+    const int pollIntervalMs = settings.serverPollIntervalMs > 0 ? settings.serverPollIntervalMs : 500;
+    std::string pollBody = submit.body;
+
+    while (!serverStatusIsTerminal(status)) {
+        if (cancelRequested.load()) {
+            const HttpResponse cancel = serverPost(settings, pollUrl + "/cancel", "{}", 10);
+            result.state = JobState::Cancelled;
+            result.error = cancel.ok
+                ? "sd-server job was cancelled."
+                : "Cancellation requested. sd-server may not interrupt active generation yet: " + (cancel.error.empty() ? cancel.body : cancel.error);
+            result.metadata["server_cancel_response_status"] = std::to_string(cancel.status);
+            return finish(std::move(result));
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline) {
+            const HttpResponse cancel = serverPost(settings, pollUrl + "/cancel", "{}", 10);
+            result.error = "sd-server job timed out after " + std::to_string(settings.processTimeoutSeconds) + " seconds.";
+            result.metadata["server_cancel_response_status"] = std::to_string(cancel.status);
+            return finish(std::move(result));
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(pollIntervalMs));
+        const HttpResponse poll = serverGet(settings, pollUrl, 30);
+        if (!poll.ok) {
+            result.error = "sd-server poll failed with HTTP " + std::to_string(poll.status) + ": " + (poll.error.empty() ? poll.body : poll.error);
+            return finish(std::move(result));
+        }
+        pollBody = poll.body;
+        status = jsonStringValue(pollBody, "status");
+        sendProgress(progress, jobId, JobState::Running, "sd-server job status: " + status);
+        if (status.empty()) {
+            result.error = "sd-server poll response did not include status. Response: " + pollBody;
+            return finish(std::move(result));
+        }
+    }
+
+    result.metadata["server_status"] = status;
+    if (status == "cancelled") {
+        result.state = JobState::Cancelled;
+        result.error = jsonStringValue(pollBody, "message");
+        if (result.error.empty()) {
+            result.error = "sd-server job was cancelled.";
+        }
+        return finish(std::move(result));
+    }
+    if (status == "failed") {
+        result.error = jsonStringValue(pollBody, "message");
+        if (result.error.empty()) {
+            result.error = "sd-server job failed. Response: " + pollBody;
+        }
+        return finish(std::move(result));
+    }
+
+    const std::string encoded = jsonStringValue(pollBody, "b64_json");
+    if (encoded.empty()) {
+        result.error = "sd-server completed but returned no image payload.";
+        return finish(std::move(result));
+    }
+
+    std::vector<unsigned char> pngBytes;
+    std::string decodeError;
+    if (!base64ToBinary(encoded, pngBytes, &decodeError)) {
+        result.error = decodeError;
+        return finish(std::move(result));
+    }
+    if (!writeFileBytes(outputPath, pngBytes, &decodeError)) {
+        result.error = decodeError;
+        return finish(std::move(result));
+    }
+    if (!result.pixels.load(outputPath)) {
+        result.error = "Generated image exists but could not be loaded: " + pathArg(outputPath);
+        return finish(std::move(result));
+    }
+
+    result.ok = true;
+    result.state = JobState::Complete;
+    sendProgress(progress, jobId, JobState::Complete, "sd-server job completed: " + pathArg(outputPath));
+    return finish(std::move(result));
+}
+#endif
+
 ImageResult generateImageWithCli(
     const ModelPaths& paths,
     const RuntimeSettings& settings,
@@ -741,8 +1594,15 @@ struct NativeRuntime::Impl {
     ModelPaths paths;
     RuntimeSettings settings;
     bool cliMode = false;
+    bool serverMode = false;
     fs::path cliExecutable;
     fs::path cliWorkDir;
+    fs::path serverExecutable;
+    fs::path serverWorkDir;
+
+#if defined(_WIN32)
+    PersistentServerProcess serverProcess;
+#endif
 
 #if TCXSD_HAS_NATIVE
     sd_ctx_t* ctx = nullptr;
@@ -795,6 +1655,50 @@ bool NativeRuntime::setup(const ModelPaths& paths, const RuntimeSettings& settin
 #if TCXSD_HAS_NATIVE
     std::lock_guard<std::mutex> lock(impl_->mutex);
     const fs::path cliExecutable = resolveCliExecutable(settings);
+    const fs::path serverExecutable = resolveServerExecutable(settings);
+    if (shouldUsePersistentServer(settings, serverExecutable)) {
+        if (!existingFile(serverExecutable)) {
+            if (settings.executionMode == ExecutionMode::PersistentServer) {
+                if (error) {
+                    *error = "sd-server executable does not exist: " + serverExecutable.string();
+                }
+                return false;
+            }
+        } else {
+#if defined(_WIN32)
+            PersistentServerProcess serverProcess;
+            std::string serverError;
+            const fs::path serverWorkDir = settings.serverWorkDir.empty()
+                ? serverExecutable.parent_path()
+                : absolutePath(settings.serverWorkDir);
+            if (startPersistentServerProcess(paths, settings, serverExecutable, serverWorkDir, serverProcess, &serverError)) {
+                impl_->serverMode = true;
+                impl_->cliMode = false;
+                impl_->serverExecutable = serverExecutable;
+                impl_->serverWorkDir = serverWorkDir;
+                impl_->serverProcess = serverProcess;
+                impl_->cliExecutable.clear();
+                impl_->cliWorkDir.clear();
+                return true;
+            }
+            stopPersistentServerProcess(serverProcess, false);
+            if (settings.executionMode == ExecutionMode::PersistentServer) {
+                if (error) {
+                    *error = serverError;
+                }
+                return false;
+            }
+#else
+            if (settings.executionMode == ExecutionMode::PersistentServer) {
+                if (error) {
+                    *error = "Persistent sd-server execution is currently implemented for Windows only.";
+                }
+                return false;
+            }
+#endif
+        }
+    }
+
     if (shouldUseCliProcess(settings, cliExecutable)) {
         if (!existingFile(cliExecutable)) {
             if (error) {
@@ -803,14 +1707,20 @@ bool NativeRuntime::setup(const ModelPaths& paths, const RuntimeSettings& settin
             return false;
         }
         impl_->cliMode = true;
+        impl_->serverMode = false;
         impl_->cliExecutable = cliExecutable;
         impl_->cliWorkDir = settings.cliWorkDir.empty() ? cliExecutable.parent_path() : absolutePath(settings.cliWorkDir);
+        impl_->serverExecutable.clear();
+        impl_->serverWorkDir.clear();
         return true;
     }
 
     impl_->cliMode = false;
+    impl_->serverMode = false;
     impl_->cliExecutable.clear();
     impl_->cliWorkDir.clear();
+    impl_->serverExecutable.clear();
+    impl_->serverWorkDir.clear();
 
     const std::string model = pathString(paths.model);
     const std::string diffusion = pathString(paths.diffusionModel);
@@ -888,19 +1798,25 @@ bool NativeRuntime::setup(const ModelPaths& paths, const RuntimeSettings& settin
 void NativeRuntime::shutdown() {
 #if TCXSD_HAS_NATIVE
     std::lock_guard<std::mutex> lock(impl_->mutex);
+#if defined(_WIN32)
+    stopPersistentServerProcess(impl_->serverProcess, impl_->settings.keepServerRunning);
+#endif
     if (impl_->ctx) {
         free_sd_ctx(impl_->ctx);
         impl_->ctx = nullptr;
     }
     impl_->cliMode = false;
+    impl_->serverMode = false;
     impl_->cliExecutable.clear();
     impl_->cliWorkDir.clear();
+    impl_->serverExecutable.clear();
+    impl_->serverWorkDir.clear();
 #endif
 }
 
 bool NativeRuntime::isLoaded() const {
 #if TCXSD_HAS_NATIVE
-    return impl_->ctx != nullptr || impl_->cliMode;
+    return impl_->ctx != nullptr || impl_->cliMode || impl_->serverMode;
 #else
     return false;
 #endif
@@ -922,6 +1838,23 @@ ImageResult NativeRuntime::generateImage(
 
 #if TCXSD_HAS_NATIVE
     std::lock_guard<std::mutex> lock(impl_->mutex);
+    if (impl_->serverMode) {
+#if defined(_WIN32)
+        return generateImageWithPersistentServer(
+            impl_->paths,
+            impl_->settings,
+            impl_->serverExecutable,
+            impl_->serverProcess.logPath,
+            jobId,
+            request,
+            progress,
+            cancelRequested);
+#else
+        result.error = "Persistent sd-server execution is currently implemented for Windows only.";
+        return result;
+#endif
+    }
+
     if (impl_->cliMode) {
         return generateImageWithCli(
             impl_->paths,

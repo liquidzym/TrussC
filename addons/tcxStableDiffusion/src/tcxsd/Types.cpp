@@ -194,6 +194,22 @@ ModelPaths ModelPaths::ideogram4Example(const fs::path& modelDir) {
     return paths;
 }
 
+ModelPaths ModelPaths::flux2KleinExample(const fs::path& modelDir) {
+    ModelPaths paths;
+    paths.diffusionModel = modelDir / "flux-2-klein-4b-Q4_0.gguf";
+    paths.llm = modelDir / "Qwen3-4B-Q4_K_M.gguf";
+    paths.vae = modelDir / "flux2_ae.safetensors";
+    return paths;
+}
+
+ModelPaths ModelPaths::zImageTurboExample(const fs::path& modelDir) {
+    ModelPaths paths;
+    paths.diffusionModel = modelDir / "z_image_turbo-Q3_K.gguf";
+    paths.llm = modelDir / "Qwen3-4B-Instruct-2507-Q4_K_M.gguf";
+    paths.vae = modelDir / "z_image_ae.safetensors";
+    return paths;
+}
+
 bool ModelPaths::hasImagePipeline() const {
     return !model.empty() || !diffusionModel.empty();
 }
@@ -201,6 +217,7 @@ bool ModelPaths::hasImagePipeline() const {
 RuntimeSettings RuntimeSettings::windowsCuda() {
     RuntimeSettings settings;
     settings.backend = Backend::Cuda;
+    settings.executionMode = ExecutionMode::Auto;
     settings.backendAssignment = "cuda0";
     settings.paramsBackendAssignment = "cuda0";
     settings.offloadParamsToCpu = false;
@@ -209,6 +226,11 @@ RuntimeSettings RuntimeSettings::windowsCuda() {
     settings.diffusionFlashAttention = true;
     settings.diffusionConvDirect = false;
     settings.vaeConvDirect = false;
+    settings.keepModelLoaded = true;
+    settings.serverHost = "127.0.0.1";
+    settings.serverPort = 1234;
+    settings.serverStartupTimeoutSeconds = 120;
+    settings.serverPollIntervalMs = 500;
     return settings;
 }
 
@@ -453,6 +475,28 @@ ImageRequest& ImageRequest::negative(std::string text) {
     return *this;
 }
 
+ImageRequest& ImageRequest::imageToImage(fs::path imagePath, float denoiseStrength) {
+    initImage = std::move(imagePath);
+    strength = denoiseStrength;
+    return *this;
+}
+
+ImageRequest& ImageRequest::mask(fs::path maskPath) {
+    maskImage = std::move(maskPath);
+    return *this;
+}
+
+ImageRequest& ImageRequest::control(fs::path imagePath, float weight) {
+    controlImage = std::move(imagePath);
+    controlStrength = weight;
+    return *this;
+}
+
+ImageRequest& ImageRequest::lora(fs::path loraPath, float weight) {
+    loras.push_back({std::move(loraPath), weight});
+    return *this;
+}
+
 ImageRequest& ImageRequest::ideogram4(const IdeogramPrompt& promptSpec) {
     prompt = promptSpec.build();
     if (negativePrompt.empty()) {
@@ -572,6 +616,7 @@ const char* toString(ExecutionMode mode) {
         case ExecutionMode::Auto: return "auto";
         case ExecutionMode::InProcess: return "in_process";
         case ExecutionMode::CliProcess: return "cli_process";
+        case ExecutionMode::PersistentServer: return "persistent_server";
     }
     return "unknown";
 }

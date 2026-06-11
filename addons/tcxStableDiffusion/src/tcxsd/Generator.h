@@ -21,6 +21,10 @@ public:
     ImageJobBuilder& seed(std::int64_t value);
     ImageJobBuilder& cfg(float value);
     ImageJobBuilder& negative(std::string text);
+    ImageJobBuilder& imageToImage(fs::path imagePath, float denoiseStrength = 0.75f);
+    ImageJobBuilder& mask(fs::path maskPath);
+    ImageJobBuilder& control(fs::path imagePath, float weight = 1.0f);
+    ImageJobBuilder& lora(fs::path loraPath, float weight = 1.0f);
     ImageJobBuilder& draft();
     ImageJobBuilder& balanced();
     ImageJobBuilder& final();
@@ -47,10 +51,17 @@ public:
 
     bool setup(const ModelPaths& paths, const RuntimeSettings& settings = RuntimeSettings());
     bool setupIdeogram4(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
+    bool setupFlux2Klein(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
+    bool setupZImageTurbo(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
+    bool setupAsync(const ModelPaths& paths, const RuntimeSettings& settings = RuntimeSettings());
+    bool setupIdeogram4Async(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
+    bool setupFlux2KleinAsync(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
+    bool setupZImageTurboAsync(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
     void shutdown();
 
     bool isReady() const;
     bool isRunning() const;
+    bool isSettingUp() const;
     std::string lastError() const;
     Progress progress() const;
 

@@ -2,7 +2,7 @@
 
 Stable Diffusion local AI generation addon for TrussC.
 
-The addon targets Windows and macOS only. Windows is the primary platform and uses a CUDA-only `stable-diffusion.cpp` build profile by default. On Windows CUDA, `RuntimeSettings::windowsCuda()` uses an isolated `sd-cli` process backend in `Auto` mode so TrussC/D3D UI apps do not share a process with the CUDA generation pipeline.
+The addon targets Windows and macOS only. Windows is the primary platform and uses a CUDA-only `stable-diffusion.cpp` build profile by default. On Windows CUDA, `RuntimeSettings::windowsCuda()` uses a pure C++ persistent `sd-server.exe` backend in `Auto` mode when available, so models stay loaded across jobs without putting the CUDA generation pipeline inside the TrussC/D3D app process. `sd-cli.exe` remains the fallback and explicit process-isolation backend.
 
 ## First Setup
 
@@ -32,12 +32,13 @@ The Windows example bundles both:
 
 - `stable-diffusion.dll`
 - `sd-cli.exe`
+- `sd-server.exe`
 
 ## Core API
 
 ```cpp
 tcx::StableDiffusion sd;
-sd.setupIdeogram4("models", tcx::sd::RuntimeSettings::windowsCuda());
+sd.setupIdeogram4Async("models", tcx::sd::RuntimeSettings::windowsCuda());
 
 sd.createImage("A precise product render, studio lighting")
     .size(1024, 1024)
@@ -46,9 +47,9 @@ sd.createImage("A precise product render, studio lighting")
     .run();
 ```
 
-Call `sd.update()` in the app loop and drain results with `sd.pollResult(result)`.
+Call `sd.update()` in the app loop, wait for `sd.isReady()`, then drain results with `sd.pollResult(result)`.
 
-Advanced users can force `settings.executionMode = tcx::sd::ExecutionMode::InProcess` for direct API experiments, or `CliProcess` when a strict process boundary is required.
+Advanced users can force `settings.executionMode = tcx::sd::ExecutionMode::PersistentServer`, `CliProcess`, or `InProcess`. Normal C++ app usage does not require Python; Python scripts are setup, verification, and optional Node-adjacent tooling only.
 
 ## Script And Node-Adjacent Jobs
 
@@ -57,9 +58,11 @@ Use the tracked JSON job file as the first automation/Node integration surface:
 ```powershell
 python tools\tcxsd_job.py validate examples\ideogram4-basic\jobs\ideogram4_poster_job.json
 python tools\tcxsd_job.py run examples\ideogram4-basic\jobs\ideogram4_poster_job.json
+python tools\tcxsd_job.py run examples\flux2-klein-basic\jobs\flux2_klein_product_job.json
+python tools\tcxsd_job.py run examples\z-image-basic\jobs\z_image_turbo_wide_job.json
 ```
 
-Generation writes a PNG, `sd-cli` log, and JSON sidecar. Inspect sidecars with:
+Generation writes a PNG, backend log (`sd-server` or `sd-cli`), and JSON sidecar. Inspect sidecars with:
 
 ```powershell
 python tools\tcxsd_sidecar.py summary examples\ideogram4-basic\outputs\jobs\ideogram4_poster_job.json --json

@@ -54,6 +54,7 @@ private:
     bool autoSave_ = true;
     bool usePromptComposer_ = true;
     bool setupAttempted_ = false;
+    bool submitWhenReady_ = false;
     bool smokeMode_ = false;
     bool smokeExitRequested_ = false;
     std::uint64_t currentJob_ = 0;

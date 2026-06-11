@@ -30,6 +30,14 @@ def write_fake_cli(native_dir: pathlib.Path) -> pathlib.Path:
     return cli
 
 
+def write_fake_server(native_dir: pathlib.Path) -> pathlib.Path:
+    bin_dir = native_dir / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    server = bin_dir / "sd-server.exe"
+    server.write_bytes(b"server")
+    return server
+
+
 def write_minimal_png(path: pathlib.Path, width: int = 512, height: int = 512) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(
@@ -133,6 +141,41 @@ class JobToolTests(unittest.TestCase):
         self.assertEqual(data["metadata"]["backend"], "cuda0")
         self.assertIn("diffusion_model_path", data["metadata"])
         self.assertEqual(calls[0][3], 30)
+
+    def test_persistent_server_job_uses_server_backend(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            write_required_model_files(root / "models")
+            write_fake_cli(root / "native")
+            write_fake_server(root / "native")
+            job = sample_job()
+            job["_job_dir"] = root / "jobs"
+            job["runtime"]["execution_mode"] = "persistent_server"
+            job["runtime"]["server_host"] = "127.0.0.1"
+            job["runtime"]["server_port"] = 19999
+
+            sidecar = tcxsd_job.run_job(
+                job,
+                addon_root=ADDON_ROOT,
+                server_runner=lambda resolved: {
+                    "ok": True,
+                    "state": "complete",
+                    "duration_seconds": 0.25,
+                    "saved_image_path": str(resolved.output_path),
+                    "native_output_path": str(resolved.output_path),
+                    "image_width": 512,
+                    "image_height": 512,
+                    "sidecar_path": str(resolved.sidecar_path),
+                    "metadata": {
+                        "execution_mode": "persistent_server",
+                        "server_url": "http://127.0.0.1:19999",
+                    },
+                },
+            )
+
+        self.assertTrue(sidecar["ok"])
+        self.assertEqual(sidecar["metadata"]["execution_mode"], "persistent_server")
+        self.assertEqual(sidecar["metadata"]["server_url"], "http://127.0.0.1:19999")
 
     def test_string_boolean_runtime_values_are_parsed(self):
         with tempfile.TemporaryDirectory() as temp_dir:

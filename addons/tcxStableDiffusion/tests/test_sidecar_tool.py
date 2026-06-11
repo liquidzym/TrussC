@@ -31,6 +31,7 @@ def sample_sidecar():
             "prompt_profile": "ideogram4",
             "prompt_kind": "poster",
             "model": "ideogram4-q4_0",
+            "backend_log": "Temp/tcxsd_job_1.log",
             "cli_log": "Temp/tcxsd_job_1.log",
         },
     }
@@ -50,7 +51,22 @@ class SidecarToolTests(unittest.TestCase):
         self.assertEqual(summary["ok"], True)
         self.assertEqual(summary["execution_mode"], "cli_process")
         self.assertEqual(summary["backend"], "cuda")
+        self.assertEqual(summary["backend_log"], "Temp/tcxsd_job_1.log")
+        self.assertEqual(summary["cli_log"], "Temp/tcxsd_job_1.log")
         self.assertEqual(summary["prompt_profile"], "ideogram4")
+
+    def test_persistent_server_summary_uses_backend_log_without_cli_log(self):
+        sidecar = sample_sidecar()
+        sidecar["metadata"]["execution_mode"] = "persistent_server"
+        sidecar["metadata"]["server_log"] = "Temp/tcxsd_server.log"
+        sidecar["metadata"]["backend_log"] = "Temp/tcxsd_server.log"
+
+        summary = tcxsd_sidecar.summarize_sidecar(sidecar)
+
+        self.assertEqual(summary["execution_mode"], "persistent_server")
+        self.assertEqual(summary["backend_log"], "Temp/tcxsd_server.log")
+        self.assertEqual(summary["server_log"], "Temp/tcxsd_server.log")
+        self.assertIsNone(summary["cli_log"])
 
     def test_validate_reports_missing_fields(self):
         failures = tcxsd_sidecar.validate_sidecar({"ok": "yes", "metadata": {}})

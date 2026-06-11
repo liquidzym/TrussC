@@ -1,0 +1,31 @@
+{
+  "model": "flux2-klein-4b-q4_0",
+  "model_dir": "../models",
+  "native_dir": "../../../libs/stable-diffusion/current",
+  "output_dir": "../outputs/jobs",
+  "output_name": "flux2_klein_product_job",
+  "prompt": "A clean product visualization of a modular local AI image generation addon running on a Windows workstation, crisp interface panels, refined studio lighting, professional software-tool aesthetic",
+  "negative_prompt": "low quality, blurry, noisy text, cluttered layout, watermark, signature",
+  "width": 512,
+  "height": 512,
+  "steps": 4,
+  "seed": 2048,
+  "cfg_scale": 1.0,
+  "sampler": "euler",
+  "runtime": {
+    "execution_mode": "persistent_server",
+    "server_host": "127.0.0.1",
+    "server_port": 1234,
+    "backend": "cuda0",
+    "params_backend": "cpu",
+    "offload_to_cpu": true,
+    "diffusion_flash_attention": true,
+    "mmap": true,
+    "timeout_seconds": 300
+  },
+  "metadata": {
+    "source": "examples/flux2-klein-basic/jobs/flux2_klein_product_job.json",
+    "prompt_profile": "flux2-klein",
+    "prompt_kind": "product"
+  }
+}

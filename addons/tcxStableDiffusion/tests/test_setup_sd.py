@@ -47,10 +47,10 @@ class SetupToolTests(unittest.TestCase):
         self.assertFalse(any(item.startswith("-DCMAKE_CUDA_COMPILER=") for item in args))
 
     def test_windows_cuda_builds_library_and_cli_targets_only(self):
-        self.assertEqual(setup_sd.native_build_targets("windows-cuda"), ["stable-diffusion", "sd-cli"])
+        self.assertEqual(setup_sd.native_build_targets("windows-cuda"), ["stable-diffusion", "sd-cli", "sd-server"])
         self.assertEqual(setup_sd.native_build_targets("macos-metal"), [])
 
-    def test_runtime_files_include_cli_process_binary(self):
+    def test_runtime_files_include_cli_and_persistent_server_binaries(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             install_dir = pathlib.Path(temp_dir)
             bin_dir = install_dir / "bin"
@@ -59,17 +59,21 @@ class SetupToolTests(unittest.TestCase):
             lib_dir.mkdir()
             dll = bin_dir / "stable-diffusion.dll"
             cli = bin_dir / "sd-cli.exe"
+            server = bin_dir / "sd-server.exe"
             library = lib_dir / "stable-diffusion.lib"
             dll.write_bytes(b"dll")
             cli.write_bytes(b"exe")
+            server.write_bytes(b"server")
             library.write_bytes(b"lib")
 
             files = setup_sd.runtime_files(install_dir)
 
             self.assertIn(dll, files)
             self.assertIn(cli, files)
+            self.assertIn(server, files)
             self.assertNotIn(library, files)
             self.assertEqual(setup_sd.find_cli_file(install_dir), cli)
+            self.assertEqual(setup_sd.find_server_file(install_dir), server)
 
 
 if __name__ == "__main__":

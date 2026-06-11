@@ -89,9 +89,17 @@ void tcApp::setup() {
 
     sd_.onProgress([this](const tcx::sd::Progress& progress) {
         std::ostringstream out;
-        out << "生成中 " << progress.step << "/" << progress.totalSteps;
-        if (progress.seconds > 0.0f) {
-            out << "  " << progress.seconds << "s";
+        if (progress.state == tcx::sd::JobState::LoadingModel) {
+            out << "正在加载模型";
+        } else if (progress.state == tcx::sd::JobState::Complete && progress.jobId == 0) {
+            out << "模型已加载";
+        } else if (progress.state == tcx::sd::JobState::Failed) {
+            out << "任务失败";
+        } else {
+            out << "生成中 " << progress.step << "/" << progress.totalSteps;
+            if (progress.seconds > 0.0f) {
+                out << "  " << progress.seconds << "s";
+            }
         }
         status_ = out.str();
         if (smokeMode_) {
@@ -110,11 +118,7 @@ void tcApp::setup() {
     });
     if (smokeMode_) {
         initializeModel();
-        if (sd_.isReady()) {
-            submitPrompt();
-        } else {
-            smokeExitRequested_ = true;
-        }
+        submitWhenReady_ = true;
     }
 }
 
@@ -124,6 +128,17 @@ void tcApp::update() {
     tcx::StableDiffusionImage result;
     while (sd_.pollResult(result)) {
         adoptResult(std::move(result));
+    }
+
+    if (submitWhenReady_ && !sd_.isSettingUp() && !sd_.isRunning()) {
+        submitWhenReady_ = false;
+        if (sd_.isReady()) {
+            submitPrompt();
+        } else {
+            lastError_ = sd_.lastError();
+            writeSmokeLog("model failed: " + lastError_);
+            smokeExitRequested_ = smokeMode_;
+        }
     }
 
     if (smokeMode_ && smokeExitRequested_) {
@@ -214,9 +229,9 @@ void tcApp::initializeModel() {
         : tcx::sd::RuntimeSettings::windowsCuda();
 #endif
 
-    if (sd_.setupIdeogram4(modelDir_, settings)) {
-        writeSmokeLog("model ready");
-        status_ = "模型已加载";
+    if (sd_.setupIdeogram4Async(modelDir_, settings)) {
+        writeSmokeLog("model loading");
+        status_ = "正在异步加载模型";
         return;
     }
 

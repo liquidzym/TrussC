@@ -167,7 +167,7 @@
   - Exit code: 0
   - CLI temp output: `C:/Users/Admin/AppData/Local/Temp/tcxStableDiffusion/tcxsd_job_1_1781149594771.png`
   - Example output: `examples/ideogram4-basic/outputs/ideogram4_job_1.png`
-  - Example output size: 201036 bytes
+  - Historical CLI example output size before the persistent-server overwrite: 201036 bytes
   - Example sidecar: `examples/ideogram4-basic/outputs/ideogram4_job_1.json`
   - Sidecar parse check confirmed `ok=true`, `state=complete`, `prompt_profile=ideogram4`, `execution_mode=cli_process`, `backend=cuda`, `image_width=512`, `image_height=512`, and `duration_seconds=8.986`.
 - `python tools/tcxsd_sidecar.py validate examples/ideogram4-basic/outputs/ideogram4_job_1.json --require-success-image`
@@ -184,7 +184,7 @@
 ### Findings
 
 - Upstream `sd-cli` completed the same Ideogram4 generation path successfully.
-- Direct in-process `generate_image()` reached `decode_first_stage completed` and then did not return in the TrussC/D3D app process. The process-isolated CLI backend is now the Windows default mitigation.
+- Direct in-process `generate_image()` reached `decode_first_stage completed` and then did not return in the TrussC/D3D app process. This pass initially used the process-isolated CLI backend as mitigation; the later persistent `sd-server` backend is now the Windows CUDA `Auto` preference.
 - The previous Release issue was a TrussC CLI single-config preset problem, not a tcxStableDiffusion addon problem.
 - The prompt composer path is functional, but the 3-step 512 smoke output is not a final quality target. Text fidelity and default prompt wording still need dedicated tuning.
 - The sidecar JSON path is now usable for replay/debug tooling and future Node/IPC consumers.
@@ -197,3 +197,67 @@
 - The initial Visual Studio CMake generator failed with `No CUDA toolset found`; the current helper avoids that path by using Ninja inside a Visual Studio developer environment.
 - `trusscli update` rewrites example `CMakeLists.txt`, so durable example behavior should live in source code, addon metadata, or future TrussC template support.
 - The current smoke outputs are runtime verification artifacts, not curated Ideogram4 quality benchmarks.
+
+### 2026-06-11 Continued Implementation
+
+- Added `sd-server.exe` to the Windows CUDA native build/install path:
+  - build target: `sd-server`
+  - path file: `TCXSD_NATIVE_SERVER`
+  - bundled runtime files: `sd-cli.exe`, `sd-server.exe`, `stable-diffusion.dll`
+- Added pure C++ persistent server execution:
+  - `ExecutionMode::PersistentServer`
+  - Windows CUDA `Auto` prefers managed `sd-server.exe` when available.
+  - C++ launches the server process, health-checks `/sdcpp/v1/capabilities`, submits `/sdcpp/v1/img_gen`, polls jobs, decodes base64 PNG data, and returns `tc::Pixels`.
+  - No Python is required for normal TrussC/C++ runtime use.
+- Added async model setup:
+  - `setupAsync(...)`
+  - `setupIdeogram4Async(...)`
+  - `setupFlux2KleinAsync(...)`
+  - `setupZImageTurboAsync(...)`
+  - `isSettingUp()`
+- Updated `examples/ideogram4-basic` to initialize models asynchronously and submit smoke jobs only after `isReady()`.
+- Added high-level request helpers:
+  - `imageToImage(path, strength)`
+  - `mask(path)`
+  - `control(path, weight)`
+  - `lora(path, weight)`
+- Wired those image/LoRA fields through the persistent server backend.
+- Added C++ model path helpers for:
+  - FLUX.2-klein
+  - Z-Image Turbo
+- Added starter example folders/jobs:
+  - `examples/flux2-klein-basic/jobs/flux2_klein_product_job.json`
+  - `examples/z-image-basic/jobs/z_image_turbo_wide_job.json`
+- Added optional script/Node-adjacent persistent server tooling:
+  - `tools/tcxsd_server.py`
+  - `runtime.execution_mode = persistent_server` support in `tools/tcxsd_job.py`
+- Added unit coverage for setup/server packaging and server request body mapping.
+
+### 2026-06-11 Continued Verification
+
+- `python -m unittest discover -s tests`
+  - 20 tests passing.
+- `python -m py_compile tools/setup_sd.py tools/tcxsd_models.py tools/verify_sd.py tools/tcxsd_sidecar.py tools/tcxsd_job.py tools/tcxsd_server.py`
+- `python tools/setup_sd.py build-native --profile windows-cuda`
+  - Confirmed `sd-server.exe` exists in `libs/stable-diffusion/current/bin`.
+- `G:/TrussC/tools/bin/trusscli.exe build --release`
+  - Confirmed example bundles `sd-cli.exe`, `sd-server.exe`, and `stable-diffusion.dll`.
+- Pure C++ persistent server smoke:
+  - Command: `TCXSD_SMOKE=1 TCXSD_SMOKE_COMPOSE=1 TCXSD_SMOKE_WIDTH=512 TCXSD_SMOKE_HEIGHT=512 TCXSD_SMOKE_STEPS=3 TCXSD_SMOKE_SEED=9011 trusscli run --release`
+  - Exit code: 0
+  - Sidecar: `examples/ideogram4-basic/outputs/ideogram4_job_1.json`
+  - Summary: `ok=true`, `execution_mode=persistent_server`, `backend=cuda`, `image_width=512`, `image_height=512`, `seed=9011`, `duration_seconds=6.030`.
+  - Server log reached both `decode_first_stage completed` and `generate_image completed`, confirming the managed server path avoids the direct in-process post-decode hang.
+- Priority starter model downloads:
+  - `python tools/setup_sd.py download-model --model flux2-klein-4b-q4_0`
+  - `python tools/setup_sd.py download-model --model z-image-turbo-q3_k`
+  - Both completed without manual-download fallback.
+- Priority starter model verification:
+  - `python tools/verify_sd.py --model flux2-klein-4b-q4_0`
+  - `python tools/verify_sd.py --model z-image-turbo-q3_k`
+- FLUX.2-klein persistent-server JSON smoke:
+  - `python tools/tcxsd_job.py run examples/flux2-klein-basic/jobs/flux2_klein_product_job.json`
+  - Summary: `ok=true`, `execution_mode=persistent_server`, `backend=cuda0`, `image_width=512`, `image_height=512`, `duration_seconds=2.529`.
+- Z-Image Turbo persistent-server JSON smoke:
+  - `python tools/tcxsd_job.py run examples/z-image-basic/jobs/z_image_turbo_wide_job.json`
+  - Summary: `ok=true`, `execution_mode=persistent_server`, `backend=cuda0`, `image_width=1024`, `image_height=512`, `duration_seconds=4.040`.

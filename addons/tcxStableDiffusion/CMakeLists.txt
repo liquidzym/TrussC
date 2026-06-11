@@ -40,9 +40,13 @@ if(EXISTS "${TCXSD_PATHS_FILE}")
     if(NOT DEFINED TCXSD_NATIVE_CLI)
         set(TCXSD_NATIVE_CLI "")
     endif()
+    if(NOT DEFINED TCXSD_NATIVE_SERVER)
+        set(TCXSD_NATIVE_SERVER "")
+    endif()
 else()
     set(TCXSD_HAS_NATIVE_VALUE 0)
     set(TCXSD_NATIVE_CLI "")
+    set(TCXSD_NATIVE_SERVER "")
     if(WIN32)
         set(_TCXSD_SETUP_PROFILE "windows-cuda")
     else()
@@ -57,6 +61,7 @@ target_compile_definitions(${ADDON_NAME} PUBLIC
     TCXSD_HAS_NATIVE=${TCXSD_HAS_NATIVE_VALUE}
     TCXSD_ADDON_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
     TCXSD_NATIVE_CLI="${TCXSD_NATIVE_CLI}"
+    TCXSD_NATIVE_SERVER="${TCXSD_NATIVE_SERVER}"
 )
 
 if(TCXSD_HAS_NATIVE_VALUE)
@@ -67,6 +72,10 @@ if(TCXSD_HAS_NATIVE_VALUE)
         target_link_libraries(${ADDON_NAME} PRIVATE "${TCXSD_NATIVE_LIBRARY}")
     else()
         message(WARNING "[tcxStableDiffusion] Native runtime path file did not provide TCXSD_NATIVE_LIBRARY.")
+    endif()
+
+    if(WIN32)
+        target_link_libraries(${ADDON_NAME} PRIVATE winhttp crypt32)
     endif()
 
     if(COMMAND tc_addon_bundle_file)

@@ -26,6 +26,7 @@ enum class ExecutionMode {
     Auto,
     InProcess,
     CliProcess,
+    PersistentServer,
 };
 
 enum class JobState {
@@ -77,6 +78,8 @@ struct ModelPaths {
     fs::path photoMaker;
 
     static ModelPaths ideogram4Example(const fs::path& modelDir = "models");
+    static ModelPaths flux2KleinExample(const fs::path& modelDir = "models");
+    static ModelPaths zImageTurboExample(const fs::path& modelDir = "models");
     bool hasImagePipeline() const;
 };
 
@@ -100,6 +103,16 @@ struct RuntimeSettings {
     std::string paramsBackendAssignment;
     fs::path cliExecutable;
     fs::path cliWorkDir;
+    fs::path serverExecutable;
+    fs::path serverWorkDir;
+    fs::path loraModelDirectory;
+    fs::path hiresUpscalersDirectory;
+    std::string serverHost = "127.0.0.1";
+    int serverPort = 1234;
+    int serverStartupTimeoutSeconds = 120;
+    int serverPollIntervalMs = 500;
+    bool serverReuseExisting = false;
+    bool keepServerRunning = false;
     fs::path outputDirectory;
     int processTimeoutSeconds = 0;
 
@@ -185,6 +198,10 @@ struct ImageRequest {
     ImageRequest& seedValue(std::int64_t value);
     ImageRequest& cfg(float value);
     ImageRequest& negative(std::string text);
+    ImageRequest& imageToImage(fs::path imagePath, float denoiseStrength = 0.75f);
+    ImageRequest& mask(fs::path maskPath);
+    ImageRequest& control(fs::path imagePath, float weight = 1.0f);
+    ImageRequest& lora(fs::path loraPath, float weight = 1.0f);
     ImageRequest& ideogram4(const IdeogramPrompt& promptSpec);
     ImageRequest& draft();
     ImageRequest& balanced();

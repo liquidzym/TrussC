@@ -103,6 +103,7 @@ class ResolvedJob:
 
 
 RunProcess = Callable[[Sequence[str], pathlib.Path, pathlib.Path, int], int]
+RunServerJob = Callable[[ResolvedJob], Dict[str, Any]]
 
 
 def load_job(path: pathlib.Path | str) -> Dict[str, Any]:
@@ -350,6 +351,7 @@ def sidecar_for_result(
         "diffusion_flash_attention": "true" if as_bool(runtime.get("diffusion_flash_attention"), True) else "false",
         "model": resolved.model.id,
         "model_family": resolved.model.family,
+        "backend_log": str(resolved.log_path),
         "cli_log": str(resolved.log_path),
         "cli_executable": str(resolved.cli_path),
         "duration_seconds": f"{duration_seconds:.6f}",
@@ -391,8 +393,19 @@ def run_job(
     job: Mapping[str, Any],
     addon_root: pathlib.Path = ADDON_ROOT,
     process_runner: RunProcess = default_process_runner,
+    server_runner: RunServerJob | None = None,
 ) -> Dict[str, Any]:
     resolved = resolve_job(job, addon_root=addon_root)
+    runtime = job.get("runtime", {}) or {}
+    execution_mode = str(runtime.get("execution_mode", "")).strip().lower() if isinstance(runtime, dict) else ""
+    if execution_mode in {"persistent_server", "server", "sd_server"}:
+        if server_runner is None:
+            import tcxsd_server
+            server_runner = tcxsd_server.run_resolved_job
+        sidecar = server_runner(resolved)
+        write_sidecar(resolved.sidecar_path, sidecar)
+        return sidecar
+
     resolved.output_dir.mkdir(parents=True, exist_ok=True)
     args = build_sd_cli_args(resolved)
     timeout = as_int((job.get("runtime", {}) or {}).get("timeout_seconds"), 300)

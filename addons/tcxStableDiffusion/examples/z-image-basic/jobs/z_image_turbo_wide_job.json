@@ -1,0 +1,31 @@
+{
+  "model": "z-image-turbo-q3_k",
+  "model_dir": "../models",
+  "native_dir": "../../../libs/stable-diffusion/current",
+  "output_dir": "../outputs/jobs",
+  "output_name": "z_image_turbo_wide_job",
+  "prompt": "A cinematic wide composition of a local creative coding studio, a Windows CUDA workstation generating images in real time, polished technical atmosphere, clear subject hierarchy, refined color and lighting",
+  "negative_prompt": "low quality, blurry, distorted perspective, clutter, watermark, signature",
+  "width": 1024,
+  "height": 512,
+  "steps": 8,
+  "seed": 4096,
+  "cfg_scale": 1.0,
+  "sampler": "euler",
+  "runtime": {
+    "execution_mode": "persistent_server",
+    "server_host": "127.0.0.1",
+    "server_port": 1234,
+    "backend": "cuda0",
+    "params_backend": "cpu",
+    "offload_to_cpu": true,
+    "diffusion_flash_attention": true,
+    "mmap": true,
+    "timeout_seconds": 300
+  },
+  "metadata": {
+    "source": "examples/z-image-basic/jobs/z_image_turbo_wide_job.json",
+    "prompt_profile": "z-image",
+    "prompt_kind": "wide-scene"
+  }
+}

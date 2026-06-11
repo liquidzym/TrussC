@@ -1,6 +1,7 @@
 #include "tcxsd/Generator.h"
 
 #include <deque>
+#include <thread>
 #include <utility>
 
 namespace tcx::sd {
@@ -97,11 +98,16 @@ private:
 struct StableDiffusion::Impl {
     std::unique_ptr<Worker> worker;
     std::atomic<JobId> nextJobId{1};
+    std::thread setupThread;
+    std::atomic<bool> settingUp{false};
+    std::atomic<bool> setupAbort{false};
     mutable std::mutex mutex;
     bool ready = false;
     bool running = false;
+    bool setupCompletionPending = false;
     std::string lastError;
     Progress currentProgress;
+    Progress setupCompletionProgress;
     std::deque<ImageResult> results;
     ProgressCallback progressCallback;
     ResultCallback resultCallback;
@@ -139,6 +145,26 @@ ImageJobBuilder& ImageJobBuilder::cfg(float value) {
 
 ImageJobBuilder& ImageJobBuilder::negative(std::string text) {
     request_.negative(std::move(text));
+    return *this;
+}
+
+ImageJobBuilder& ImageJobBuilder::imageToImage(fs::path imagePath, float denoiseStrength) {
+    request_.imageToImage(std::move(imagePath), denoiseStrength);
+    return *this;
+}
+
+ImageJobBuilder& ImageJobBuilder::mask(fs::path maskPath) {
+    request_.mask(std::move(maskPath));
+    return *this;
+}
+
+ImageJobBuilder& ImageJobBuilder::control(fs::path imagePath, float weight) {
+    request_.control(std::move(imagePath), weight);
+    return *this;
+}
+
+ImageJobBuilder& ImageJobBuilder::lora(fs::path loraPath, float weight) {
+    request_.lora(std::move(loraPath), weight);
     return *this;
 }
 
@@ -214,7 +240,100 @@ bool StableDiffusion::setupIdeogram4(const fs::path& modelDir, const RuntimeSett
     return setup(ModelPaths::ideogram4Example(modelDir), settings);
 }
 
+bool StableDiffusion::setupFlux2Klein(const fs::path& modelDir, const RuntimeSettings& settings) {
+    return setup(ModelPaths::flux2KleinExample(modelDir), settings);
+}
+
+bool StableDiffusion::setupZImageTurbo(const fs::path& modelDir, const RuntimeSettings& settings) {
+    return setup(ModelPaths::zImageTurboExample(modelDir), settings);
+}
+
+bool StableDiffusion::setupAsync(const ModelPaths& paths, const RuntimeSettings& settings) {
+    shutdown();
+
+    impl_->setupAbort.store(false);
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        impl_->ready = false;
+        impl_->running = false;
+        impl_->lastError.clear();
+        impl_->results.clear();
+        impl_->setupCompletionPending = false;
+        impl_->currentProgress = {};
+        impl_->currentProgress.state = JobState::LoadingModel;
+        impl_->currentProgress.message = "Loading model";
+    }
+    impl_->settingUp.store(true);
+
+    impl_->setupThread = std::thread([this, paths, settings]() {
+        auto worker = std::make_unique<Worker>();
+        std::string error;
+        const bool ok = worker->setup(paths, settings, &error);
+
+        if (ok && !impl_->setupAbort.load()) {
+            worker->startThread();
+        }
+
+        if (impl_->setupAbort.load()) {
+            if (ok && worker) {
+                worker->close();
+            }
+            impl_->settingUp.store(false);
+            return;
+        }
+
+        Progress completion;
+        completion.state = ok ? JobState::Complete : JobState::Failed;
+        completion.message = ok ? "Model ready" : error;
+
+        {
+            std::lock_guard<std::mutex> lock(impl_->mutex);
+            if (ok) {
+                impl_->worker = std::move(worker);
+                impl_->ready = true;
+                impl_->lastError.clear();
+            } else {
+                impl_->ready = false;
+                impl_->lastError = error;
+            }
+            impl_->running = false;
+            impl_->currentProgress = completion;
+            impl_->setupCompletionProgress = completion;
+            impl_->setupCompletionPending = true;
+        }
+        impl_->settingUp.store(false);
+    });
+
+    return true;
+}
+
+bool StableDiffusion::setupIdeogram4Async(const fs::path& modelDir, const RuntimeSettings& settings) {
+    return setupAsync(ModelPaths::ideogram4Example(modelDir), settings);
+}
+
+bool StableDiffusion::setupFlux2KleinAsync(const fs::path& modelDir, const RuntimeSettings& settings) {
+    return setupAsync(ModelPaths::flux2KleinExample(modelDir), settings);
+}
+
+bool StableDiffusion::setupZImageTurboAsync(const fs::path& modelDir, const RuntimeSettings& settings) {
+    return setupAsync(ModelPaths::zImageTurboExample(modelDir), settings);
+}
+
 void StableDiffusion::shutdown() {
+    impl_->setupAbort.store(true);
+    std::thread setupThread;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        if (impl_->setupThread.joinable()) {
+            setupThread = std::move(impl_->setupThread);
+        }
+    }
+    if (setupThread.joinable()) {
+        setupThread.join();
+    }
+    impl_->setupAbort.store(false);
+    impl_->settingUp.store(false);
+
     std::unique_ptr<Worker> worker;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
@@ -234,7 +353,11 @@ bool StableDiffusion::isReady() const {
 
 bool StableDiffusion::isRunning() const {
     std::lock_guard<std::mutex> lock(impl_->mutex);
-    return impl_->running || (impl_->worker && impl_->worker->isBusy());
+    return impl_->settingUp.load() || impl_->running || (impl_->worker && impl_->worker->isBusy());
+}
+
+bool StableDiffusion::isSettingUp() const {
+    return impl_->settingUp.load();
 }
 
 std::string StableDiffusion::lastError() const {
@@ -257,6 +380,10 @@ ImageJobBuilder StableDiffusion::createImage(const IdeogramPrompt& promptSpec) {
 
 JobId StableDiffusion::submit(ImageRequest request) {
     std::lock_guard<std::mutex> lock(impl_->mutex);
+    if (impl_->settingUp.load()) {
+        impl_->lastError = "StableDiffusion is still setting up. Wait until isReady() is true before submitting.";
+        return 0;
+    }
     if (!impl_->ready || !impl_->worker) {
         impl_->lastError = "StableDiffusion is not ready. Call setup() first.";
         return 0;
@@ -286,12 +413,23 @@ void StableDiffusion::update() {
     Worker* worker = nullptr;
     ProgressCallback progressCallback;
     ResultCallback resultCallback;
+    bool hasSetupCompletion = false;
+    Progress setupCompletion;
 
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         worker = impl_->worker.get();
         progressCallback = impl_->progressCallback;
         resultCallback = impl_->resultCallback;
+        if (impl_->setupCompletionPending) {
+            hasSetupCompletion = true;
+            setupCompletion = impl_->setupCompletionProgress;
+            impl_->setupCompletionPending = false;
+        }
+    }
+
+    if (hasSetupCompletion && progressCallback) {
+        progressCallback(setupCompletion);
     }
 
     if (!worker) {

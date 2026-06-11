@@ -10,15 +10,7 @@ In the TrussC/D3D example process, direct `generate_image()` reached:
 decode_first_stage completed
 ```
 
-and then did not return a final `sd_image_t*`. The same model path completed through upstream `sd-cli`. Windows CUDA `Auto` now uses the `sd-cli` process backend by default, while `ExecutionMode::InProcess` remains available for controlled experiments and future upstream/debug work.
-
-### P1 - CLI process backend reloads models per job
-
-The Windows default is robust, but each `sd-cli` job is a fresh process and therefore reloads Ideogram4 model assets. This is acceptable for the first stable Windows path, but the performance roadmap should add one of:
-
-- a persistent local worker process,
-- a managed `sd-server` backend,
-- or a fixed in-process direct API path once the post-decode hang is understood.
+and then did not return a final `sd_image_t*`. The same model path completed through upstream `sd-cli` and through the new managed `sd-server` backend. Windows CUDA `Auto` now prefers the pure C++ persistent `sd-server.exe` backend when available, then falls back to `sd-cli`. `ExecutionMode::InProcess` remains available only for controlled experiments and future upstream/debug work.
 
 ### P1 - Upstream progress callback is global
 
@@ -28,23 +20,23 @@ The Windows default is robust, but each `sd-cli` job is a fresh process and ther
 
 The in-process upstream progress callback does not return a cancellation decision. `cancel()` marks the job cancelled before/after native generation, but cannot reliably interrupt a running diffusion pass mid-step. The Windows CLI process backend can terminate the child process, but that is a coarse process-level cancellation.
 
-### P1 - Model loading needs async/persistent variants
+### P1 - Persistent server cancellation is best-effort while generating
 
-In-process `setup()` loads the native context synchronously. The CLI process backend moves loading into generation and returns from setup quickly, but pays per-job loading cost. The next pass should add explicit async setup/progress semantics and a persistent backend option.
+The persistent server backend can cancel queued jobs through `/sdcpp/v1/jobs/{id}/cancel`, but upstream currently reports active generation as non-interruptible. The addon returns a cancelled result when the user asks to stop, but the server may keep the active native job busy until upstream completes it.
 
-### P2 - Input image APIs are reserved but not wired
+### P2 - Input image APIs are backend-dependent
 
-`ImageRequest` already has `initImage`, `maskImage`, and `controlImage` fields, but native image loading into `sd_image_t` is intentionally deferred. The first stable native pass is txt2img only.
+`PersistentServer` wires `imageToImage`, `mask`, `control`, and `lora` through upstream's `/sdcpp/v1/img_gen` API. `CliProcess` and direct `InProcess` still reject those fields until their image loading/argument paths are implemented.
 
 ### P2 - Node mode is architectural, not implemented
 
-The addon now has clean C++ service boundaries, a process-isolated backend option, model registry tooling, setup manifests, result sidecars, and a JSON job runner. A full Node-facing runtime interface still needs one of:
+The addon now has clean C++ service boundaries, a persistent C++ `sd-server` backend, a process-isolated CLI fallback, model registry tooling, setup manifests, result sidecars, and JSON job runners. A full Node-facing runtime interface still needs one of:
 
 - TrussC Node wrapper around `StableDiffusion`
 - local HTTP/WebSocket service
 - command/IPC bridge that calls the same model registry and setup manifest
 
-The current bridge is `tools/tcxsd_job.py`, which can already run a JSON job file and emit PNG/JSON/log artifacts. The remaining Node task is a persistent API shape, not first-use generation.
+The current bridge is `tools/tcxsd_job.py`, which can run JSON jobs through either `cli_process` or `persistent_server` and emit PNG/JSON/log artifacts. The remaining Node task is a dedicated package/API shape, not first-use generation.
 
 ### P2 - Ideogram4 prompt quality needs calibration
 
@@ -68,7 +60,7 @@ The first example now has these files in `examples/ideogram4-basic/models` and `
 
 ### Resolved - Windows CUDA native runtime build
 
-`tools/setup_sd.py build-native --profile windows-cuda` completed in this workspace. The install exists at `libs/stable-diffusion/current` and `tools/verify_sd.py` confirms the generated CMake paths, header, native library, `stable-diffusion.dll`, and `sd-cli.exe`.
+`tools/setup_sd.py build-native --profile windows-cuda` completed in this workspace. The install exists at `libs/stable-diffusion/current` and `tools/verify_sd.py` confirms the generated CMake paths, header, native library, `stable-diffusion.dll`, `sd-cli.exe`, and `sd-server.exe`.
 
 The build manifest confirms the required accelerator policy:
 
@@ -81,6 +73,56 @@ The build manifest confirms the required accelerator policy:
 - `SD_MUSA=OFF`
 
 The first example has been rebuilt through `trusscli build` and verified through smoke mode.
+
+### Resolved - Pure C++ persistent server backend
+
+Windows CUDA `Auto` now prefers a managed `sd-server.exe` backend. The C++ addon launches the C++ server process, waits for `/sdcpp/v1/capabilities`, submits `/sdcpp/v1/img_gen` jobs through WinHTTP, polls status, decodes returned base64 PNG data with WinCrypt, writes the native PNG, and returns `tc::Pixels` to the caller. Normal TrussC apps do not need Python at runtime.
+
+The latest C++ smoke run completed with `execution_mode=persistent_server`. Its server log reached:
+
+```text
+decode_first_stage completed
+generate_image completed
+```
+
+which confirms the managed process path avoids the direct TrussC/D3D in-process post-decode hang.
+
+### Resolved - Async setup and persistent loading
+
+Added `StableDiffusion::setupAsync(...)`, `setupIdeogram4Async(...)`, `setupFlux2KleinAsync(...)`, `setupZImageTurboAsync(...)`, and `isSettingUp()`. The first example now initializes models asynchronously and submits smoke jobs only after `isReady()` becomes true.
+
+### Resolved - Persistent image-input and LoRA request wiring
+
+Added designer-friendly request helpers:
+
+```cpp
+sd.createImage("Redesign this sketch as a poster")
+    .imageToImage("inputs/sketch.png", 0.55f)
+    .mask("inputs/mask.png")
+    .control("inputs/control.png", 0.8f)
+    .lora("loras/style.safetensors", 0.7f)
+    .run();
+```
+
+These fields are wired through the persistent server backend first.
+
+### Resolved - Priority starter model assets and jobs
+
+FLUX.2-klein and Z-Image Turbo starter assets were downloaded successfully without hitting the 3-failure manual-download rule:
+
+```text
+examples/flux2-klein-basic/models
+examples/z-image-basic/models
+```
+
+Both starter JSON jobs validate and complete through `runtime.execution_mode = persistent_server`:
+
+```text
+examples/flux2-klein-basic/jobs/flux2_klein_product_job.json
+examples/z-image-basic/jobs/z_image_turbo_wide_job.json
+```
+
+The current outputs are smoke/architecture checks, not curated quality presets.
 
 ### Resolved - TrussC release build command for Ninja single-config presets
 
@@ -128,7 +170,7 @@ examples/ideogram4-basic/outputs/ideogram4_job_1.png
 examples/ideogram4-basic/outputs/ideogram4_job_1.json
 ```
 
-Failed jobs can write `_failed.json` sidecars. The sidecar contains job state, error text, duration, image dimensions, saved image path, native output path, prompt/request fields, runtime/backend settings, model paths, and `sd-cli` log path. This gives future batch, Node, IPC, and debugging tools a stable artifact to read without scraping UI text or temp logs.
+Failed jobs can write `_failed.json` sidecars. The sidecar contains job state, error text, duration, image dimensions, saved image path, native output path, prompt/request fields, runtime/backend settings, model paths, `sd-cli` log paths for CLI mode, and `sd-server` URL/log metadata for persistent mode. This gives future batch, Node, IPC, and debugging tools a stable artifact to read without scraping UI text or temp logs.
 
 `tools/tcxsd_sidecar.py` now validates and summarizes these sidecars from scripts:
 
@@ -139,16 +181,19 @@ python tools\tcxsd_sidecar.py summary examples\ideogram4-basic\outputs\ideogram4
 
 ### Resolved - JSON job runner for script and Node-adjacent workflows
 
-Added `tools/tcxsd_job.py` and a tracked example job:
+Added `tools/tcxsd_job.py`, `tools/tcxsd_server.py`, and tracked example jobs:
 
 ```text
 examples/ideogram4-basic/jobs/ideogram4_poster_job.json
+examples/flux2-klein-basic/jobs/flux2_klein_product_job.json
+examples/z-image-basic/jobs/z_image_turbo_wide_job.json
 ```
 
 The runner supports:
 
 - `validate` for job schema/path checks,
 - `args` for inspecting the exact `sd-cli` command,
-- `run` for producing PNG, log, and JSON sidecar artifacts.
+- `run` for producing PNG, log, and JSON sidecar artifacts,
+- `runtime.execution_mode = persistent_server` for the same server-backed flow used by pure C++.
 
-Relative paths are resolved from the job file location, which keeps Node, PowerShell, CI, and manual calls consistent. This is the first stable external generation contract while the persistent worker/IPC design remains open.
+Relative paths are resolved from the job file location, which keeps Node, PowerShell, CI, and manual calls consistent. This is the first stable external generation contract while the formal Node package/API design remains open.

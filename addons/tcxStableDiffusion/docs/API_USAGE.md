@@ -9,7 +9,7 @@ tcx::StableDiffusion sd;
 
 void setup() {
     auto settings = tcx::sd::RuntimeSettings::windowsCuda();
-    bool ok = sd.setupIdeogram4("models", settings);
+    bool ok = sd.setupIdeogram4Async("models", settings);
     if (!ok) {
         tc::logError("sd") << sd.lastError();
     }
@@ -27,6 +27,10 @@ void update() {
 }
 
 void generate() {
+    if (!sd.isReady()) {
+        return;
+    }
+
     sd.createImage("A calm architectural studio, clean light, high detail")
         .size(1024, 1024)
         .steps(8)
@@ -35,7 +39,7 @@ void generate() {
 }
 ```
 
-On Windows CUDA, `RuntimeSettings::windowsCuda()` leaves `executionMode` as `Auto`. `Auto` selects the isolated `sd-cli` process backend when `sd-cli.exe` is available, then loads the generated PNG back into `tc::Pixels`. The high-level API stays the same.
+On Windows CUDA, `RuntimeSettings::windowsCuda()` leaves `executionMode` as `Auto`. `Auto` selects the pure C++ persistent `sd-server.exe` backend when it is available, then falls back to the isolated `sd-cli` process backend. The high-level API stays the same and normal C++ apps do not need Python at runtime.
 
 ## Ideogram4 Prompt Composer
 
@@ -66,7 +70,7 @@ auto request = tcx::StableDiffusionRequest::fromIdeogram4(prompt)
 sd.submit(request);
 ```
 
-The composer returns plain strings under the hood, so it stays compatible with `CliProcess`, `InProcess`, and future persistent or Node-facing backends.
+The composer returns plain strings under the hood, so it stays compatible with `PersistentServer`, `CliProcess`, `InProcess`, and future Node-facing tooling.
 
 ## Model Initialization
 
@@ -87,6 +91,29 @@ python tools\setup_sd.py download-model --model ideogram4-q4_0
 ```
 
 If download fails 3 times, the script prints exact manual URLs and the target directory.
+
+Other built-in starter profiles:
+
+```cpp
+sd.setupFlux2KleinAsync("models", tcx::sd::RuntimeSettings::windowsCuda());
+sd.setupZImageTurboAsync("models", tcx::sd::RuntimeSettings::windowsCuda());
+```
+
+Download their assets with:
+
+```powershell
+python tools\setup_sd.py download-model --model flux2-klein-4b-q4_0
+python tools\setup_sd.py download-model --model z-image-turbo-q3_k
+```
+
+Their starter JSON jobs live in:
+
+```text
+examples/flux2-klein-basic/jobs/flux2_klein_product_job.json
+examples/z-image-basic/jobs/z_image_turbo_wide_job.json
+```
+
+In this workspace both priority starter models have been downloaded, verified, and smoke-tested through `persistent_server`.
 
 ## Building The Example
 
@@ -133,9 +160,24 @@ auto settings = tcx::sd::RuntimeSettings::macMetal();
 
 ```cpp
 auto settings = tcx::sd::RuntimeSettings::windowsCuda();
-settings.executionMode = tcx::sd::ExecutionMode::Auto;       // Windows CUDA uses sd-cli if present.
+settings.executionMode = tcx::sd::ExecutionMode::Auto;       // Windows CUDA prefers persistent sd-server, then CLI fallback.
+settings.executionMode = tcx::sd::ExecutionMode::PersistentServer; // Force managed sd-server.exe.
 settings.executionMode = tcx::sd::ExecutionMode::CliProcess; // Force process isolation.
 settings.executionMode = tcx::sd::ExecutionMode::InProcess;  // Force direct stable-diffusion.cpp API.
+```
+
+Optional persistent server controls:
+
+```cpp
+settings.serverExecutable = "path/to/sd-server.exe";
+settings.serverHost = "127.0.0.1";
+settings.serverPort = 1234;
+settings.serverStartupTimeoutSeconds = 120;
+settings.serverPollIntervalMs = 500;
+settings.serverReuseExisting = false;
+settings.keepServerRunning = false;
+settings.loraModelDirectory = "loras";
+settings.hiresUpscalersDirectory = "upscalers";
 ```
 
 Optional CLI controls:
@@ -147,7 +189,26 @@ settings.outputDirectory = "outputs/native";
 settings.processTimeoutSeconds = 300;
 ```
 
-For `CliProcess`, `ImageResult::outputPath` is the PNG written by `sd-cli`, and `result.metadata["cli_log"]` points to the captured upstream log.
+For `PersistentServer`, `ImageResult::outputPath` is the PNG decoded from `/sdcpp/v1/img_gen`, and `result.metadata["server_log"]` points to the managed server log when the addon launched the server. For `CliProcess`, `ImageResult::outputPath` is the PNG written by `sd-cli`, and `result.metadata["cli_log"]` points to the captured upstream log.
+
+## Image Inputs, ControlNet, And LoRA
+
+The persistent server backend supports image inputs through upstream's native HTTP API:
+
+```cpp
+sd.createImage("Keep the composition, redesign as a polished product poster")
+    .imageToImage("inputs/sketch.png", 0.55f)
+    .mask("inputs/mask.png")
+    .control("inputs/pose_or_depth.png", 0.8f)
+    .lora("loras/product-style.safetensors", 0.7f)
+    .size(1024, 1024)
+    .steps(12)
+    .run();
+```
+
+`CliProcess` and direct `InProcess` still reject these fields until their image-loading paths are implemented. Use `PersistentServer` for these extended workflows on Windows.
+
+For LoRA, upstream `sd-server` scans `settings.loraModelDirectory`; pass `.lora(...)` paths relative to that folder, or pass absolute paths that live under that folder so the addon can convert them to server-relative names.
 
 ## Result Metadata Sidecars
 
@@ -178,7 +239,7 @@ python tools\tcxsd_sidecar.py summary examples\ideogram4-basic\outputs\ideogram4
 
 ## JSON Job Runner
 
-For Node or automation workflows, start with a JSON job file and let `tools/tcxsd_job.py` call the bundled `sd-cli`:
+For Node or automation workflows, start with a JSON job file and let `tools/tcxsd_job.py` call the bundled runtime:
 
 ```powershell
 python tools\tcxsd_job.py validate examples\ideogram4-basic\jobs\ideogram4_poster_job.json
@@ -194,6 +255,8 @@ examples/ideogram4-basic/outputs/jobs/ideogram4_poster_job.log
 ```
 
 The JSON request can contain either a plain `prompt` string or a structured `prompt_json` object. Relative paths are resolved from the job file location, so the same job can be launched from C++, PowerShell, Node, CI, or another working directory.
+
+Set `runtime.execution_mode` to `persistent_server` in JSON jobs to use the same persistent backend as C++ `Auto`.
 
 ## Explicit Model Paths
 
@@ -239,7 +302,7 @@ image.update();
 
 ## Future API Surface
 
-The first implementation is txt2img-oriented. These fields are already reserved for upcoming passes:
+These fields are now part of the public request shape. `PersistentServer` wires the image and LoRA fields first; the lower-level direct/CLI paths remain future work:
 
 - `ImageRequest::initImage` for image-to-image
 - `ImageRequest::maskImage` for inpainting
