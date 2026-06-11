@@ -52,6 +52,18 @@ The first `IdeogramPrompt` composer pass is wired into the API and example, and 
 
 ## Resolved Issues
 
+### Resolved - ImGui Chinese labels rendered as question marks
+
+The main Windows title bar rendered Chinese correctly, but the ImGui panel showed Chinese labels as `????`. Root cause: Dear ImGui was using its default font, which does not include CJK glyphs. This was not a source-file encoding problem.
+
+`examples/ideogram4-basic` now loads a CJK-capable ImGui font at startup, before the first frame. Windows candidates include Microsoft YaHei, Noto Sans SC, SimHei, SimSun, and DengXian; macOS candidates include PingFang, Heiti, Hiragino Sans GB, and Songti.
+
+The workbench UI was also modernized with a wider panel, full-width controls, labels above fields, and a neutral dark theme with blue/teal accents. Visual verification screenshot:
+
+```text
+examples/ideogram4-basic/outputs/ui_cjk_check.png
+```
+
 ### Resolved - Ideogram4 model assets are present
 
 The first example now has these files in `examples/ideogram4-basic/data/models/ideogram4-q4_0` and `python tools/verify_sd.py` confirms them:

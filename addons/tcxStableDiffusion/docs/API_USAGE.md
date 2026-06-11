@@ -134,6 +134,8 @@ In this workspace all three priority models have been downloaded into the shared
 - persistent server generation,
 - per-model output folders under `outputs/<model-id>`.
 
+The GUI loads a CJK-capable ImGui font at startup so Chinese labels render correctly on Windows and macOS. If labels display as `????`, first check whether one of the configured CJK system fonts is available before changing source-file encodings. The current workbench uses labels above full-width controls and a modern dark neutral theme with blue/teal accents.
+
 ## Building The Example
 
 Debug build:

@@ -283,3 +283,34 @@
   - Uses `sd-server.exe` directly and does not call Python.
 - Verified `npm test` with 4 passing Node tests.
 - Verified `node .\bin\tcxsd-node.mjs --job ..\examples\flux2-klein-basic\jobs\flux2_klein_product_job.json`, exit code 0.
+
+### 2026-06-11 GUI Chinese And Theme Pass
+
+- Fixed the main ImGui workbench Chinese rendering issue.
+  - Root cause: the window title used system text rendering and displayed Chinese correctly, but Dear ImGui was still using its default ASCII-oriented font, so CJK labels rendered as question marks.
+  - The example now loads a CJK-capable UI font during startup before the first ImGui frame.
+  - Windows candidates include Microsoft YaHei, Noto Sans SC, SimHei, SimSun, and DengXian.
+  - macOS candidates include PingFang, Heiti, Hiragino Sans GB, and Songti.
+- Modernized the multi-model workbench appearance:
+  - wider control panel,
+  - cleaner dark neutral theme,
+  - blue/teal/green accent states,
+  - rounded controls with restrained borders,
+  - Chinese labels placed above full-width controls to avoid label clipping.
+- Verified the fix visually with a captured app screenshot:
+  - `examples/ideogram4-basic/outputs/ui_cjk_check.png`
+  - Chinese labels render normally instead of `????`.
+- Rebuilt and smoke-tested the example after the UI changes.
+
+### 2026-06-11 GUI Verification
+
+- `G:/TrussC/tools/bin/trusscli.exe build --release`
+  - Exit code: 0.
+  - Only the existing C++20 `std::atomic_* shared_ptr` deprecation warnings appeared from TrussC event internals.
+- Short FLUX.2-klein app smoke:
+  - `TCXSD_SMOKE=1 TCXSD_SMOKE_MODEL=flux2-klein TCXSD_SMOKE_WIDTH=512 TCXSD_SMOKE_HEIGHT=512 TCXSD_SMOKE_STEPS=1 TCXSD_SMOKE_SEED=777 ./bin/ideogram4-basic.exe`
+  - Exit code: 0.
+- Visual UI check:
+  - launched `bin/ideogram4-basic.exe`,
+  - captured the window to `examples/ideogram4-basic/outputs/ui_cjk_check.png`,
+  - confirmed the UI shows correct Chinese labels and the updated modern theme.

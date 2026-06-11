@@ -141,10 +141,11 @@ $env:TCXSD_SMOKE_LOW_VRAM='1'
 - `ModelPaths` already reserves fields for video/audio/controlnet/photo maker additions.
 - `ImageRequest` exposes chain helpers for img2img, inpainting masks, ControlNet images, LoRA stacks, and metadata. `PersistentServer` wires those image/LoRA fields first.
 - `examples/ideogram4-basic` is now the main multi-model GUI workbench despite the historical folder name.
+- The workbench loads a CJK-capable ImGui font at startup. If Chinese labels ever regress to `????`, check the CJK font candidate list in `examples/ideogram4-basic/src/tcApp.cpp` before changing source encodings.
 
 ## Next Best Step
 
-Tune final prompt quality for each model and harden the Node package sidecar/cancellation story. The three priority model assets are already centralized under the main example data folder and smoke-verified.
+Tune final prompt quality for each model and harden the Node package sidecar/cancellation story. The three priority model assets are already centralized under the main example data folder and smoke-verified. For GUI polish, the next useful step is a small responsive pass for very short window heights, but the current 1280x900 workbench layout is visually verified.
 
 ## Latest Verified State
 
@@ -170,6 +171,10 @@ Tune final prompt quality for each model and harden the Node package sidecar/can
   - Sidecar summary: `ok=true`, `execution_mode=persistent_server`, `backend=cuda0`, `image_width=1024`, `image_height=512`, `duration_seconds=4.040`
 - Node package tests: `cd node; npm test`, 4 tests passing
 - Node package smoke: `node .\bin\tcxsd-node.mjs --job ..\examples\flux2-klein-basic\jobs\flux2_klein_product_job.json`, exit code 0
+- GUI Chinese/theme fix: `examples/ideogram4-basic` loads Microsoft YaHei/Noto/PingFang-style CJK fonts into ImGui, uses a modern dark blue/teal theme, and places Chinese labels above full-width controls.
+- GUI visual check: `examples/ideogram4-basic/outputs/ui_cjk_check.png`, confirmed Chinese labels render normally instead of `????`.
+- GUI release rebuild: `G:/TrussC/tools/bin/trusscli.exe build --release`, exit code 0.
+- GUI short smoke: `TCXSD_SMOKE=1 TCXSD_SMOKE_MODEL=flux2-klein TCXSD_SMOKE_WIDTH=512 TCXSD_SMOKE_HEIGHT=512 TCXSD_SMOKE_STEPS=1 TCXSD_SMOKE_SEED=777 ./bin/ideogram4-basic.exe`, exit code 0.
 - Python compile: `python -m py_compile tools/setup_sd.py tools/tcxsd_models.py tools/verify_sd.py tools/tcxsd_sidecar.py tools/tcxsd_job.py tools/tcxsd_server.py`
 - Tests: `python -m unittest discover -s tests`, 20 tests passing
 

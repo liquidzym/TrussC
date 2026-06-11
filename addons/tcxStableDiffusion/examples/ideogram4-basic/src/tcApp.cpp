@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <system_error>
 #include <vector>
 
 namespace {
@@ -96,6 +97,8 @@ const std::array<ModelProfile, 3> kProfiles = {{
     },
 }};
 
+constexpr float kPanelWidth = 460.0f;
+
 std::filesystem::path exampleRoot() {
     return std::filesystem::path(__FILE__).parent_path().parent_path();
 }
@@ -184,11 +187,173 @@ void copyText(std::array<char, N>& target, const std::string& text) {
     std::memset(target.data(), 0, target.size());
     std::strncpy(target.data(), text.c_str(), target.size() - 1);
 }
+
+ImVec4 colorFromBytes(int r, int g, int b, float a = 1.0f) {
+    return ImVec4(
+        static_cast<float>(r) / 255.0f,
+        static_cast<float>(g) / 255.0f,
+        static_cast<float>(b) / 255.0f,
+        a);
+}
+
+bool pathExists(const std::filesystem::path& path) {
+    std::error_code ec;
+    return std::filesystem::exists(path, ec) && !ec;
+}
+
+std::vector<std::filesystem::path> cjkFontCandidates() {
+#if defined(_WIN32)
+    return {
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/NotoSansSC-VF.ttf",
+        "C:/Windows/Fonts/simhei.ttf",
+        "C:/Windows/Fonts/simsun.ttc",
+        "C:/Windows/Fonts/Deng.ttf",
+    };
+#elif defined(__APPLE__)
+    return {
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/Supplemental/Songti.ttc",
+    };
+#else
+    return {
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    };
+#endif
+}
+
+void setupImGuiFont() {
+    auto& io = ImGui::GetIO();
+    io.FontAllowUserScaling = false;
+
+    for (const auto& candidate : cjkFontCandidates()) {
+        if (!pathExists(candidate)) {
+            continue;
+        }
+
+        const std::string fontPath = candidate.generic_string();
+        if (ImFont* font = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 17.0f)) {
+            io.FontDefault = font;
+            tc::logNotice() << "Loaded ImGui CJK font: " << fontPath;
+            return;
+        }
+        tc::logWarning() << "Failed to load ImGui CJK font candidate: " << fontPath;
+    }
+
+    tc::logWarning() << "No CJK ImGui font found; Chinese labels may render as question marks.";
+}
+
+void setupImGuiStyle() {
+    ImGui::StyleColorsDark();
+
+    auto& style = ImGui::GetStyle();
+    style.WindowPadding = ImVec2(14.0f, 14.0f);
+    style.FramePadding = ImVec2(10.0f, 7.0f);
+    style.CellPadding = ImVec2(8.0f, 6.0f);
+    style.ItemSpacing = ImVec2(9.0f, 9.0f);
+    style.ItemInnerSpacing = ImVec2(8.0f, 7.0f);
+    style.ScrollbarSize = 13.0f;
+    style.GrabMinSize = 12.0f;
+    style.WindowRounding = 7.0f;
+    style.ChildRounding = 6.0f;
+    style.FrameRounding = 5.0f;
+    style.PopupRounding = 6.0f;
+    style.ScrollbarRounding = 8.0f;
+    style.GrabRounding = 5.0f;
+    style.TabRounding = 5.0f;
+    style.WindowBorderSize = 1.0f;
+    style.FrameBorderSize = 0.0f;
+    style.PopupBorderSize = 1.0f;
+
+    auto& colors = style.Colors;
+    colors[ImGuiCol_Text] = colorFromBytes(232, 238, 247);
+    colors[ImGuiCol_TextDisabled] = colorFromBytes(126, 137, 153);
+    colors[ImGuiCol_WindowBg] = colorFromBytes(13, 17, 23, 0.97f);
+    colors[ImGuiCol_ChildBg] = colorFromBytes(18, 24, 33, 0.88f);
+    colors[ImGuiCol_PopupBg] = colorFromBytes(19, 25, 34, 0.98f);
+    colors[ImGuiCol_Border] = colorFromBytes(45, 56, 72, 0.86f);
+    colors[ImGuiCol_BorderShadow] = colorFromBytes(0, 0, 0, 0.0f);
+    colors[ImGuiCol_FrameBg] = colorFromBytes(29, 41, 58, 0.96f);
+    colors[ImGuiCol_FrameBgHovered] = colorFromBytes(42, 61, 85, 1.0f);
+    colors[ImGuiCol_FrameBgActive] = colorFromBytes(49, 78, 112, 1.0f);
+    colors[ImGuiCol_TitleBg] = colorFromBytes(11, 15, 21, 1.0f);
+    colors[ImGuiCol_TitleBgActive] = colorFromBytes(18, 28, 41, 1.0f);
+    colors[ImGuiCol_TitleBgCollapsed] = colorFromBytes(11, 15, 21, 0.86f);
+    colors[ImGuiCol_MenuBarBg] = colorFromBytes(18, 24, 33, 1.0f);
+    colors[ImGuiCol_ScrollbarBg] = colorFromBytes(10, 14, 20, 0.78f);
+    colors[ImGuiCol_ScrollbarGrab] = colorFromBytes(54, 69, 89, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = colorFromBytes(75, 94, 121, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabActive] = colorFromBytes(89, 112, 144, 1.0f);
+    colors[ImGuiCol_CheckMark] = colorFromBytes(57, 217, 138, 1.0f);
+    colors[ImGuiCol_SliderGrab] = colorFromBytes(96, 165, 250, 1.0f);
+    colors[ImGuiCol_SliderGrabActive] = colorFromBytes(45, 212, 191, 1.0f);
+    colors[ImGuiCol_Button] = colorFromBytes(37, 74, 120, 0.94f);
+    colors[ImGuiCol_ButtonHovered] = colorFromBytes(50, 101, 163, 1.0f);
+    colors[ImGuiCol_ButtonActive] = colorFromBytes(42, 151, 132, 1.0f);
+    colors[ImGuiCol_Header] = colorFromBytes(35, 58, 89, 0.95f);
+    colors[ImGuiCol_HeaderHovered] = colorFromBytes(50, 84, 128, 1.0f);
+    colors[ImGuiCol_HeaderActive] = colorFromBytes(42, 151, 132, 1.0f);
+    colors[ImGuiCol_Separator] = colorFromBytes(56, 68, 86, 0.72f);
+    colors[ImGuiCol_SeparatorHovered] = colorFromBytes(96, 165, 250, 0.88f);
+    colors[ImGuiCol_SeparatorActive] = colorFromBytes(45, 212, 191, 1.0f);
+    colors[ImGuiCol_ResizeGrip] = colorFromBytes(96, 165, 250, 0.24f);
+    colors[ImGuiCol_ResizeGripHovered] = colorFromBytes(96, 165, 250, 0.56f);
+    colors[ImGuiCol_ResizeGripActive] = colorFromBytes(45, 212, 191, 0.78f);
+    colors[ImGuiCol_Tab] = colorFromBytes(24, 34, 48, 1.0f);
+    colors[ImGuiCol_TabHovered] = colorFromBytes(46, 91, 147, 1.0f);
+    colors[ImGuiCol_TabActive] = colorFromBytes(35, 58, 89, 1.0f);
+    colors[ImGuiCol_TabUnfocused] = colorFromBytes(19, 25, 34, 1.0f);
+    colors[ImGuiCol_TabUnfocusedActive] = colorFromBytes(25, 38, 56, 1.0f);
+    colors[ImGuiCol_TextSelectedBg] = colorFromBytes(37, 99, 235, 0.38f);
+    colors[ImGuiCol_NavHighlight] = colorFromBytes(45, 212, 191, 0.74f);
+}
+
+void setupImGuiLookAndFeel() {
+    setupImGuiFont();
+    setupImGuiStyle();
+}
+
+template <std::size_t N>
+bool inputTextFullWidth(const char* label, const char* id, std::array<char, N>& value) {
+    ImGui::TextUnformatted(label);
+    ImGui::SetNextItemWidth(-1.0f);
+    return ImGui::InputText(id, value.data(), value.size());
+}
+
+template <std::size_t N>
+bool inputTextMultilineFullWidth(const char* label, const char* id, std::array<char, N>& value, float height) {
+    ImGui::TextUnformatted(label);
+    ImGui::SetNextItemWidth(-1.0f);
+    return ImGui::InputTextMultiline(id, value.data(), value.size(), ImVec2(-1.0f, height));
+}
+
+bool sliderIntFullWidth(const char* label, const char* id, int* value, int min, int max) {
+    ImGui::TextUnformatted(label);
+    ImGui::SetNextItemWidth(-1.0f);
+    return ImGui::SliderInt(id, value, min, max);
+}
+
+bool sliderFloatFullWidth(const char* label, const char* id, float* value, float min, float max) {
+    ImGui::TextUnformatted(label);
+    ImGui::SetNextItemWidth(-1.0f);
+    return ImGui::SliderFloat(id, value, min, max);
+}
+
+bool inputIntFullWidth(const char* label, const char* id, int* value) {
+    ImGui::TextUnformatted(label);
+    ImGui::SetNextItemWidth(-1.0f);
+    return ImGui::InputInt(id, value);
+}
 } // namespace
 
 void tcApp::setup() {
     setWindowTitle("tcxStableDiffusion - 多模型工作台");
     imguiSetup();
+    setupImGuiLookAndFeel();
 
     selectModel(0, true);
     setupSmokeMode();
@@ -261,7 +426,7 @@ void tcApp::draw() {
     clear(0.07f, 0.075f, 0.085f);
 
     if (preview_.isAllocated()) {
-        const float margin = 410.0f;
+        const float margin = kPanelWidth + 30.0f;
         const float areaW = std::max(100.0f, static_cast<float>(getWindowWidth()) - margin - 28.0f);
         const float areaH = std::max(100.0f, static_cast<float>(getWindowHeight()) - 28.0f);
         const float scale = std::min(areaW / preview_.getWidth(), areaH / preview_.getHeight());
@@ -535,14 +700,18 @@ void tcApp::drawGui() {
     imguiBegin();
 
     ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(390, 840), ImGuiCond_FirstUseEver);
-    ImGui::Begin("tcxStableDiffusion 多模型工作台");
+    ImGui::SetNextWindowSize(ImVec2(kPanelWidth, 850), ImGuiCond_FirstUseEver);
+    ImGui::Begin("tcxStableDiffusion 多模型工作台", nullptr, ImGuiWindowFlags_NoCollapse);
 
-    ImGui::TextWrapped("状态: %s", status_.c_str());
+    ImGui::TextColored(colorFromBytes(45, 212, 191), "状态");
+    ImGui::SameLine();
+    ImGui::TextWrapped("%s", status_.c_str());
     if (!lastError_.empty()) {
-        ImGui::TextWrapped("错误: %s", lastError_.c_str());
+        ImGui::TextColored(colorFromBytes(251, 113, 133), "错误");
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", lastError_.c_str());
     }
-    ImGui::Separator();
+    ImGui::SeparatorText("模型");
 
     const bool busy = sd_.isRunning() || sd_.isSettingUp();
     int comboIndex = selectedModel_;
@@ -554,31 +723,36 @@ void tcApp::drawGui() {
     if (busy) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::Combo("模型", &comboIndex, labels, static_cast<int>(kProfiles.size()))) {
+    ImGui::TextUnformatted("模型");
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::Combo("##model", &comboIndex, labels, static_cast<int>(kProfiles.size()))) {
         selectModel(comboIndex, true);
     }
     if (busy) {
         ImGui::EndDisabled();
     }
 
-    ImGui::TextWrapped("模型目录:");
+    ImGui::TextWrapped("模型目录");
+    ImGui::PushStyleColor(ImGuiCol_Text, colorFromBytes(168, 180, 198));
     ImGui::TextWrapped("%s", modelDir_.string().c_str());
+    ImGui::PopStyleColor();
 
     if (busy) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::Button("初始化当前模型")) {
+    if (ImGui::Button("初始化当前模型", ImVec2(214, 32))) {
         initializeModel();
     }
     if (busy) {
         ImGui::EndDisabled();
     }
     ImGui::SameLine();
-    if (ImGui::Button("取消任务")) {
+    if (ImGui::Button("取消任务", ImVec2(-1, 32))) {
         sd_.cancel();
     }
 
     ImGui::Checkbox("低显存模式", &lowVramMode_);
+    ImGui::SameLine();
     ImGui::Checkbox("自动保存图片", &autoSave_);
 
     const bool composerAvailable = profileAt(selectedModel_).supportsIdeogramComposer;
@@ -591,35 +765,36 @@ void tcApp::drawGui() {
         usePromptComposer_ = false;
     }
 
-    if (ImGui::Button("套用当前模型默认提示词", ImVec2(-1, 28))) {
+    if (ImGui::Button("套用当前模型默认提示词", ImVec2(-1, 32))) {
         applyModelDefaults();
     }
 
-    ImGui::Separator();
+    ImGui::SeparatorText("提示词");
     if (usePromptComposer_ && composerAvailable) {
-        ImGui::InputText("主题", templateSubject_.data(), templateSubject_.size());
-        ImGui::InputText("画面文字", templateText_.data(), templateText_.size());
-        ImGui::InputTextMultiline("风格", templateStyle_.data(), templateStyle_.size(), ImVec2(-1, 64));
-        ImGui::InputText("配色(逗号分隔)", templatePalette_.data(), templatePalette_.size());
-        if (ImGui::Button("应用模板", ImVec2(-1, 28))) {
+        inputTextFullWidth("主题", "##template_subject", templateSubject_);
+        inputTextFullWidth("画面文字", "##template_text", templateText_);
+        inputTextMultilineFullWidth("风格", "##template_style", templateStyle_, 68.0f);
+        inputTextFullWidth("配色（逗号分隔）", "##template_palette", templatePalette_);
+        if (ImGui::Button("应用模板", ImVec2(-1, 32))) {
             applyPromptTemplate();
         }
-        ImGui::Separator();
+        ImGui::Spacing();
     }
-    ImGui::InputTextMultiline("提示词", prompt_.data(), prompt_.size(), ImVec2(-1, 150));
-    ImGui::InputTextMultiline("反向提示词", negativePrompt_.data(), negativePrompt_.size(), ImVec2(-1, 80));
+    inputTextMultilineFullWidth("提示词", "##prompt", prompt_, 150.0f);
+    inputTextMultilineFullWidth("反向提示词", "##negative_prompt", negativePrompt_, 82.0f);
 
-    ImGui::SliderInt("宽度", &width_, 512, 1536);
-    ImGui::SliderInt("高度", &height_, 512, 1536);
-    ImGui::SliderInt("步数", &steps_, 1, 40);
-    ImGui::SliderFloat("CFG", &cfgScale_, 0.0f, 8.0f);
-    ImGui::InputInt("种子(-1随机)", &seed_);
+    ImGui::SeparatorText("生成参数");
+    sliderIntFullWidth("宽度", "##width", &width_, 512, 1536);
+    sliderIntFullWidth("高度", "##height", &height_, 512, 1536);
+    sliderIntFullWidth("步数", "##steps", &steps_, 1, 40);
+    sliderFloatFullWidth("CFG", "##cfg", &cfgScale_, 0.0f, 8.0f);
+    inputIntFullWidth("种子（-1 随机）", "##seed", &seed_);
 
     const bool canGenerate = sd_.isReady() && !sd_.isRunning();
     if (!canGenerate) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::Button("生成图像", ImVec2(-1, 34))) {
+    if (ImGui::Button("生成图像", ImVec2(-1, 38))) {
         submitPrompt();
     }
     if (!canGenerate) {
@@ -637,12 +812,16 @@ void tcApp::drawGui() {
 
     if (!lastOutput_.empty()) {
         ImGui::Separator();
-        ImGui::TextWrapped("输出文件:");
+        ImGui::TextWrapped("输出文件");
+        ImGui::PushStyleColor(ImGuiCol_Text, colorFromBytes(168, 180, 198));
         ImGui::TextWrapped("%s", lastOutput_.string().c_str());
+        ImGui::PopStyleColor();
     }
     if (!lastMetadata_.empty()) {
-        ImGui::TextWrapped("记录文件:");
+        ImGui::TextWrapped("记录文件");
+        ImGui::PushStyleColor(ImGuiCol_Text, colorFromBytes(168, 180, 198));
         ImGui::TextWrapped("%s", lastMetadata_.string().c_str());
+        ImGui::PopStyleColor();
     }
 
     if (!setupAttempted_ && !tcx::StableDiffusion::nativeAvailable()) {
