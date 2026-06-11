@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 using namespace tc;
 using namespace tcx;
@@ -28,6 +29,11 @@ private:
     tcx::sd::IdeogramPrompt buildPromptTemplate() const;
     void applyPromptTemplate();
     void applyModelDefaults();
+    void refreshLoraFiles();
+    std::filesystem::path loraModelDir() const;
+    std::filesystem::path resolveLoraPath(const char* text) const;
+    void generateControlImage();
+    void generateInpaintMask();
     void submitPrompt();
     void adoptResult(tcx::StableDiffusionImage&& result);
     void drawGui();
@@ -51,6 +57,7 @@ private:
     std::filesystem::path modelDir_;
     std::filesystem::path lastOutput_;
     std::filesystem::path lastMetadata_;
+    std::vector<std::filesystem::path> loraFiles_;
     std::string status_ = "等待初始化";
     std::string lastError_;
 
@@ -64,6 +71,7 @@ private:
     float controlStrength_ = 0.9f;
     float upscaleFactor_ = 2.0f;
     int workflowMode_ = 0;
+    int selectedLora_ = -1;
     bool lowVramMode_ = true;
     bool autoSave_ = true;
     bool usePromptComposer_ = true;

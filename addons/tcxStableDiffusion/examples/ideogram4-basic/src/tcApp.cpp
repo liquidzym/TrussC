@@ -249,6 +249,32 @@ std::filesystem::path resolveExamplePath(const char* text) {
     return exampleRoot() / path;
 }
 
+std::string relativeToExamplePath(const std::filesystem::path& path) {
+    std::error_code ec;
+    const auto root = exampleRoot();
+    const auto relative = std::filesystem::relative(path, root, ec);
+    if (!ec && !relative.empty()) {
+        const std::string text = relative.generic_string();
+        if (text != "." && text.rfind("../", 0) != 0 && text.rfind("..\\", 0) != 0) {
+            return text;
+        }
+    }
+    return path.string();
+}
+
+std::string lowerExtension(const std::filesystem::path& path) {
+    std::string ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return ext;
+}
+
+bool isLoraFile(const std::filesystem::path& path) {
+    const std::string ext = lowerExtension(path);
+    return ext == ".safetensors" || ext == ".sft" || ext == ".pt" || ext == ".ckpt" || ext == ".bin";
+}
+
 std::vector<std::filesystem::path> cjkFontCandidates() {
 #if defined(_WIN32)
     return {
@@ -475,9 +501,10 @@ void tcApp::setup() {
     copyText(maskImagePath_, "inputs/mask.png");
     copyText(controlImagePath_, "inputs/control_canny.png");
     copyText(sourceImagePath_, "inputs/source.png");
-    copyText(loraPath_, "loras/style.safetensors");
+    copyText(loraPath_, "style.safetensors");
 
     selectModel(0, true);
+    refreshLoraFiles();
     setupSmokeMode();
 
     sd_.onProgress([this](const tcx::sd::Progress& progress) {
@@ -515,6 +542,21 @@ void tcApp::setup() {
     });
 
     if (smokeMode_) {
+        if (const char* preprocess = std::getenv("TCXSD_SMOKE_PREPROCESS")) {
+            const std::string mode = trimText(preprocess);
+            if (mode == "control" || mode == "controlnet" || mode == "canny") {
+                generateControlImage();
+                writeSmokeLog("preprocess=control status=" + status_);
+            } else if (mode == "mask" || mode == "inpaint") {
+                generateInpaintMask();
+                writeSmokeLog("preprocess=mask status=" + status_);
+            } else {
+                lastError_ = "Unknown TCXSD_SMOKE_PREPROCESS mode: " + mode;
+                writeSmokeLog("preprocess failed: " + lastError_);
+            }
+            smokeExitRequested_ = true;
+            return;
+        }
         initializeModel();
         submitWhenReady_ = true;
     }
@@ -663,8 +705,8 @@ void tcApp::initializeModel() {
     status_ = "正在初始化模型";
     lastError_.clear();
 
-    if (profileAt(selectedModel_).kind == ProfileKind::SD15ControlNetCanny) {
-        lastError_ = "BACKEND_UNSUPPORTED: SD 1.5 ControlNet Canny runs through the tracked Node CLI and JSON job examples. The C++ workbench blocks this native path because GUI smoke testing found a Windows native backend access violation during ControlNet startup.";
+    if (profileAt(selectedModel_).kind == ProfileKind::SD15ControlNetCanny && !envEnabled("TCXSD_ENABLE_UNSTABLE_CXX_CONTROLNET")) {
+        lastError_ = "BACKEND_UNSUPPORTED: SD 1.5 ControlNet Canny runs through the tracked Node CLI and JSON job examples. The C++ workbench blocks this native path because GUI smoke testing found a Windows native backend access violation during ControlNet startup. Set TCXSD_ENABLE_UNSTABLE_CXX_CONTROLNET=1 only for diagnostics.";
         status_ = "初始化失败";
         writeSmokeLog("model failed: " + lastError_);
         if (smokeMode_) {
@@ -684,7 +726,7 @@ void tcApp::initializeModel() {
     settings.outputDirectory = project.outputRoot / profileAt(selectedModel_).id / "native";
     settings.tempDirectory = project.tempRoot;
     settings.cacheDirectory = project.cacheRoot;
-    settings.loraModelDirectory = exampleRoot() / "bin" / "data" / "models" / "loras";
+    settings.loraModelDirectory = loraModelDir();
 
     bool started = false;
     switch (profileAt(selectedModel_).kind) {
@@ -768,6 +810,118 @@ void tcApp::applyModelDefaults() {
     }
 }
 
+std::filesystem::path tcApp::loraModelDir() const {
+    return exampleRoot() / "bin" / "data" / "models" / "loras";
+}
+
+std::filesystem::path tcApp::resolveLoraPath(const char* text) const {
+    std::string value = trimText(text ? text : "");
+    if (value.empty()) {
+        return {};
+    }
+    std::filesystem::path path = value;
+    if (path.is_absolute()) {
+        return path;
+    }
+    return loraModelDir() / path;
+}
+
+void tcApp::refreshLoraFiles() {
+    loraFiles_.clear();
+    selectedLora_ = -1;
+
+    const auto root = loraModelDir();
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec)) {
+        return;
+    }
+
+    for (std::filesystem::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+        if (ec || !it->is_regular_file(ec)) {
+            continue;
+        }
+        const auto path = it->path();
+        if (isLoraFile(path)) {
+            loraFiles_.push_back(path);
+        }
+    }
+
+    std::sort(loraFiles_.begin(), loraFiles_.end(), [](const auto& left, const auto& right) {
+        return left.generic_string() < right.generic_string();
+    });
+
+    if (loraFiles_.empty()) {
+        return;
+    }
+
+    const auto current = resolveLoraPath(loraPath_.data());
+    for (size_t i = 0; i < loraFiles_.size(); ++i) {
+        if (std::filesystem::equivalent(current, loraFiles_[i], ec) && !ec) {
+            selectedLora_ = static_cast<int>(i);
+            return;
+        }
+        ec.clear();
+    }
+    selectedLora_ = 0;
+    std::error_code relativeError;
+    const auto relative = std::filesystem::relative(loraFiles_.front(), root, relativeError);
+    copyText(loraPath_, relativeError ? loraFiles_.front().filename().string() : relative.generic_string());
+}
+
+void tcApp::generateControlImage() {
+    auto source = resolveExamplePath(sourceImagePath_.data());
+    if (source.empty()) {
+        source = resolveExamplePath(initImagePath_.data());
+    }
+    if (source.empty() || !pathExists(source)) {
+        lastError_ = "ControlNet preprocessing requires an existing source image.";
+        status_ = "缺少控制源图";
+        return;
+    }
+
+    const auto output = exampleRoot() / "inputs" / "control_canny_generated.png";
+    tcx::sd::ControlPreprocessOptions options;
+    options.lowThreshold = 32;
+    options.highThreshold = 96;
+    const auto result = tcx::sd::preprocessControlImage(source, output, options);
+    if (!result.ok) {
+        lastError_ = result.error;
+        status_ = "控制图生成失败";
+        return;
+    }
+
+    copyText(controlImagePath_, relativeToExamplePath(output));
+    lastError_.clear();
+    status_ = "已生成 ControlNet 控制图";
+}
+
+void tcApp::generateInpaintMask() {
+    auto source = resolveExamplePath(initImagePath_.data());
+    if (source.empty()) {
+        source = resolveExamplePath(sourceImagePath_.data());
+    }
+    if (source.empty() || !pathExists(source)) {
+        lastError_ = "Inpaint mask generation requires an existing source/init image.";
+        status_ = "缺少蒙版源图";
+        return;
+    }
+
+    const auto output = exampleRoot() / "inputs" / "mask_generated.png";
+    tcx::sd::InpaintMaskOptions options;
+    options.marginRatio = 0.28f;
+    options.featherPixels = 12;
+    const auto result = tcx::sd::createInpaintMask(source, output, options);
+    if (!result.ok) {
+        lastError_ = result.error;
+        status_ = "蒙版生成失败";
+        return;
+    }
+
+    copyText(maskImagePath_, relativeToExamplePath(output));
+    lastError_.clear();
+    status_ = "已生成 inpaint 蒙版";
+}
+
 void tcApp::submitPrompt() {
     if (!sd_.isReady()) {
         status_ = "请先初始化模型";
@@ -815,7 +969,7 @@ void tcApp::submitPrompt() {
         }
         request = tcx::StableDiffusionRequest::controlNet(basePrompt, control, controlStrength_);
     } else if (workflow == WorkflowMode::LoraStack) {
-        const auto lora = resolveExamplePath(loraPath_.data());
+        const auto lora = resolveLoraPath(loraPath_.data());
         if (lora.empty()) {
             lastError_ = "LoRA stack requires a LoRA file path.";
             status_ = "缺少 LoRA";
@@ -965,6 +1119,7 @@ void tcApp::drawGui() {
         kProfiles[0].label,
         kProfiles[1].label,
         kProfiles[2].label,
+        kProfiles[3].label,
     };
     if (busy) {
         ImGui::BeginDisabled();
@@ -1055,12 +1210,54 @@ void tcApp::drawGui() {
     }
     if (workflow == WorkflowMode::Inpaint) {
         inputTextFullWidth("遮罩图路径", "##mask_image", maskImagePath_);
+        if (ImGui::Button("由输入图生成中心蒙版", ImVec2(-1, 30))) {
+            generateInpaintMask();
+        }
     }
     if (workflow == WorkflowMode::ControlNet) {
+        inputTextFullWidth("控制源图路径", "##control_source_image", sourceImagePath_);
+        if (ImGui::Button("由源图生成 Canny 控制图", ImVec2(-1, 30))) {
+            generateControlImage();
+        }
         inputTextFullWidth("ControlNet 控制图路径", "##control_image", controlImagePath_);
         sliderFloatFullWidth("ControlNet 强度", "##control_strength", &controlStrength_, 0.0f, 2.0f);
     }
     if (workflow == WorkflowMode::LoraStack) {
+        ImGui::TextWrapped("LoRA 根目录");
+        ImGui::PushStyleColor(ImGuiCol_Text, colorFromBytes(168, 180, 198));
+        ImGui::TextWrapped("%s", loraModelDir().string().c_str());
+        ImGui::PopStyleColor();
+        if (ImGui::Button("刷新 LoRA 列表", ImVec2(-1, 30))) {
+            refreshLoraFiles();
+        }
+        if (!loraFiles_.empty()) {
+            std::string preview = "选择 LoRA";
+            if (selectedLora_ >= 0 && selectedLora_ < static_cast<int>(loraFiles_.size())) {
+                std::error_code ec;
+                auto relative = std::filesystem::relative(loraFiles_[static_cast<size_t>(selectedLora_)], loraModelDir(), ec);
+                preview = ec ? loraFiles_[static_cast<size_t>(selectedLora_)].filename().string() : relative.generic_string();
+            }
+            ImGui::TextUnformatted("LoRA 列表");
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::BeginCombo("##lora_files", preview.c_str())) {
+                for (size_t i = 0; i < loraFiles_.size(); ++i) {
+                    std::error_code ec;
+                    auto relative = std::filesystem::relative(loraFiles_[i], loraModelDir(), ec);
+                    const std::string item = ec ? loraFiles_[i].filename().string() : relative.generic_string();
+                    const bool selected = selectedLora_ == static_cast<int>(i);
+                    if (ImGui::Selectable(item.c_str(), selected)) {
+                        selectedLora_ = static_cast<int>(i);
+                        copyText(loraPath_, item);
+                    }
+                    if (selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        } else {
+            ImGui::TextWrapped("未发现 LoRA 文件；将 .safetensors 放入上面的根目录后刷新。");
+        }
         inputTextFullWidth("LoRA 文件路径", "##lora_path", loraPath_);
     }
     if (workflow == WorkflowMode::Refine || workflow == WorkflowMode::Upscale) {

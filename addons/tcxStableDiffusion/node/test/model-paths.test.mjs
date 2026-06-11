@@ -28,7 +28,9 @@ import {
   defaultModelRoot,
   extractImageBase64,
   getBackendCapabilities,
+  listLoras,
   modelProfiles,
+  normalizeLoraPath,
   promptPacks,
   runTextToImage,
   resolveStorageRoots,
@@ -348,4 +350,36 @@ test("generation session binds model runtime project and seed sweeps", () => {
   assert.equal(batch.requests.length, 2);
   assert.equal(batch.requests[1].seed, 12);
   assert.equal(batch.requests[0].metadata.batch_kind, "seed_sweep");
+});
+
+test("LoRA manager scans model directory and normalizes server-relative paths", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "tcxsd-lora-"));
+  const loraDir = path.join(tempDir, "loras");
+  const nested = path.join(loraDir, "poster");
+  await mkdir(nested, { recursive: true });
+  await writeFile(path.join(nested, "gold.safetensors"), "lora");
+  await writeFile(path.join(loraDir, "ignore.txt"), "not a lora");
+
+  try {
+    const loras = await listLoras({ loraModelDir: loraDir });
+    const absolute = path.join(nested, "gold.safetensors");
+    const request = createLoraStackRequest({
+      prompt: "styled",
+      loraModelDir: loraDir,
+      loras: [{ path: absolute, weight: 0.65 }]
+    });
+    const body = buildImageRequest(request);
+
+    assert.equal(loras.length, 1);
+    assert.equal(loras[0].relativePath, "poster/gold.safetensors");
+    assert.equal(normalizeLoraPath(absolute, { loraModelDir: loraDir }), "poster/gold.safetensors");
+    assert.equal(request.loras[0].path, "poster/gold.safetensors");
+    assert.equal(body.lora[0].path, "poster/gold.safetensors");
+    assert.throws(
+      () => normalizeLoraPath(path.join(tempDir, "outside.safetensors"), { loraModelDir: loraDir }),
+      /outside the LoRA model directory/
+    );
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });

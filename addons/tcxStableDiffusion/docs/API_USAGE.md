@@ -112,7 +112,7 @@ sd.setupFlux2KleinAsync("bin/data/models/flux2-klein-4b-q4_0", tcx::sd::RuntimeS
 sd.setupZImageTurboAsync("bin/data/models/z-image-turbo-q3_k", tcx::sd::RuntimeSettings::windowsCuda());
 ```
 
-The SD 1.5 ControlNet Canny assets are shared with the Node CLI and JSON job examples. The C++ workbench currently returns a structured `BACKEND_UNSUPPORTED` setup error for that profile instead of entering the native Windows ControlNet startup path that was observed to access-violate during GUI smoke testing.
+The SD 1.5 ControlNet Canny assets are shared with the Node CLI and JSON job examples. The C++ workbench currently returns a structured `BACKEND_UNSUPPORTED` setup error for that profile instead of entering the native Windows ControlNet startup path that was observed to access-violate during GUI smoke testing. Set `TCXSD_ENABLE_UNSTABLE_CXX_CONTROLNET=1` only when intentionally diagnosing that native startup path.
 
 Download their assets with:
 
@@ -251,6 +251,32 @@ auto variant = tcx::StableDiffusionRequest::imageToImage(
 `PersistentServer` supports image inputs, inpaint masks, ControlNet images, per-request LoRA stacks, refine, and upscale request modes through upstream's native HTTP API. `CliProcess` supports image-to-image, mask/inpaint, ControlNet, refine, and upscale through upstream `sd-cli` flags. Direct `InProcess` still returns a structured `BACKEND_UNSUPPORTED` error for image inputs, ControlNet, LoRA, refine, and upscale.
 
 For LoRA, upstream `sd-server` scans `settings.loraModelDirectory`; pass `.lora(...)` paths relative to that folder, or pass absolute paths that live under that folder so the addon can convert them to server-relative names.
+
+Use the built-in C++ preprocessing helpers when a workflow needs an actual
+ControlNet guide or inpaint mask artifact before generation. These helpers use
+TrussC `Pixels` only; they do not call Python or OpenCV:
+
+```cpp
+tcx::sd::ControlPreprocessOptions controlOptions;
+controlOptions.lowThreshold = 32;
+controlOptions.highThreshold = 96;
+auto control = tcx::sd::preprocessControlImage(
+    "inputs/source.png",
+    "inputs/control_canny_generated.png",
+    controlOptions);
+
+tcx::sd::InpaintMaskOptions maskOptions;
+maskOptions.marginRatio = 0.28f;
+maskOptions.featherPixels = 12;
+auto mask = tcx::sd::createInpaintMask(
+    "inputs/source.png",
+    "inputs/mask_generated.png",
+    maskOptions);
+
+if (!control.ok || !mask.ok) {
+    tc::logError("sd") << control.error << " " << mask.error;
+}
+```
 
 The main example includes real local inputs:
 
@@ -453,6 +479,30 @@ await runTextToImage({
   paramsBackend: "cpu",
   offloadToCpu: true
 });
+```
+
+LoRA management is also available from Node and the CLI. Absolute LoRA paths
+are normalized to the server-relative path expected by `sd-server`, and paths
+outside the configured LoRA directory throw `TcxSdError`:
+
+```js
+import { listLoras, normalizeLoraPath, createLoraStackRequest } from "@trussc/tcx-stable-diffusion";
+
+const loraModelDir = "../examples/ideogram4-basic/bin/data/models/loras";
+const loras = await listLoras({ loraModelDir });
+if (loras.length) {
+  const request = createLoraStackRequest({
+    prompt: "dark charcoal and earthy-gold poster style",
+    loraModelDir,
+    loras: [{ path: loras[0].path, weight: 0.65 }]
+  });
+
+  console.log(normalizeLoraPath(loras[0].path, { loraModelDir }), request.requestMode);
+}
+```
+
+```powershell
+node .\bin\tcxsd-node.mjs --list-loras ..\examples\ideogram4-basic\bin\data\models\loras
 ```
 
 ## Explicit Model Paths

@@ -369,8 +369,13 @@
 - Added a real SD 1.5 ControlNet Canny profile across C++, Node, and setup tooling.
 - Updated the main Chinese ImGui workbench with workflow modes, explicit project roots, example image paths, and a dark charcoal/warm gray/earthy-gold theme.
 - Added real example inputs and a tracked `sd15_controlnet_canny_job.json`.
+- Added C++ `ImagePreprocess` helpers for Canny-style ControlNet guide
+  generation and center inpaint mask generation, plus workbench buttons and
+  smoke-mode switches for both paths.
+- Added Node LoRA management helpers: directory scanning, server-relative path
+  normalization, CLI `--list-loras`, and TypeScript declarations.
 - Kept Python constrained to setup/test/dev tooling; Node and C++ runtime paths consume native binaries and model files directly.
-- Guarded the C++ SD 1.5 ControlNet setup helper with a structured `BACKEND_UNSUPPORTED` error after GUI smoke found a Windows native access violation in the C++ ControlNet startup path. The real ControlNet execution examples are Node CLI and JSON job runner paths.
+- Guarded the C++ SD 1.5 ControlNet setup helper with a structured `BACKEND_UNSUPPORTED` error after GUI smoke found a Windows native access violation in the C++ ControlNet startup path. The real ControlNet execution examples are Node CLI and JSON job runner paths. `TCXSD_ENABLE_UNSTABLE_CXX_CONTROLNET=1` is available only for native crash diagnostics.
 
 ### Pending Verification In This Pass
 
@@ -391,3 +396,6 @@
   - `examples/ideogram4-basic/outputs/node_controlnet_smoke.png`
   - `examples/ideogram4-basic/outputs/node_controlnet_smoke.json`
   - Sidecar metadata includes `request_mode=control_net`, `execution_mode=persistent_server`, and `model=sd15-controlnet-canny`.
+- Ran C++ preprocessor smokes without loading a model:
+  - `TCXSD_SMOKE_PREPROCESS=control` generated `examples/ideogram4-basic/inputs/control_canny_generated.png` (`512x512`, 10,858 bytes).
+  - `TCXSD_SMOKE_PREPROCESS=mask` generated `examples/ideogram4-basic/inputs/mask_generated.png` (`512x512`, 12,066 bytes).

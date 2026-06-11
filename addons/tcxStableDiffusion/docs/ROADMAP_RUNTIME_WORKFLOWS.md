@@ -58,6 +58,11 @@ Hard constraints:
 - Keep Chinese labels readable through the existing CJK font loading path.
 - Add smoke-mode switches for every executable workflow that can be run in CI or
   local scripted verification.
+- Include smoke-mode preprocessing for ControlNet guide generation and inpaint
+  mask generation so image-input workflows can be verified without loading a
+  model.
+- Include LoRA directory scanning and path normalization in the UI and Node
+  package so LoRA requests submit server-relative asset names.
 
 ## Model Asset Layout
 

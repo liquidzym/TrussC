@@ -35,6 +35,14 @@ The example uses `tcxImGui` and a Chinese GUI. It is now the main multi-model
 workflow workbench: Ideogram4, FLUX.2-klein, and Z-Image Turbo run in the C++
 GUI, while the SD 1.5 ControlNet Canny assets and inputs are shared with the
 tracked Node/JSON ControlNet examples under `bin/data/models/<model-id>`.
+The workbench can also generate a Canny-style control PNG from a source image,
+generate a center inpaint mask, and scan/select LoRA files from
+`bin/data/models/loras`.
+
+The C++ workbench still blocks the unstable native SD 1.5 ControlNet startup
+path by default. Use the tracked Node/JSON ControlNet paths for normal
+generation. Set `TCXSD_ENABLE_UNSTABLE_CXX_CONTROLNET=1` only when diagnosing
+the native Windows access violation.
 
 The Windows example bundles both:
 
@@ -83,12 +91,22 @@ The first pure Node package lives in `node/` and talks directly to `sd-server.ex
 ```powershell
 cd node
 npm test
+node .\bin\tcxsd-node.mjs --list-loras ..\examples\ideogram4-basic\bin\data\models\loras
 node .\bin\tcxsd-node.mjs --job ..\examples\flux2-klein-basic\jobs\flux2_klein_product_job.json
 node .\bin\tcxsd-node.mjs --prompt "一张中文海报，文字写着本地生图" --quality draft --runtime-preset lowVram --sidecar .\outputs\cn.json
 node .\bin\tcxsd-node.mjs --model sd15-controlnet-canny --mode controlNet --control-image ..\examples\ideogram4-basic\inputs\control_canny.png --prompt "golden product workstation following the canny guide" --quality draft --runtime-preset lowVram
 ```
 
-The Node package exports TypeScript declarations, structured `TcxSdError` errors with remediation hints, sidecar writing, task cancellation through `/cancel`, reusable `TcxSdServerSession`, `GenerationSession`/project/artifact/batch/variant workflow objects, storage cleanup helpers, prompt packs, and quality checks.
+The Node package exports TypeScript declarations, structured `TcxSdError` errors with remediation hints, sidecar writing, task cancellation through `/cancel`, reusable `TcxSdServerSession`, `GenerationSession`/project/artifact/batch/variant workflow objects, storage cleanup helpers, prompt packs, LoRA directory scanning/path normalization, and quality checks.
+
+The C++ preprocessor smoke entry points do not load a model and do not use
+Python:
+
+```powershell
+cd examples\ideogram4-basic
+$env:TCXSD_SMOKE="1"; $env:TCXSD_SMOKE_PREPROCESS="control"; .\bin\ideogram4-basic.exe
+$env:TCXSD_SMOKE="1"; $env:TCXSD_SMOKE_PREPROCESS="mask"; .\bin\ideogram4-basic.exe
+```
 
 For script workflows:
 

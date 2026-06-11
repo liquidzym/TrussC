@@ -11,6 +11,7 @@ export const addonRoot = path.resolve(moduleDir, "..", "..");
 export const defaultExampleRoot = path.join(addonRoot, "examples", "ideogram4-basic");
 export const defaultNativeDir = path.join(addonRoot, "libs", "stable-diffusion", "current");
 export const defaultModelRoot = path.join(defaultExampleRoot, "bin", "data", "models");
+export const defaultLoraModelDir = path.join(defaultModelRoot, "loras");
 
 export const errorCodes = {
   UNKNOWN: "UNKNOWN",
@@ -192,6 +193,7 @@ const roleArgs = {
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const loraExtensions = new Set([".safetensors", ".sft", ".pt", ".ckpt", ".bin"]);
 
 function profileFor(modelId) {
   const profile = modelProfiles[modelId];
@@ -262,6 +264,64 @@ export function resolveStorageRoots(options = {}) {
   const tempRoot = path.resolve(cwd, options.tempRoot || path.join(outputRoot, "tmp"));
   const cacheRoot = path.resolve(cwd, options.cacheRoot || path.join(outputRoot, "cache"));
   return { outputRoot, tempRoot, cacheRoot };
+}
+
+function toServerRelativePath(value) {
+  return String(value).replace(/\\/g, "/");
+}
+
+function resolveLoraModelDir(options = {}) {
+  return path.resolve(options.loraModelDir || defaultLoraModelDir);
+}
+
+export function normalizeLoraPath(value, options = {}) {
+  const text = String(value || "").trim();
+  if (!text) {
+    throw new TcxSdError("LoRA path is empty", { code: errorCodes.MODEL_ASSET_MISSING });
+  }
+  const root = resolveLoraModelDir(options);
+  const absolute = path.isAbsolute(text) ? path.resolve(text) : path.resolve(root, text);
+  const relative = path.relative(root, absolute);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new TcxSdError(`LoRA path '${text}' is outside the LoRA model directory '${root}'.`, {
+      code: errorCodes.MODEL_ASSET_MISSING,
+      details: { loraModelDir: root, path: text }
+    });
+  }
+  return toServerRelativePath(relative);
+}
+
+export async function listLoras(options = {}) {
+  const root = resolveLoraModelDir(options);
+  const recursive = options.recursive !== false;
+  const found = [];
+
+  async function visit(dir) {
+    if (!existsSync(dir)) return;
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (recursive) await visit(full);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const extension = path.extname(entry.name).toLowerCase();
+      if (!loraExtensions.has(extension)) continue;
+      const info = await stat(full);
+      const relativePath = toServerRelativePath(path.relative(root, full));
+      found.push({
+        name: path.basename(entry.name, extension),
+        filename: entry.name,
+        path: full,
+        relativePath,
+        sizeBytes: info.size,
+        modifiedMs: info.mtimeMs
+      });
+    }
+  }
+
+  await visit(root);
+  return found.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 }
 
 export async function cleanupStorage(options = {}) {
@@ -414,7 +474,13 @@ export function createControlNetRequest(options = {}) {
 export function createLoraStackRequest(options = {}) {
   const loras = Array.isArray(options.loras) ? options.loras : [];
   if (!loras.length) throw new TcxSdError("lora_stack requires at least one LoRA", { code: errorCodes.MODEL_ASSET_MISSING });
-  return withRequestMetadata({ ...options, loras }, requestModes.LORA_STACK, {
+  const normalized = loras.map((lora) => ({
+    ...lora,
+    path: (options.loraModelDir || path.isAbsolute(String(lora.path || "")))
+      ? normalizeLoraPath(lora.path, options)
+      : toServerRelativePath(lora.path)
+  }));
+  return withRequestMetadata({ ...options, loras: normalized }, requestModes.LORA_STACK, {
     lora_count: String(loras.length),
     lora_stack: "true"
   });
@@ -501,7 +567,9 @@ export function buildImageRequest(options = {}) {
       }
     },
     lora: loras.map((lora) => ({
-      path: String(lora.path),
+      path: (options.loraModelDir || path.isAbsolute(String(lora.path || "")))
+        ? normalizeLoraPath(lora.path, options)
+        : toServerRelativePath(lora.path),
       multiplier: Number(lora.weight ?? lora.multiplier ?? 1.0),
       is_high_noise: Boolean(lora.isHighNoise || lora.is_high_noise)
     })),

@@ -1,5 +1,8 @@
 #include "tcxsd/Generator.h"
 
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <deque>
 #include <thread>
 #include <utility>
@@ -9,7 +12,20 @@ namespace {
 
 constexpr const char* kSd15ControlNetCxxUnsupported =
     "BACKEND_UNSUPPORTED: SD 1.5 ControlNet Canny is currently supported by the Node CLI and JSON job examples. "
-    "The C++ workbench disables this native setup path to avoid a Windows native backend access violation observed during ControlNet startup.";
+    "The C++ workbench disables this native setup path to avoid a Windows native backend access violation observed during ControlNet startup. "
+    "Set TCXSD_ENABLE_UNSTABLE_CXX_CONTROLNET=1 only for diagnostics.";
+
+bool unstableCxxControlNetEnabled() {
+    const char* value = std::getenv("TCXSD_ENABLE_UNSTABLE_CXX_CONTROLNET");
+    if (!value) {
+        return false;
+    }
+    std::string text = value;
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return text == "1" || text == "true" || text == "yes" || text == "on";
+}
 
 struct Job {
     JobId id = 0;
@@ -278,8 +294,9 @@ bool StableDiffusion::setupZImageTurbo(const fs::path& modelDir, const RuntimeSe
 }
 
 bool StableDiffusion::setupSD15ControlNetCanny(const fs::path& modelDir, const RuntimeSettings& settings) {
-    (void)modelDir;
-    (void)settings;
+    if (unstableCxxControlNetEnabled()) {
+        return setup(ModelPaths::sd15ControlNetCannyExample(modelDir), settings);
+    }
     shutdown();
     std::lock_guard<std::mutex> lock(impl_->mutex);
     impl_->ready = false;
@@ -360,8 +377,9 @@ bool StableDiffusion::setupZImageTurboAsync(const fs::path& modelDir, const Runt
 }
 
 bool StableDiffusion::setupSD15ControlNetCannyAsync(const fs::path& modelDir, const RuntimeSettings& settings) {
-    (void)modelDir;
-    (void)settings;
+    if (unstableCxxControlNetEnabled()) {
+        return setupAsync(ModelPaths::sd15ControlNetCannyExample(modelDir), settings);
+    }
     shutdown();
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);

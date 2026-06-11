@@ -6,6 +6,7 @@ export const addonRoot: string;
 export const defaultExampleRoot: string;
 export const defaultNativeDir: string;
 export const defaultModelRoot: string;
+export const defaultLoraModelDir: string;
 
 export interface QualityDefaults {
   width: number;
@@ -58,6 +59,7 @@ export interface CommonOptions {
   mmap?: boolean;
   streamLayers?: boolean;
   maxVramGiB?: number;
+  loraModelDir?: string;
 }
 
 export interface ImageOptions extends CommonOptions {
@@ -114,6 +116,15 @@ export function resolveStorageRoots(options?: { cwd?: string; outputRoot?: strin
   cacheRoot: string;
 };
 export function cleanupStorage(options?: Record<string, unknown>): Promise<string[]>;
+export function normalizeLoraPath(value: string, options?: { loraModelDir?: string }): string;
+export function listLoras(options?: { loraModelDir?: string; recursive?: boolean }): Promise<Array<{
+  name: string;
+  filename: string;
+  path: string;
+  relativePath: string;
+  sizeBytes: number;
+  modifiedMs: number;
+}>>;
 export function buildServerArgs(options?: CommonOptions): string[];
 export function createTextToImageRequest(options?: ImageOptions): ImageOptions;
 export function createImageToImageRequest(options?: ImageOptions): ImageOptions;

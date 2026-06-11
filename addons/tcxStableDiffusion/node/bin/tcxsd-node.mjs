@@ -9,6 +9,7 @@ import {
   createRefineRequest,
   createTextToImageRequest,
   createUpscaleRequest,
+  listLoras,
   runJsonJob,
   runTextToImage
 } from "../src/index.mjs";
@@ -105,6 +106,13 @@ async function main() {
       }
     );
     console.log(JSON.stringify({ ok: true, cancelled: args.cancel, result }, null, 2));
+    return;
+  }
+
+  if (args.listLoras) {
+    const loraModelDir = args.listLoras === true ? args.loraModelDir : args.listLoras;
+    const loras = await listLoras({ loraModelDir });
+    console.log(JSON.stringify({ ok: true, loraModelDir, count: loras.length, loras }, null, 2));
     return;
   }
 

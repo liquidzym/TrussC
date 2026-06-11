@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tcxsd/Generator.h"
+#include "tcxsd/ImagePreprocess.h"
 #include "tcxsd/NativeRuntime.h"
 #include "tcxsd/Types.h"
 
@@ -23,6 +24,9 @@ using StableDiffusionGenerationArtifact = sd::GenerationArtifact;
 using StableDiffusionBatchJob = sd::BatchJob;
 using StableDiffusionVariantJob = sd::VariantJob;
 using StableDiffusionGenerationSession = sd::GenerationSession;
+using StableDiffusionImagePreprocessResult = sd::ImagePreprocessResult;
+using StableDiffusionControlPreprocessOptions = sd::ControlPreprocessOptions;
+using StableDiffusionInpaintMaskOptions = sd::InpaintMaskOptions;
 using IdeogramPrompt = sd::IdeogramPrompt;
 
 } // namespace tcx
