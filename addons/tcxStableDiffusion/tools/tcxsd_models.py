@@ -325,9 +325,72 @@ def load_model_registry() -> ModelRegistry:
         },
     )
 
+    sd15_controlnet = ModelSpec(
+        id="sd15-controlnet-canny",
+        family="SD 1.5 ControlNet Canny",
+        example="ideogram4-basic",
+        description="Stable Diffusion 1.5 profile with a real ControlNet Canny model for backend parity tests and examples.",
+        files=[
+            ModelAsset(
+                role="model",
+                filename="v1-5-pruned-emaonly.safetensors",
+                url=hf_url("stable-diffusion-v1-5/stable-diffusion-v1-5", "v1-5-pruned-emaonly.safetensors"),
+            ),
+            ModelAsset(
+                role="control_net",
+                filename="control_v11p_sd15_canny_fp16.safetensors",
+                url=hf_url("comfyanonymous/ControlNet-v1-1_fp16_safetensors", "control_v11p_sd15_canny_fp16.safetensors"),
+            ),
+        ],
+        notes=[
+            "This profile is intentionally SD 1.5 based because stable-diffusion.cpp ControlNet support is mature for SD 1.5 Canny models.",
+            "Use a Canny/preprocessed guide image as control_image.",
+        ],
+        recommended_args={
+            "width": "512",
+            "height": "512",
+            "steps": "20",
+            "cfg_scale": "7.5",
+            "control_strength": "0.9",
+            "diffusion_flash_attention": "true",
+            "offload_to_cpu": "true",
+        },
+        quality_presets={
+            "draft": GenerationDefaults(width=512, height=512, steps=12, cfg_scale=7.5),
+            "balanced": GenerationDefaults(width=512, height=512, steps=20, cfg_scale=7.5),
+            "final": GenerationDefaults(width=768, height=768, steps=28, cfg_scale=7.5),
+        },
+        runtime_presets={
+            "default": RuntimeDefaults(
+                backend="cuda0",
+                params_backend="cpu",
+                offload_to_cpu=True,
+                stream_layers=False,
+                max_vram_gib=0.0,
+                execution_mode="persistent_server",
+            ),
+            "low_vram": RuntimeDefaults(
+                backend="cuda0",
+                params_backend="cpu",
+                offload_to_cpu=True,
+                stream_layers=True,
+                max_vram_gib=6.0,
+                execution_mode="persistent_server",
+            ),
+            "rtx4090_full_speed": RuntimeDefaults(
+                backend="cuda0",
+                params_backend="cuda0",
+                offload_to_cpu=False,
+                stream_layers=False,
+                max_vram_gib=0.0,
+                execution_mode="persistent_server",
+            ),
+        },
+    )
+
     return ModelRegistry(
-        models=(ideogram, flux2_klein, z_image),
-        priority=("ideogram4-q4_0", "flux2-klein-4b-q4_0", "z-image-turbo-q3_k"),
+        models=(ideogram, flux2_klein, z_image, sd15_controlnet),
+        priority=("ideogram4-q4_0", "flux2-klein-4b-q4_0", "z-image-turbo-q3_k", "sd15-controlnet-canny"),
     )
 
 

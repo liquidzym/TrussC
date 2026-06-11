@@ -1,5 +1,17 @@
 #!/usr/bin/env node
-import { cancelImageJob, TcxSdError, runJsonJob, runTextToImage } from "../src/index.mjs";
+import {
+  TcxSdError,
+  cancelImageJob,
+  createControlNetRequest,
+  createImageToImageRequest,
+  createInpaintRequest,
+  createLoraStackRequest,
+  createRefineRequest,
+  createTextToImageRequest,
+  createUpscaleRequest,
+  runJsonJob,
+  runTextToImage
+} from "../src/index.mjs";
 
 function parseArgs(argv) {
   const args = {};
@@ -26,6 +38,56 @@ function booleanArg(value) {
   return String(value).toLowerCase() !== "false";
 }
 
+function parseLoras(value) {
+  if (!value || value === true) return [];
+  return String(value).split(",").map((item) => {
+    const [path, weight] = item.split(":");
+    return { path, weight: weight ? Number(weight) : 1 };
+  }).filter((item) => item.path);
+}
+
+function buildDirectRequest(args, normalizedArgs) {
+  const common = {
+    model: args.model || "ideogram4-q4_0",
+    prompt: args.prompt || "",
+    output: args.output,
+    sidecar: args.sidecar,
+    quality: args.quality,
+    width: args.width ? Number(args.width) : undefined,
+    height: args.height ? Number(args.height) : undefined,
+    steps: args.steps ? Number(args.steps) : undefined,
+    seed: args.seed ? Number(args.seed) : undefined,
+    cfgScale: args.cfgScale ? Number(args.cfgScale) : undefined,
+    strength: args.strength ? Number(args.strength) : undefined,
+    controlStrength: args.controlStrength ? Number(args.controlStrength) : undefined,
+    upscaleFactor: args.upscaleFactor ? Number(args.upscaleFactor) : undefined,
+    initImage: args.initImage,
+    maskImage: args.maskImage,
+    controlImage: args.controlImage,
+    sourceImage: args.sourceImage,
+    loras: parseLoras(args.lora || args.loras),
+    runtimePreset: args.runtimePreset,
+    manageServer: booleanArg(args.reuseServer) ? false : undefined,
+    backend: args.backend,
+    paramsBackend: args.paramsBackend,
+    offloadToCpu: booleanArg(args.offloadToCpu),
+    diffusionFlashAttention: booleanArg(args.diffusionFlashAttention),
+    streamLayers: booleanArg(args.streamLayers),
+    maxVramGiB: normalizedArgs.maxVramGiB,
+    host: args.host || "127.0.0.1",
+    port: args.port ? Number(args.port) : 1234,
+    loraModelDir: args.loraModelDir
+  };
+  const mode = String(args.mode || "textToImage").toLowerCase();
+  if (mode === "img2img" || mode === "imagetoimage" || mode === "image_to_image") return createImageToImageRequest(common);
+  if (mode === "inpaint") return createInpaintRequest(common);
+  if (mode === "controlnet" || mode === "control_net") return createControlNetRequest(common);
+  if (mode === "lorastack" || mode === "lora_stack") return createLoraStackRequest(common);
+  if (mode === "refine") return createRefineRequest(common);
+  if (mode === "upscale") return createUpscaleRequest(common);
+  return createTextToImageRequest(common);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const normalizedArgs = {
@@ -48,28 +110,7 @@ async function main() {
 
   const result = args.job
     ? await runJsonJob(args.job, normalizedArgs)
-    : await runTextToImage({
-        model: args.model || "ideogram4-q4_0",
-        prompt: args.prompt || "",
-        output: args.output,
-        sidecar: args.sidecar,
-        quality: args.quality,
-        width: args.width ? Number(args.width) : undefined,
-        height: args.height ? Number(args.height) : undefined,
-        steps: args.steps ? Number(args.steps) : undefined,
-        seed: args.seed ? Number(args.seed) : undefined,
-        cfgScale: args.cfgScale ? Number(args.cfgScale) : undefined,
-        runtimePreset: args.runtimePreset,
-        manageServer: booleanArg(args.reuseServer) ? false : undefined,
-        backend: args.backend,
-        paramsBackend: args.paramsBackend,
-        offloadToCpu: booleanArg(args.offloadToCpu),
-        diffusionFlashAttention: booleanArg(args.diffusionFlashAttention),
-        streamLayers: booleanArg(args.streamLayers),
-        maxVramGiB: normalizedArgs.maxVramGiB,
-        host: args.host || "127.0.0.1",
-        port: args.port ? Number(args.port) : 1234
-      });
+    : await runTextToImage(buildDirectRequest(args, normalizedArgs));
   console.log(JSON.stringify(result, null, 2));
 }
 

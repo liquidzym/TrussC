@@ -7,14 +7,27 @@ import test from "node:test";
 import {
   TcxSdError,
   assessResultQuality,
+  assertRequestSupported,
   buildImageRequest,
   buildServerArgs,
   buildSidecar,
   cancelImageJob,
+  createBatchJob,
+  createControlNetRequest,
+  createGenerationProject,
+  createGenerationSession,
+  createImageToImageRequest,
+  createInpaintRequest,
+  createLoraStackRequest,
+  createRefineRequest,
+  createTextToImageRequest,
+  createUpscaleRequest,
+  createVariantJob,
   cleanupStorage,
   defaultExampleRoot,
   defaultModelRoot,
   extractImageBase64,
+  getBackendCapabilities,
   modelProfiles,
   promptPacks,
   runTextToImage,
@@ -270,4 +283,69 @@ test("runTextToImage writes a failure sidecar for submit errors", async () => {
     globalThis.fetch = originalFetch;
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("workflow request builders create real request modes and metadata", () => {
+  const text = createTextToImageRequest({ prompt: "plain" });
+  const img = createImageToImageRequest({ prompt: "edit", initImage: "data:image/png;base64,aGVsbG8=", strength: 0.4 });
+  const mask = createInpaintRequest({ prompt: "paint", initImage: "data:image/png;base64,aGVsbG8=", maskImage: "data:image/png;base64,aGVsbG8=" });
+  const control = createControlNetRequest({ prompt: "guided", controlImage: "data:image/png;base64,aGVsbG8=", controlStrength: 0.7 });
+  const lora = createLoraStackRequest({ prompt: "styled", loras: [{ path: "style.safetensors", weight: 0.5 }] });
+  const refine = createRefineRequest({ prompt: "refine", sourceImage: "data:image/png;base64,aGVsbG8=" });
+  const upscale = createUpscaleRequest({ prompt: "upscale", sourceImage: "data:image/png;base64,aGVsbG8=", upscaleFactor: 2 });
+
+  assert.equal(text.requestMode, "text_to_image");
+  assert.equal(img.requestMode, "image_to_image");
+  assert.equal(mask.requestMode, "inpaint");
+  assert.equal(control.requestMode, "control_net");
+  assert.equal(lora.requestMode, "lora_stack");
+  assert.equal(refine.requestMode, "refine");
+  assert.equal(upscale.requestMode, "upscale");
+  assert.equal(buildImageRequest(control).control_strength, 0.7);
+  assert.equal(buildImageRequest(upscale).strength, 0.25);
+});
+
+test("capability schema rejects unsupported backend combinations", () => {
+  const control = createControlNetRequest({ model: "flux2-klein-4b-q4_0", prompt: "guided", controlImage: "data:image/png;base64,aGVsbG8=" });
+  const lora = createLoraStackRequest({ model: "ideogram4-q4_0", prompt: "styled", loras: [{ path: "style.safetensors" }] });
+
+  assert.equal(getBackendCapabilities({ executionMode: "cli_process", hasControlNet: false }).controlNet, false);
+  assert.throws(() => assertRequestSupported(control, { executionMode: "cli_process", hasControlNet: false }), /BACKEND_UNSUPPORTED/);
+  assert.throws(() => assertRequestSupported(lora, { executionMode: "cli_process", hasControlNet: true }), /BACKEND_UNSUPPORTED/);
+});
+
+test("generation project artifact batch and variant objects are concrete", () => {
+  const tempRoot = path.join(os.tmpdir(), "tcxsd-project-test");
+  const project = createGenerationProject({ root: tempRoot, name: "demo" });
+  const artifact = project.artifact("first");
+  const variant = createVariantJob(artifact, { prompt: "new variant", strength: 0.6 });
+  const batch = createBatchJob("seed sweep")
+    .add(createTextToImageRequest({ prompt: "one", seed: 1 }))
+    .add(createTextToImageRequest({ prompt: "two", seed: 2 }));
+
+  assert.match(project.outputRoot, /demo/);
+  assert.equal(path.basename(artifact.outputPath), "first.png");
+  assert.equal(variant.request.requestMode, "image_to_image");
+  assert.equal(variant.request.initImage, artifact.outputPath);
+  assert.equal(batch.requests.length, 2);
+});
+
+test("generation session binds model runtime project and seed sweeps", () => {
+  const project = createGenerationProject({ root: path.join(os.tmpdir(), "tcxsd-session-test"), name: "session" });
+  const session = createGenerationSession({ model: "sd15-controlnet-canny", runtimePreset: "lowVram", project });
+  const control = createControlNetRequest({
+    model: "sd15-controlnet-canny",
+    prompt: "guided",
+    controlImage: "data:image/png;base64,aGVsbG8="
+  });
+  const request = session.request("draft", { prompt: "一张中文海报" });
+  const batch = createBatchJob({ label: "sweep", baseRequest: request }).seedSweep([11, 12]);
+
+  assert.equal(session.model, "sd15-controlnet-canny");
+  assert.equal(session.supports(control), true);
+  assert.equal(request.metadata.generation_session, "sd15-controlnet-canny");
+  assert.equal(request.metadata.project_root, project.root);
+  assert.equal(batch.requests.length, 2);
+  assert.equal(batch.requests[1].seed, 12);
+  assert.equal(batch.requests[0].metadata.batch_kind, "seed_sweep");
 });

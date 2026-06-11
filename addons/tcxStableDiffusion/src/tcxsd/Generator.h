@@ -21,10 +21,15 @@ public:
     ImageJobBuilder& seed(std::int64_t value);
     ImageJobBuilder& cfg(float value);
     ImageJobBuilder& negative(std::string text);
+    ImageJobBuilder& canvas(CanvasPreset preset);
+    ImageJobBuilder& style(StylePreset preset);
+    ImageJobBuilder& promptPack(const PromptPack& pack);
     ImageJobBuilder& imageToImage(fs::path imagePath, float denoiseStrength = 0.75f);
     ImageJobBuilder& mask(fs::path maskPath);
     ImageJobBuilder& control(fs::path imagePath, float weight = 1.0f);
     ImageJobBuilder& lora(fs::path loraPath, float weight = 1.0f);
+    ImageJobBuilder& refine(fs::path imagePath, float denoiseStrength = 0.35f);
+    ImageJobBuilder& upscale(fs::path imagePath, float scale = 2.0f);
     ImageJobBuilder& draft();
     ImageJobBuilder& balanced();
     ImageJobBuilder& final();
@@ -53,10 +58,12 @@ public:
     bool setupIdeogram4(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
     bool setupFlux2Klein(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
     bool setupZImageTurbo(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
+    bool setupSD15ControlNetCanny(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
     bool setupAsync(const ModelPaths& paths, const RuntimeSettings& settings = RuntimeSettings());
     bool setupIdeogram4Async(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
     bool setupFlux2KleinAsync(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
     bool setupZImageTurboAsync(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
+    bool setupSD15ControlNetCannyAsync(const fs::path& modelDir = "models", const RuntimeSettings& settings = RuntimeSettings::windowsCuda());
     void shutdown();
 
     bool isReady() const;
@@ -67,6 +74,12 @@ public:
 
     ImageJobBuilder createImage(std::string prompt);
     ImageJobBuilder createImage(const IdeogramPrompt& promptSpec);
+    ImageJobBuilder textToImage(std::string prompt);
+    ImageJobBuilder imageToImage(std::string prompt, fs::path imagePath, float denoiseStrength = 0.75f);
+    ImageJobBuilder inpaint(std::string prompt, fs::path imagePath, fs::path maskPath, float denoiseStrength = 0.75f);
+    ImageJobBuilder controlNet(std::string prompt, fs::path controlImagePath, float weight = 1.0f);
+    ImageJobBuilder refine(std::string prompt, fs::path sourceImagePath, float denoiseStrength = 0.35f);
+    ImageJobBuilder upscale(std::string prompt, fs::path sourceImagePath, float scale = 2.0f);
     JobId submit(ImageRequest request);
     void cancel();
 

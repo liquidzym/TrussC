@@ -355,3 +355,39 @@
 - `node --check src/index.mjs`
 - `node --check bin/tcxsd-node.mjs`
 - `G:/TrussC/tools/bin/trusscli.exe build` in `examples/ideogram4-basic`
+
+## 2026-06-12 Runtime Workflow Encapsulation Pass
+
+### Completed
+
+- Added the non-MVP workflow execution checklist in `docs/ROADMAP_RUNTIME_WORKFLOWS.md`.
+- Added typed C++ request modes and factories for text-to-image, image-to-image, inpaint, ControlNet, LoRA stack, refine, and upscale.
+- Added backend capability checks so unsupported combinations return `BACKEND_UNSUPPORTED` with remediation hints instead of silently dropping fields.
+- Added sidecar metadata for request mode, image inputs, mask/control/refine paths, LoRA count, strengths, upscale factor, and backend capability checks.
+- Added `GenerationSession`, `GenerationProject`, `GenerationArtifact`, `BatchJob`, and `VariantJob` C++/Node workflow objects.
+- Added user-intent presets: prompt packs, canvas/style/text presets, and model routing helpers.
+- Added a real SD 1.5 ControlNet Canny profile across C++, Node, and setup tooling.
+- Updated the main Chinese ImGui workbench with workflow modes, explicit project roots, example image paths, and a dark charcoal/warm gray/earthy-gold theme.
+- Added real example inputs and a tracked `sd15_controlnet_canny_job.json`.
+- Kept Python constrained to setup/test/dev tooling; Node and C++ runtime paths consume native binaries and model files directly.
+- Guarded the C++ SD 1.5 ControlNet setup helper with a structured `BACKEND_UNSUPPORTED` error after GUI smoke found a Windows native access violation in the C++ ControlNet startup path. The real ControlNet execution examples are Node CLI and JSON job runner paths.
+
+### Pending Verification In This Pass
+
+- Fix the guarded C++ SD 1.5 ControlNet native startup path so the workbench can run that profile directly after the upstream/native crash is isolated.
+- Run two full review passes, fix findings, then commit.
+
+### ControlNet Verification
+
+- Downloaded real assets into `examples/ideogram4-basic/bin/data/models/sd15-controlnet-canny`:
+  - `v1-5-pruned-emaonly.safetensors` (4,265,146,304 bytes)
+  - `control_v11p_sd15_canny_fp16.safetensors` (722,601,100 bytes)
+- Verified assets with `python tools/verify_sd.py --model sd15-controlnet-canny`.
+- Ran the tracked JSON ControlNet job through `persistent_server`:
+  - `examples/ideogram4-basic/outputs/jobs/sd15_controlnet_canny_job.png`
+  - `examples/ideogram4-basic/outputs/jobs/sd15_controlnet_canny_job.json`
+  - Sidecar summary: `ok=true`, `execution_mode=persistent_server`, `backend=cuda0`, `image_width=512`, `image_height=512`, `duration_seconds=2.557`.
+- Ran the pure Node CLI ControlNet smoke:
+  - `examples/ideogram4-basic/outputs/node_controlnet_smoke.png`
+  - `examples/ideogram4-basic/outputs/node_controlnet_smoke.json`
+  - Sidecar metadata includes `request_mode=control_net`, `execution_mode=persistent_server`, and `model=sd15-controlnet-canny`.

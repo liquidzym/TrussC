@@ -15,6 +15,14 @@ using StableDiffusionModelProfile = sd::ModelProfile;
 using StableDiffusionStorageRoots = sd::StorageRoots;
 using StableDiffusionCleanupOptions = sd::CleanupOptions;
 using StableDiffusionCleanupResult = sd::CleanupResult;
+using StableDiffusionBackendCapabilities = sd::BackendCapabilities;
+using StableDiffusionCanvasDefaults = sd::CanvasDefaults;
+using StableDiffusionPromptPack = sd::PromptPack;
+using StableDiffusionGenerationProject = sd::GenerationProject;
+using StableDiffusionGenerationArtifact = sd::GenerationArtifact;
+using StableDiffusionBatchJob = sd::BatchJob;
+using StableDiffusionVariantJob = sd::VariantJob;
+using StableDiffusionGenerationSession = sd::GenerationSession;
 using IdeogramPrompt = sd::IdeogramPrompt;
 
 } // namespace tcx

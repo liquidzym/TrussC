@@ -8,11 +8,14 @@
 #include <fstream>
 #include <iomanip>
 #include <iterator>
+#include <limits>
 #include <sstream>
 #include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include "stb/stb_image.h"
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -353,14 +356,24 @@ std::map<std::string, std::string> resultMetadata(
     }
     metadata["width"] = std::to_string(request.width);
     metadata["height"] = std::to_string(request.height);
+    metadata["request_mode"] = toString(request.mode);
     metadata["quality"] = toString(request.quality);
     metadata["sampler"] = toString(request.sampler);
     metadata["steps"] = std::to_string(request.steps);
     metadata["cfg_scale"] = std::to_string(request.cfgScale);
     metadata["strength"] = std::to_string(request.strength);
+    metadata["control_strength"] = std::to_string(request.controlStrength);
+    metadata["upscale_factor"] = std::to_string(request.upscaleFactor);
     metadata["seed"] = std::to_string(request.seed);
     metadata["batch_count"] = std::to_string(request.batchCount);
     metadata["execution_mode"] = toString(mode);
+    addPathMetadata(metadata, "init_image", request.initImage);
+    addPathMetadata(metadata, "mask_image", request.maskImage);
+    addPathMetadata(metadata, "control_image", request.controlImage);
+    addPathMetadata(metadata, "refine_source_image", request.refineSourceImage);
+    if (!request.loras.empty()) {
+        metadata["lora_count"] = std::to_string(request.loras.size());
+    }
     if (settings) {
         metadata["backend"] = toString(settings->backend);
         metadata["runtime_execution_mode"] = toString(settings->executionMode);
@@ -759,6 +772,71 @@ bool writeFileBytes(const fs::path& path, const std::vector<unsigned char>& byte
     }
     out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     return static_cast<bool>(out);
+}
+
+bool loadPngPixelsFromFile(const fs::path& path, trussc::Pixels& pixels, std::string* error) {
+    std::vector<unsigned char> bytes;
+    if (!readFileBytes(path, bytes, error)) {
+        return false;
+    }
+    if (bytes.empty()) {
+        if (error) {
+            *error = "PNG file is empty: " + pathArg(path);
+        }
+        return false;
+    }
+    if (bytes.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        if (error) {
+            *error = "PNG file is too large to decode safely: " + pathArg(path);
+        }
+        return false;
+    }
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char* decoded = stbi_load_from_memory(
+        bytes.data(),
+        static_cast<int>(bytes.size()),
+        &width,
+        &height,
+        &channels,
+        4);
+    if (!decoded) {
+        const char* reason = stbi_failure_reason();
+        if (error) {
+            *error = "Generated PNG could not be decoded: " + pathArg(path);
+            if (reason && *reason) {
+                *error += " (" + std::string(reason) + ")";
+            }
+        }
+        return false;
+    }
+
+    pixels.setFromPixels(decoded, width, height, 4);
+    stbi_image_free(decoded);
+    return true;
+}
+
+bool readPngDimensionsFromFile(const fs::path& path, int& width, int& height) {
+    std::vector<unsigned char> bytes;
+    std::string error;
+    if (!readFileBytes(path, bytes, &error) || bytes.size() < 24) {
+        return false;
+    }
+    static constexpr unsigned char kPngSignature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    if (!std::equal(std::begin(kPngSignature), std::end(kPngSignature), bytes.begin())) {
+        return false;
+    }
+    width = (static_cast<int>(bytes[16]) << 24) |
+            (static_cast<int>(bytes[17]) << 16) |
+            (static_cast<int>(bytes[18]) << 8) |
+            static_cast<int>(bytes[19]);
+    height = (static_cast<int>(bytes[20]) << 24) |
+             (static_cast<int>(bytes[21]) << 16) |
+             (static_cast<int>(bytes[22]) << 8) |
+             static_cast<int>(bytes[23]);
+    return width > 0 && height > 0;
 }
 
 bool binaryToBase64(const std::vector<unsigned char>& bytes, std::string& encoded, std::string* error) {
@@ -1297,6 +1375,13 @@ ImageResult generateImageWithPersistentServer(
         return finish(std::move(result));
     }
 
+    const auto capabilities = BackendCapabilities::forRuntime(paths, settings, ExecutionMode::PersistentServer);
+    if (!capabilities.supports(request)) {
+        result.error = capabilities.unsupportedReason(request, ExecutionMode::PersistentServer);
+        result.metadata["capability_check"] = "failed";
+        return finish(std::move(result));
+    }
+
     if (request.batchCount != 1) {
         result.error = "The persistent server backend currently returns the first image only. Use batchCount == 1 until batch result plumbing is added.";
         return finish(std::move(result));
@@ -1420,8 +1505,10 @@ ImageResult generateImageWithPersistentServer(
         result.error = decodeError;
         return finish(std::move(result));
     }
-    if (!result.pixels.load(outputPath)) {
-        result.error = "Generated image exists but could not be loaded: " + pathArg(outputPath);
+    if (!loadPngPixelsFromFile(outputPath, result.pixels, &decodeError)) {
+        result.error = decodeError.empty()
+            ? "Generated image exists but could not be loaded: " + pathArg(outputPath)
+            : decodeError;
         return finish(std::move(result));
     }
 
@@ -1456,6 +1543,13 @@ ImageResult generateImageWithCli(
     if (cancelRequested.load()) {
         result.state = JobState::Cancelled;
         result.error = "Job was cancelled before it started.";
+        return finish(std::move(result));
+    }
+
+    const auto capabilities = BackendCapabilities::forRuntime(paths, settings, ExecutionMode::CliProcess);
+    if (!capabilities.supports(request)) {
+        result.error = capabilities.unsupportedReason(request, ExecutionMode::CliProcess);
+        result.metadata["capability_check"] = "failed";
         return finish(std::move(result));
     }
 
@@ -1595,10 +1689,13 @@ ImageResult generateImageWithCli(
         return finish(std::move(result));
     }
 
-    if (!result.pixels.load(outputPath)) {
-        result.error = "Generated image exists but could not be loaded: " + pathArg(outputPath);
-        return finish(std::move(result));
+    int outputWidth = 0;
+    int outputHeight = 0;
+    if (readPngDimensionsFromFile(outputPath, outputWidth, outputHeight)) {
+        result.metadata["image_width"] = std::to_string(outputWidth);
+        result.metadata["image_height"] = std::to_string(outputHeight);
     }
+    result.metadata["pixel_decode"] = "skipped_for_cli_process";
 
     result.ok = true;
     result.state = JobState::Complete;
@@ -1956,6 +2053,13 @@ ImageResult NativeRuntime::generateImage(
 
     if (!impl_->ctx) {
         result.error = "Native runtime is not loaded.";
+        return finish(std::move(result));
+    }
+
+    const auto capabilities = BackendCapabilities::forRuntime(impl_->paths, impl_->settings, ExecutionMode::InProcess);
+    if (!capabilities.supports(request)) {
+        result.error = capabilities.unsupportedReason(request, ExecutionMode::InProcess);
+        result.metadata["capability_check"] = "failed";
         return finish(std::move(result));
     }
 

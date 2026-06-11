@@ -50,6 +50,39 @@ enum class RuntimePreset {
     Rtx4090FullSpeed,
 };
 
+enum class RequestMode {
+    TextToImage,
+    ImageToImage,
+    Inpaint,
+    ControlNet,
+    LoraStack,
+    Refine,
+    Upscale,
+};
+
+enum class CanvasPreset {
+    SquarePreview,
+    MobilePoster,
+    WideHero,
+    DesktopWallpaper,
+    AppIcon,
+};
+
+enum class StylePreset {
+    CommercialPoster,
+    CleanProductShot,
+    WideScene,
+    GameAsset,
+    UiMockup,
+};
+
+enum class TextRenderingPreset {
+    None,
+    ChinesePoster,
+    EnglishTitle,
+    BrandWordmark,
+};
+
 enum class Sampler {
     Euler,
     EulerA,
@@ -86,6 +119,7 @@ struct ModelPaths {
     static ModelPaths ideogram4Example(const fs::path& modelDir = "models");
     static ModelPaths flux2KleinExample(const fs::path& modelDir = "models");
     static ModelPaths zImageTurboExample(const fs::path& modelDir = "models");
+    static ModelPaths sd15ControlNetCannyExample(const fs::path& modelDir = "models");
     bool hasImagePipeline() const;
 };
 
@@ -138,6 +172,7 @@ struct QualityDefaults {
 };
 
 struct ImageRequest;
+struct ImageResult;
 
 struct ModelProfile {
     std::string id;
@@ -154,6 +189,7 @@ struct ModelProfile {
     static ModelProfile ideogram4();
     static ModelProfile flux2Klein();
     static ModelProfile zImageTurbo();
+    static ModelProfile sd15ControlNetCanny();
     static ModelProfile byId(const std::string& modelId);
 };
 
@@ -174,6 +210,66 @@ struct CleanupOptions {
 struct CleanupResult {
     std::vector<fs::path> removed;
     std::vector<std::string> errors;
+};
+
+struct BackendCapabilities {
+    bool textToImage = true;
+    bool imageToImage = true;
+    bool inpaint = true;
+    bool controlNet = false;
+    bool loraStack = false;
+    bool refine = true;
+    bool upscale = true;
+
+    bool supports(const ImageRequest& request) const;
+    std::string unsupportedReason(const ImageRequest& request, ExecutionMode mode) const;
+
+    static BackendCapabilities forRuntime(const ModelPaths& paths, const RuntimeSettings& settings, ExecutionMode mode);
+};
+
+struct CanvasDefaults {
+    int width = 1024;
+    int height = 1024;
+    std::string label;
+
+    static CanvasDefaults fromPreset(CanvasPreset preset);
+};
+
+struct PromptPack {
+    std::string prompt;
+    std::string negativePrompt;
+    std::map<std::string, std::string> metadata;
+
+    static PromptPack poster(std::string subject, std::string visibleText = {}, TextRenderingPreset textPreset = TextRenderingPreset::None);
+    static PromptPack productShot(std::string subject);
+    static PromptPack wideScene(std::string subject);
+    static PromptPack gameAsset(std::string subject);
+    static PromptPack uiMockup(std::string subject);
+};
+
+struct GenerationArtifact {
+    std::string id;
+    fs::path imagePath;
+    fs::path sidecarPath;
+    fs::path parentSidecarPath;
+    std::map<std::string, std::string> metadata;
+
+    static GenerationArtifact fromResult(const ImageResult& result, fs::path sidecarPath = {});
+};
+
+struct GenerationProject {
+    fs::path root;
+    fs::path outputRoot;
+    fs::path tempRoot;
+    fs::path cacheRoot;
+    fs::path logRoot;
+    fs::path inputRoot;
+
+    static GenerationProject at(const fs::path& root, std::string name = "tcxsd-project");
+    RuntimeSettings apply(RuntimeSettings settings) const;
+    fs::path outputPath(std::string label, std::string extension = ".png") const;
+    fs::path sidecarPath(std::string label) const;
+    GenerationArtifact artifact(std::string label) const;
 };
 
 struct Lora {
@@ -226,6 +322,7 @@ struct IdeogramPrompt {
 };
 
 struct ImageRequest {
+    RequestMode mode = RequestMode::TextToImage;
     std::string prompt;
     std::string negativePrompt;
     int width = 1024;
@@ -240,15 +337,28 @@ struct ImageRequest {
     fs::path initImage;
     fs::path maskImage;
     fs::path controlImage;
+    fs::path refineSourceImage;
     float controlStrength = 1.0f;
+    float upscaleFactor = 1.0f;
     std::vector<Lora> loras;
     std::map<std::string, std::string> metadata;
 
     static ImageRequest fromPrompt(std::string promptText);
     static ImageRequest fromIdeogram4(const IdeogramPrompt& promptSpec);
+    static ImageRequest textToImage(std::string promptText);
+    static ImageRequest imageToImage(std::string promptText, fs::path imagePath, float denoiseStrength = 0.75f);
+    static ImageRequest inpaint(std::string promptText, fs::path imagePath, fs::path maskPath, float denoiseStrength = 0.75f);
+    static ImageRequest controlNet(std::string promptText, fs::path controlImagePath, float weight = 1.0f);
+    static ImageRequest loraStack(std::string promptText, std::vector<Lora> stack);
+    static ImageRequest refine(std::string promptText, fs::path sourceImagePath, float denoiseStrength = 0.35f);
+    static ImageRequest upscale(std::string promptText, fs::path sourceImagePath, float scale = 2.0f);
 
     ImageRequest& size(int w, int h);
     ImageRequest& square(int side);
+    ImageRequest& canvas(CanvasPreset preset);
+    ImageRequest& style(StylePreset preset);
+    ImageRequest& promptPack(const PromptPack& pack);
+    ImageRequest& modeValue(RequestMode value);
     ImageRequest& stepsCount(int value);
     ImageRequest& seedValue(std::int64_t value);
     ImageRequest& cfg(float value);
@@ -257,10 +367,55 @@ struct ImageRequest {
     ImageRequest& mask(fs::path maskPath);
     ImageRequest& control(fs::path imagePath, float weight = 1.0f);
     ImageRequest& lora(fs::path loraPath, float weight = 1.0f);
+    ImageRequest& refineSource(fs::path imagePath, float denoiseStrength = 0.35f);
+    ImageRequest& upscaleSource(fs::path imagePath, float scale = 2.0f);
     ImageRequest& ideogram4(const IdeogramPrompt& promptSpec);
     ImageRequest& draft();
     ImageRequest& balanced();
     ImageRequest& final();
+};
+
+struct BatchJob {
+    std::string label;
+    std::vector<ImageRequest> requests;
+
+    BatchJob& add(ImageRequest request);
+    static BatchJob seedSweep(ImageRequest base, std::vector<std::int64_t> seeds);
+};
+
+struct VariantJob {
+    GenerationArtifact source;
+    ImageRequest request;
+
+    static VariantJob fromArtifact(const GenerationArtifact& artifact, std::string prompt, float strength = 0.55f);
+};
+
+struct GenerationSession {
+    std::string id;
+    ModelProfile profile;
+    fs::path modelDirectory;
+    RuntimePreset runtimePreset = RuntimePreset::Default;
+    RuntimeSettings settings;
+    ModelPaths paths;
+    GenerationProject project;
+    BackendCapabilities capabilities;
+
+    static GenerationSession forProfile(
+        ModelProfile profile,
+        const fs::path& modelDir,
+        RuntimePreset preset = RuntimePreset::Default,
+        GenerationProject project = {});
+    static GenerationSession forModelId(
+        const std::string& modelId,
+        const fs::path& modelDir,
+        RuntimePreset preset = RuntimePreset::Default,
+        GenerationProject project = {});
+
+    RuntimeSettings appliedSettings() const;
+    ImageRequest request(Quality quality = Quality::Balanced) const;
+    GenerationArtifact artifact(std::string label) const;
+    bool supports(const ImageRequest& request) const;
+    std::string unsupportedReason(const ImageRequest& request) const;
 };
 
 struct Progress {
@@ -296,6 +451,10 @@ const char* toString(ExecutionMode mode);
 const char* toString(JobState state);
 const char* toString(Quality quality);
 const char* toString(RuntimePreset preset);
+const char* toString(RequestMode mode);
+const char* toString(CanvasPreset preset);
+const char* toString(StylePreset preset);
+const char* toString(TextRenderingPreset preset);
 const char* toString(Sampler sampler);
 const char* toString(IdeogramPromptKind kind);
 

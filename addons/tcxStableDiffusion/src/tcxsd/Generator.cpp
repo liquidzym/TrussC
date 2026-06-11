@@ -7,6 +7,10 @@
 namespace tcx::sd {
 namespace {
 
+constexpr const char* kSd15ControlNetCxxUnsupported =
+    "BACKEND_UNSUPPORTED: SD 1.5 ControlNet Canny is currently supported by the Node CLI and JSON job examples. "
+    "The C++ workbench disables this native setup path to avoid a Windows native backend access violation observed during ControlNet startup.";
+
 struct Job {
     JobId id = 0;
     ImageRequest request;
@@ -148,6 +152,21 @@ ImageJobBuilder& ImageJobBuilder::negative(std::string text) {
     return *this;
 }
 
+ImageJobBuilder& ImageJobBuilder::canvas(CanvasPreset preset) {
+    request_.canvas(preset);
+    return *this;
+}
+
+ImageJobBuilder& ImageJobBuilder::style(StylePreset preset) {
+    request_.style(preset);
+    return *this;
+}
+
+ImageJobBuilder& ImageJobBuilder::promptPack(const PromptPack& pack) {
+    request_.promptPack(pack);
+    return *this;
+}
+
 ImageJobBuilder& ImageJobBuilder::imageToImage(fs::path imagePath, float denoiseStrength) {
     request_.imageToImage(std::move(imagePath), denoiseStrength);
     return *this;
@@ -165,6 +184,16 @@ ImageJobBuilder& ImageJobBuilder::control(fs::path imagePath, float weight) {
 
 ImageJobBuilder& ImageJobBuilder::lora(fs::path loraPath, float weight) {
     request_.lora(std::move(loraPath), weight);
+    return *this;
+}
+
+ImageJobBuilder& ImageJobBuilder::refine(fs::path imagePath, float denoiseStrength) {
+    request_.refineSource(std::move(imagePath), denoiseStrength);
+    return *this;
+}
+
+ImageJobBuilder& ImageJobBuilder::upscale(fs::path imagePath, float scale) {
+    request_.upscaleSource(std::move(imagePath), scale);
     return *this;
 }
 
@@ -248,6 +277,17 @@ bool StableDiffusion::setupZImageTurbo(const fs::path& modelDir, const RuntimeSe
     return setup(ModelPaths::zImageTurboExample(modelDir), settings);
 }
 
+bool StableDiffusion::setupSD15ControlNetCanny(const fs::path& modelDir, const RuntimeSettings& settings) {
+    (void)modelDir;
+    (void)settings;
+    shutdown();
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    impl_->ready = false;
+    impl_->running = false;
+    impl_->lastError = kSd15ControlNetCxxUnsupported;
+    return false;
+}
+
 bool StableDiffusion::setupAsync(const ModelPaths& paths, const RuntimeSettings& settings) {
     shutdown();
 
@@ -319,6 +359,25 @@ bool StableDiffusion::setupZImageTurboAsync(const fs::path& modelDir, const Runt
     return setupAsync(ModelPaths::zImageTurboExample(modelDir), settings);
 }
 
+bool StableDiffusion::setupSD15ControlNetCannyAsync(const fs::path& modelDir, const RuntimeSettings& settings) {
+    (void)modelDir;
+    (void)settings;
+    shutdown();
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        impl_->ready = false;
+        impl_->running = false;
+        impl_->lastError = kSd15ControlNetCxxUnsupported;
+        impl_->currentProgress = {};
+        impl_->currentProgress.state = JobState::Failed;
+        impl_->currentProgress.message = kSd15ControlNetCxxUnsupported;
+        impl_->setupCompletionProgress = impl_->currentProgress;
+        impl_->setupCompletionPending = true;
+    }
+    impl_->settingUp.store(false);
+    return true;
+}
+
 void StableDiffusion::shutdown() {
     impl_->setupAbort.store(true);
     std::thread setupThread;
@@ -376,6 +435,30 @@ ImageJobBuilder StableDiffusion::createImage(std::string prompt) {
 
 ImageJobBuilder StableDiffusion::createImage(const IdeogramPrompt& promptSpec) {
     return ImageJobBuilder(*this, ImageRequest::fromIdeogram4(promptSpec));
+}
+
+ImageJobBuilder StableDiffusion::textToImage(std::string prompt) {
+    return ImageJobBuilder(*this, ImageRequest::textToImage(std::move(prompt)));
+}
+
+ImageJobBuilder StableDiffusion::imageToImage(std::string prompt, fs::path imagePath, float denoiseStrength) {
+    return ImageJobBuilder(*this, ImageRequest::imageToImage(std::move(prompt), std::move(imagePath), denoiseStrength));
+}
+
+ImageJobBuilder StableDiffusion::inpaint(std::string prompt, fs::path imagePath, fs::path maskPath, float denoiseStrength) {
+    return ImageJobBuilder(*this, ImageRequest::inpaint(std::move(prompt), std::move(imagePath), std::move(maskPath), denoiseStrength));
+}
+
+ImageJobBuilder StableDiffusion::controlNet(std::string prompt, fs::path controlImagePath, float weight) {
+    return ImageJobBuilder(*this, ImageRequest::controlNet(std::move(prompt), std::move(controlImagePath), weight));
+}
+
+ImageJobBuilder StableDiffusion::refine(std::string prompt, fs::path sourceImagePath, float denoiseStrength) {
+    return ImageJobBuilder(*this, ImageRequest::refine(std::move(prompt), std::move(sourceImagePath), denoiseStrength));
+}
+
+ImageJobBuilder StableDiffusion::upscale(std::string prompt, fs::path sourceImagePath, float scale) {
+    return ImageJobBuilder(*this, ImageRequest::upscale(std::move(prompt), std::move(sourceImagePath), scale));
 }
 
 JobId StableDiffusion::submit(ImageRequest request) {

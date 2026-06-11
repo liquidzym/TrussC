@@ -1,0 +1,37 @@
+{
+  "model": "sd15-controlnet-canny",
+  "model_dir": "../bin/data/models/sd15-controlnet-canny",
+  "native_dir": "../../../libs/stable-diffusion/current",
+  "output_dir": "../outputs/jobs",
+  "output_name": "sd15_controlnet_canny_job",
+  "prompt": "A refined charcoal and earthy-gold product display scene following the provided Canny edge guide, clean geometry, warm studio lighting, premium technical demo composition",
+  "negative_prompt": "low quality, blurry, distorted edges, clutter, watermark, signature",
+  "quality": "draft",
+  "width": 512,
+  "height": 512,
+  "steps": 12,
+  "seed": 5120,
+  "cfg_scale": 7.5,
+  "sampler": "euler",
+  "control_image": "../inputs/control_canny.png",
+  "control_strength": 0.9,
+  "runtime": {
+    "preset": "low_vram",
+    "execution_mode": "persistent_server",
+    "backend": "cuda0",
+    "params_backend": "cpu",
+    "offload_to_cpu": true,
+    "diffusion_flash_attention": true,
+    "control_net_cpu": true,
+    "stream_layers": true,
+    "max_vram_gib": 6.0,
+    "mmap": true,
+    "timeout_seconds": 600
+  },
+  "metadata": {
+    "source": "examples/ideogram4-basic/jobs/sd15_controlnet_canny_job.json",
+    "request_mode": "control_net",
+    "prompt_pack": "wide_scene",
+    "canvas_preset": "square_preview"
+  }
+}

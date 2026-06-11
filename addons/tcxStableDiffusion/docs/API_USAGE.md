@@ -91,15 +91,19 @@ examples/ideogram4-basic/bin/data/models/
     z_image_turbo-Q3_K.gguf
     Qwen3-4B-Instruct-2507-Q4_K_M.gguf
     z_image_ae.safetensors
+  sd15-controlnet-canny/
+    v1-5-pruned-emaonly.safetensors
+    control_v11p_sd15_canny_fp16.safetensors
 ```
 
 Use the helper script:
 
 ```powershell
 python tools\setup_sd.py download-model --model ideogram4-q4_0
+python tools\setup_sd.py download-model --model sd15-controlnet-canny
 ```
 
-If download fails 3 times, the script prints exact manual URLs and the target directory.
+If download fails 3 times, the script prints exact manual URLs and the target directory. Python is only used here for setup and verification; published C++ and Node runtimes consume the native binaries and model files directly.
 
 Other built-in starter profiles:
 
@@ -108,11 +112,14 @@ sd.setupFlux2KleinAsync("bin/data/models/flux2-klein-4b-q4_0", tcx::sd::RuntimeS
 sd.setupZImageTurboAsync("bin/data/models/z-image-turbo-q3_k", tcx::sd::RuntimeSettings::windowsCuda());
 ```
 
+The SD 1.5 ControlNet Canny assets are shared with the Node CLI and JSON job examples. The C++ workbench currently returns a structured `BACKEND_UNSUPPORTED` setup error for that profile instead of entering the native Windows ControlNet startup path that was observed to access-violate during GUI smoke testing.
+
 Download their assets with:
 
 ```powershell
 python tools\setup_sd.py download-model --model flux2-klein-4b-q4_0
 python tools\setup_sd.py download-model --model z-image-turbo-q3_k
+python tools\setup_sd.py download-model --model sd15-controlnet-canny
 ```
 
 Their starter JSON jobs live in:
@@ -122,19 +129,21 @@ examples/flux2-klein-basic/jobs/flux2_klein_product_job.json
 examples/z-image-basic/jobs/z_image_turbo_wide_job.json
 ```
 
-In this workspace all three priority models have been downloaded into the shared bin data folder, verified, and smoke-tested through `persistent_server`.
+In this workspace the priority text models have been downloaded into the shared bin data folder, verified, and smoke-tested through `persistent_server`. The SD 1.5 ControlNet Canny profile is the real ControlNet backend-parity profile and uses its own local assets under the same model root.
 
 ## Multi-Model Example
 
-`examples/ideogram4-basic` is the main multi-model workbench despite the historical folder name. The Chinese GUI exposes:
+`examples/ideogram4-basic` is the main multi-model workflow workbench despite the historical folder name. The Chinese GUI exposes:
 
-- model selector for Ideogram4, FLUX.2-klein, and Z-Image Turbo,
+- model selector for Ideogram4, FLUX.2-klein, Z-Image Turbo, and SD 1.5 ControlNet Canny asset routing,
+- workflow selector for text-to-image, image-to-image, inpaint, ControlNet Canny, LoRA stack, refine, and upscale,
 - per-model default prompt, negative prompt, size, steps, CFG, and seed,
+- explicit project/output/temp/cache roots through `GenerationProject`,
 - async model initialization,
-- persistent server generation,
+- persistent server generation for the C++ text-model profiles,
 - per-model output folders under `outputs/<model-id>`.
 
-The GUI loads a CJK-capable ImGui font at startup so Chinese labels render correctly on Windows and macOS. If labels display as `????`, first check whether one of the configured CJK system fonts is available before changing source-file encodings. The current workbench uses labels above full-width controls and a modern dark neutral theme with blue/teal accents.
+The GUI loads a CJK-capable ImGui font at startup so Chinese labels render correctly on Windows and macOS. If labels display as `????`, first check whether one of the configured CJK system fonts is available before changing source-file encodings. The current workbench uses labels above full-width controls and a dark charcoal, warm gray, and earthy-gold theme.
 
 ## Building The Example
 
@@ -170,6 +179,7 @@ The built-in profiles are:
 - `ideogram4-q4_0`: draft 512x512/8 steps/CFG 7, balanced 1024x1024/20 steps/CFG 7, final 1024x1024/28 steps/CFG 7.
 - `flux2-klein-4b-q4_0`: draft 512x512/4 steps/CFG 1, balanced 768x768/6 steps/CFG 1, final 1024x1024/8 steps/CFG 1.
 - `z-image-turbo-q3_k`: draft 768x512/4 steps/CFG 1, balanced 1024x512/8 steps/CFG 1, final 1280x768/12 steps/CFG 1.
+- `sd15-controlnet-canny`: draft 512x512/12 steps/CFG 7.5, balanced 512x512/20 steps/CFG 7.5, final 768x768/28 steps/CFG 7.5. This profile defaults to `persistent_server` so C++ and Node keep the SD 1.5 base and ControlNet model loaded across jobs.
 
 Legacy helpers remain available:
 
@@ -216,24 +226,67 @@ settings.processTimeoutSeconds = 300;
 
 For `PersistentServer`, `ImageResult::outputPath` is the PNG decoded from `/sdcpp/v1/img_gen`, and `result.metadata["server_log"]` points to the managed server log when the addon launched the server. For `CliProcess`, `ImageResult::outputPath` is the PNG written by `sd-cli`, and `result.metadata["cli_log"]` points to the captured upstream log.
 
-## Image Inputs, ControlNet, And LoRA
+## Image Inputs, ControlNet, LoRA, Refine, And Upscale
 
-The persistent server backend supports image inputs through upstream's native HTTP API:
+Use typed factories when the task mode matters to routing, sidecars, and capability checks:
 
 ```cpp
-sd.createImage("Keep the composition, redesign as a polished product poster")
-    .imageToImage("inputs/sketch.png", 0.55f)
-    .mask("inputs/mask.png")
-    .control("inputs/pose_or_depth.png", 0.8f)
-    .lora("loras/product-style.safetensors", 0.7f)
+auto control = tcx::StableDiffusionRequest::controlNet(
+        "golden product workstation following the canny guide",
+        "inputs/control_canny.png",
+        0.85f)
     .size(1024, 1024)
-    .steps(12)
-    .run();
+    .stepsCount(12);
+
+sd.submit(control);
+
+auto variant = tcx::StableDiffusionRequest::imageToImage(
+        "Keep the composition, redesign as a polished product poster",
+        "inputs/source.png",
+        0.55f)
+    .mask("inputs/mask.png")
+    .lora("product-style.safetensors", 0.7f);
 ```
 
-`PersistentServer` supports image inputs and per-request LoRA stacks. `CliProcess` now supports image-to-image, mask/inpaint, and ControlNet through upstream `sd-cli` flags. Direct `InProcess` still returns a structured `BACKEND_UNSUPPORTED` error for those fields. Per-request LoRA also returns `BACKEND_UNSUPPORTED` outside `PersistentServer`.
+`PersistentServer` supports image inputs, inpaint masks, ControlNet images, per-request LoRA stacks, refine, and upscale request modes through upstream's native HTTP API. `CliProcess` supports image-to-image, mask/inpaint, ControlNet, refine, and upscale through upstream `sd-cli` flags. Direct `InProcess` still returns a structured `BACKEND_UNSUPPORTED` error for image inputs, ControlNet, LoRA, refine, and upscale.
 
 For LoRA, upstream `sd-server` scans `settings.loraModelDirectory`; pass `.lora(...)` paths relative to that folder, or pass absolute paths that live under that folder so the addon can convert them to server-relative names.
+
+The main example includes real local inputs:
+
+```text
+examples/ideogram4-basic/inputs/source.png
+examples/ideogram4-basic/inputs/mask.png
+examples/ideogram4-basic/inputs/control_canny.png
+examples/ideogram4-basic/jobs/sd15_controlnet_canny_job.json
+```
+
+ControlNet assets live in:
+
+```text
+examples/ideogram4-basic/bin/data/models/sd15-controlnet-canny/
+  v1-5-pruned-emaonly.safetensors
+  control_v11p_sd15_canny_fp16.safetensors
+```
+
+## Workflow Objects
+
+Use `GenerationProject` when a tool needs explicit lifecycle roots instead of ad hoc output paths:
+
+```cpp
+auto project = tcx::sd::GenerationProject::at("outputs", "poster-batch");
+auto settings = project.apply(tcx::sd::ModelProfile::ideogram4().runtime(tcx::sd::RuntimePreset::LowVram));
+
+sd.setupIdeogram4Async("bin/data/models/ideogram4-q4_0", settings);
+
+auto artifact = project.artifact("gold-poster");
+sd.submit(tcx::StableDiffusionRequest::textToImage("一张中文海报，文字写着本地生图")
+    .output(artifact.imagePath)
+    .metadata("project", project.name)
+    .metadata("sidecar", artifact.sidecarPath.string()));
+```
+
+`GenerationSession` binds a model profile, runtime preset, explicit project roots, resolved model paths, and backend capabilities without starting the runtime itself. `GenerationArtifact` records the image path, sidecar path, parent artifact, source inputs, metadata, and quality report. `BatchJob::seedSweep(...)` and `VariantJob::fromArtifact(...)` create concrete request sets for batch and variant workflows; the Node package exposes the same concepts as `GenerationSession`, `GenerationProject`, `BatchJob`, `createVariantJob(...)`, and `runBatchJob(...)`.
 
 ## Result Metadata Sidecars
 
@@ -289,7 +342,12 @@ packed = tcxsd_prompts.ideogram4_poster("一张展示本地 AI 生图工作流�
 ```js
 import {
   TcxSdError,
+  createBatchJob,
+  createControlNetRequest,
+  createGenerationSession,
+  createGenerationProject,
   createServerSession,
+  runBatchJob,
   promptPacks,
   runTextToImage
 } from "@trussc/tcx-stable-diffusion";
@@ -317,13 +375,46 @@ try {
 }
 ```
 
+ControlNet and batch workflows use the same Node runtime path:
+
+```js
+const project = createGenerationProject({ root: "../examples/ideogram4-basic/outputs", name: "node-controlnet" });
+
+await runTextToImage({
+  ...createControlNetRequest({
+    model: "sd15-controlnet-canny",
+    prompt: "golden product workstation following the canny guide",
+    controlImage: "../examples/ideogram4-basic/inputs/control_canny.png",
+    controlStrength: 0.85,
+    quality: "draft"
+  }),
+  project,
+  output: project.outputPath("controlnet-canny")
+});
+
+const batch = createBatchJob({
+  baseRequest: {
+    model: "flux2-klein-4b-q4_0",
+    prompt: "compact local generation UI in dark gold theme",
+    quality: "draft"
+  }
+}).seedSweep([101, 102, 103]);
+
+await runBatchJob(batch, { project });
+
+const sessionContext = createGenerationSession({ model: "sd15-controlnet-canny", runtimePreset: "lowVram", project });
+const draftRequest = sessionContext.request("draft", { prompt: "一张中文海报，文字写着本地生图" });
+```
+
 ## JSON Job Runner
 
 For Node or automation workflows, start with a JSON job file and let `tools/tcxsd_job.py` call the bundled runtime:
 
 ```powershell
 python tools\tcxsd_job.py validate examples\ideogram4-basic\jobs\ideogram4_poster_job.json
+python tools\tcxsd_job.py validate examples\ideogram4-basic\jobs\sd15_controlnet_canny_job.json
 python tools\tcxsd_job.py run examples\ideogram4-basic\jobs\ideogram4_poster_job.json
+python tools\tcxsd_job.py run examples\ideogram4-basic\jobs\sd15_controlnet_canny_job.json
 ```
 
 The runner writes:
@@ -346,6 +437,7 @@ The initial Node-facing package lives in `node/`. It does not call Python; it re
 cd node
 npm test
 node .\bin\tcxsd-node.mjs --job ..\examples\z-image-basic\jobs\z_image_turbo_wide_job.json
+node .\bin\tcxsd-node.mjs --model sd15-controlnet-canny --mode controlNet --control-image ..\examples\ideogram4-basic\inputs\control_canny.png --prompt "golden product workstation following the canny guide" --quality draft --runtime-preset lowVram
 ```
 
 Programmatic use:
@@ -405,13 +497,17 @@ image.setDirty();
 image.update();
 ```
 
-## Future API Surface
+## Committed Extended Surface
 
-These fields are now part of the public request shape. `PersistentServer` wires the image and LoRA fields first; the lower-level direct/CLI paths remain future work:
+These fields are now part of the public request shape. `PersistentServer` wires image inputs, ControlNet, LoRA, refine, and upscale through the server API. `CliProcess` wires image inputs, masks, ControlNet, refine, and upscale through `sd-cli`. Unsupported backend combinations return `BACKEND_UNSUPPORTED` with remediation hints instead of silently dropping fields:
 
 - `ImageRequest::initImage` for image-to-image
 - `ImageRequest::maskImage` for inpainting
 - `ImageRequest::controlImage` and `controlStrength` for ControlNet
 - `ImageRequest::loras` for LoRA stacks
+- `ImageRequest::refineSourceImage` and `upscaleFactor` for refine/upscale
+
+These model path fields remain reserved for broader model families:
+
 - `ModelPaths::audioVae` for audio/video model families
 - `ModelPaths::highNoiseDiffusionModel` for two-stage/video pipelines

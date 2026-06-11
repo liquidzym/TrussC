@@ -16,6 +16,17 @@ enum class ProfileKind {
     Ideogram4,
     Flux2Klein,
     ZImageTurbo,
+    SD15ControlNetCanny,
+};
+
+enum class WorkflowMode {
+    TextToImage,
+    ImageToImage,
+    Inpaint,
+    ControlNet,
+    LoraStack,
+    Refine,
+    Upscale,
 };
 
 struct ModelProfile {
@@ -40,7 +51,7 @@ struct ModelProfile {
 
 constexpr const char* kIdeogramVerifiedPrompt = R"tcxsd({"high_level_description":"A square 1024 x 1024 luxury fashion magazine cover featuring exactly one short chubby fluffy cat as the main model. The cat sits on a soft ivory studio floor, facing the viewer with a stylish calm expression, wearing tiny black sunglasses, a red silk scarf, and a small gold collar charm. In front of the cat on the floor is a wide horizontal luxury nameplate that clearly reads ideogram4.cpp. The whole design feels premium, fashionable, clean, and editorial.","style_description":{"aesthetics":"luxury fashion magazine cover, high-end pet couture campaign, minimalist editorial design, elegant studio photography, soft paper texture, refined typography, fashionable and polished","lighting":"Soft diffused studio lighting, gentle spotlight on the cat, subtle floor shadow, warm ivory highlights, clean separation between subject and background","photo":"high-resolution fashion editorial photography look, front-facing cat portrait, crisp fur details, glossy sunglasses, clear readable nameplate text, shallow depth of field","medium":"mixed media fashion photography and premium editorial graphic design","color_palette":["#F4EFE7","#111111","#D8B56D","#B73A3A","#FFFFFF","#8A7A6A"]},"compositional_deconstruction":{"canvas":"Square 1024 x 1024 canvas with a normal upright orientation. Do not rotate the poster or any text. Use a clean fashion magazine cover layout.","background":"Warm ivory studio backdrop with subtle paper grain, a soft spotlight gradient, faint floor shadow, and a few minimal gold editorial lines. The background is spacious, premium, and uncluttered.","layout":"Top center has a small elegant headline. Center area features one cat as the main fashion model. Lower foreground has a wide horizontal luxury nameplate placed on the floor in front of the cat. Bottom center has a small footer. All text is horizontal, upright, and readable left to right.","elements":[{"type":"text","desc":"Top center headline reading LOOK WHAT I FOUND in a refined high-fashion serif font. The headline is horizontal, centered, elegant, and secondary to the nameplate text."},{"type":"obj","desc":"Exactly one short chubby fluffy cat sitting in the center like a luxury fashion model. The cat has a large round head, compact body, short legs, soft detailed fur, expressive eyes, and a calm confident pose. The cat is cute and rounded, not tall, not stretched, not duplicated."},{"type":"obj","desc":"Tiny glossy black sunglasses worn naturally by the cat, slightly oversized but still showing the cat face clearly. The sunglasses add a chic fashion-editorial attitude."},{"type":"obj","desc":"A red silk scarf tied neatly around the cat neck, with soft folds and a couture feeling. The scarf must not cover the cat face or the nameplate."},{"type":"obj","desc":"A small gold collar charm or fashion accessory under the scarf, subtle and premium, adding a luxury campaign detail."},{"type":"obj","desc":"In the lower foreground, place a wide horizontal luxury nameplate on the floor in front of the cat. The nameplate is low, flat, landscape-oriented, much wider than tall, like a fashion show seat card or premium display plaque. It is centered, front-facing, level, and fully visible. It must not become vertical, tall, standing, rotated, or side-facing."},{"type":"text","desc":"Print the exact text ideogram4.cpp only on the wide horizontal nameplate. Use clean bold black lettering, perfectly spelled, lowercase, with the number 4 and .cpp extension. The text must fit completely inside the nameplate, stay horizontal, and be readable from left to right."},{"type":"obj","desc":"Add sparse premium editorial accents around the edges: thin gold lines, small code brackets, tiny cursor marks, subtle dots, and minimal geometric details. No extra cats, no stickers, no animal faces, no busy decorations."},{"type":"text","desc":"Bottom center footer reading tiny paws, big compile energy in a small refined monospace or editorial font. The footer is horizontal, centered, understated, and much smaller than the nameplate text."}]}})tcxsd";
 
-const std::array<ModelProfile, 3> kProfiles = {{
+const std::array<ModelProfile, 4> kProfiles = {{
     {
         ProfileKind::Ideogram4,
         "ideogram4-q4_0",
@@ -98,6 +109,25 @@ const std::array<ModelProfile, 3> kProfiles = {{
         "A cinematic wide composition of a local creative coding studio, a Windows CUDA workstation generating images in real time, polished technical atmosphere, clear subject hierarchy, refined color and lighting",
         "low quality, blurry, distorted perspective, clutter, watermark, signature",
     },
+    {
+        ProfileKind::SD15ControlNetCanny,
+        "sd15-controlnet-canny",
+        "SD 1.5 ControlNet Canny",
+        "sd15-controlnet",
+        "control-net",
+        512,
+        512,
+        20,
+        5120,
+        7.5f,
+        false,
+        "A clean architectural product scene guided by a Canny control image",
+        "tcxStableDiffusion",
+        "controlled composition, clear edges, polished local AI generation demo",
+        "#17130E, #2B2419, #C59A42, #E1C16A, #F4E6C1",
+        "A clean architectural product scene guided by a Canny control image, warm studio lighting, precise edge-following composition, dark charcoal and earthy-gold visual direction",
+        "low quality, blurry, distorted edges, clutter, watermark, signature",
+    },
 }};
 
 constexpr float kPanelWidth = 460.0f;
@@ -127,6 +157,9 @@ int profileIndexForId(std::string text) {
     }
     if (text == "z" || text == "z-image" || text == "zimage") {
         return 2;
+    }
+    if (text == "controlnet" || text == "control-net" || text == "sd15-controlnet" || text == "sd15-controlnet-canny") {
+        return 3;
     }
     return 0;
 }
@@ -159,7 +192,7 @@ int envInt(const char* name, int fallback) {
     }
 }
 
-std::string trim(std::string text) {
+std::string trimText(std::string text) {
     auto isSpace = [](unsigned char c) {
         return std::isspace(c) != 0;
     };
@@ -177,7 +210,7 @@ std::vector<std::string> splitCsv(const std::string& text) {
     std::stringstream stream(text);
     std::string item;
     while (std::getline(stream, item, ',')) {
-        item = trim(std::move(item));
+        item = trimText(std::move(item));
         if (!item.empty()) {
             values.push_back(std::move(item));
         }
@@ -202,6 +235,18 @@ ImVec4 colorFromBytes(int r, int g, int b, float a = 1.0f) {
 bool pathExists(const std::filesystem::path& path) {
     std::error_code ec;
     return std::filesystem::exists(path, ec) && !ec;
+}
+
+std::filesystem::path resolveExamplePath(const char* text) {
+    std::string value = trimText(text ? text : "");
+    if (value.empty()) {
+        return {};
+    }
+    std::filesystem::path path = value;
+    if (path.is_absolute()) {
+        return path;
+    }
+    return exampleRoot() / path;
 }
 
 std::vector<std::filesystem::path> cjkFontCandidates() {
@@ -273,46 +318,46 @@ void setupImGuiStyle() {
     style.PopupBorderSize = 1.0f;
 
     auto& colors = style.Colors;
-    colors[ImGuiCol_Text] = colorFromBytes(232, 238, 247);
-    colors[ImGuiCol_TextDisabled] = colorFromBytes(126, 137, 153);
-    colors[ImGuiCol_WindowBg] = colorFromBytes(13, 17, 23, 0.97f);
-    colors[ImGuiCol_ChildBg] = colorFromBytes(18, 24, 33, 0.88f);
-    colors[ImGuiCol_PopupBg] = colorFromBytes(19, 25, 34, 0.98f);
-    colors[ImGuiCol_Border] = colorFromBytes(45, 56, 72, 0.86f);
+    colors[ImGuiCol_Text] = colorFromBytes(238, 231, 214);
+    colors[ImGuiCol_TextDisabled] = colorFromBytes(143, 132, 112);
+    colors[ImGuiCol_WindowBg] = colorFromBytes(13, 12, 10, 0.98f);
+    colors[ImGuiCol_ChildBg] = colorFromBytes(24, 21, 16, 0.90f);
+    colors[ImGuiCol_PopupBg] = colorFromBytes(27, 23, 17, 0.98f);
+    colors[ImGuiCol_Border] = colorFromBytes(83, 70, 44, 0.90f);
     colors[ImGuiCol_BorderShadow] = colorFromBytes(0, 0, 0, 0.0f);
-    colors[ImGuiCol_FrameBg] = colorFromBytes(29, 41, 58, 0.96f);
-    colors[ImGuiCol_FrameBgHovered] = colorFromBytes(42, 61, 85, 1.0f);
-    colors[ImGuiCol_FrameBgActive] = colorFromBytes(49, 78, 112, 1.0f);
-    colors[ImGuiCol_TitleBg] = colorFromBytes(11, 15, 21, 1.0f);
-    colors[ImGuiCol_TitleBgActive] = colorFromBytes(18, 28, 41, 1.0f);
-    colors[ImGuiCol_TitleBgCollapsed] = colorFromBytes(11, 15, 21, 0.86f);
-    colors[ImGuiCol_MenuBarBg] = colorFromBytes(18, 24, 33, 1.0f);
-    colors[ImGuiCol_ScrollbarBg] = colorFromBytes(10, 14, 20, 0.78f);
-    colors[ImGuiCol_ScrollbarGrab] = colorFromBytes(54, 69, 89, 1.0f);
-    colors[ImGuiCol_ScrollbarGrabHovered] = colorFromBytes(75, 94, 121, 1.0f);
-    colors[ImGuiCol_ScrollbarGrabActive] = colorFromBytes(89, 112, 144, 1.0f);
-    colors[ImGuiCol_CheckMark] = colorFromBytes(57, 217, 138, 1.0f);
-    colors[ImGuiCol_SliderGrab] = colorFromBytes(96, 165, 250, 1.0f);
-    colors[ImGuiCol_SliderGrabActive] = colorFromBytes(45, 212, 191, 1.0f);
-    colors[ImGuiCol_Button] = colorFromBytes(37, 74, 120, 0.94f);
-    colors[ImGuiCol_ButtonHovered] = colorFromBytes(50, 101, 163, 1.0f);
-    colors[ImGuiCol_ButtonActive] = colorFromBytes(42, 151, 132, 1.0f);
-    colors[ImGuiCol_Header] = colorFromBytes(35, 58, 89, 0.95f);
-    colors[ImGuiCol_HeaderHovered] = colorFromBytes(50, 84, 128, 1.0f);
-    colors[ImGuiCol_HeaderActive] = colorFromBytes(42, 151, 132, 1.0f);
-    colors[ImGuiCol_Separator] = colorFromBytes(56, 68, 86, 0.72f);
-    colors[ImGuiCol_SeparatorHovered] = colorFromBytes(96, 165, 250, 0.88f);
-    colors[ImGuiCol_SeparatorActive] = colorFromBytes(45, 212, 191, 1.0f);
-    colors[ImGuiCol_ResizeGrip] = colorFromBytes(96, 165, 250, 0.24f);
-    colors[ImGuiCol_ResizeGripHovered] = colorFromBytes(96, 165, 250, 0.56f);
-    colors[ImGuiCol_ResizeGripActive] = colorFromBytes(45, 212, 191, 0.78f);
-    colors[ImGuiCol_Tab] = colorFromBytes(24, 34, 48, 1.0f);
-    colors[ImGuiCol_TabHovered] = colorFromBytes(46, 91, 147, 1.0f);
-    colors[ImGuiCol_TabActive] = colorFromBytes(35, 58, 89, 1.0f);
-    colors[ImGuiCol_TabUnfocused] = colorFromBytes(19, 25, 34, 1.0f);
-    colors[ImGuiCol_TabUnfocusedActive] = colorFromBytes(25, 38, 56, 1.0f);
-    colors[ImGuiCol_TextSelectedBg] = colorFromBytes(37, 99, 235, 0.38f);
-    colors[ImGuiCol_NavHighlight] = colorFromBytes(45, 212, 191, 0.74f);
+    colors[ImGuiCol_FrameBg] = colorFromBytes(38, 32, 23, 0.96f);
+    colors[ImGuiCol_FrameBgHovered] = colorFromBytes(60, 48, 30, 1.0f);
+    colors[ImGuiCol_FrameBgActive] = colorFromBytes(86, 64, 34, 1.0f);
+    colors[ImGuiCol_TitleBg] = colorFromBytes(11, 10, 8, 1.0f);
+    colors[ImGuiCol_TitleBgActive] = colorFromBytes(34, 27, 17, 1.0f);
+    colors[ImGuiCol_TitleBgCollapsed] = colorFromBytes(11, 10, 8, 0.86f);
+    colors[ImGuiCol_MenuBarBg] = colorFromBytes(24, 21, 16, 1.0f);
+    colors[ImGuiCol_ScrollbarBg] = colorFromBytes(12, 10, 8, 0.82f);
+    colors[ImGuiCol_ScrollbarGrab] = colorFromBytes(75, 61, 37, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = colorFromBytes(109, 84, 44, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabActive] = colorFromBytes(141, 105, 48, 1.0f);
+    colors[ImGuiCol_CheckMark] = colorFromBytes(218, 170, 74, 1.0f);
+    colors[ImGuiCol_SliderGrab] = colorFromBytes(197, 154, 66, 1.0f);
+    colors[ImGuiCol_SliderGrabActive] = colorFromBytes(225, 193, 106, 1.0f);
+    colors[ImGuiCol_Button] = colorFromBytes(95, 69, 30, 0.94f);
+    colors[ImGuiCol_ButtonHovered] = colorFromBytes(129, 93, 38, 1.0f);
+    colors[ImGuiCol_ButtonActive] = colorFromBytes(172, 126, 47, 1.0f);
+    colors[ImGuiCol_Header] = colorFromBytes(63, 48, 27, 0.95f);
+    colors[ImGuiCol_HeaderHovered] = colorFromBytes(103, 75, 35, 1.0f);
+    colors[ImGuiCol_HeaderActive] = colorFromBytes(166, 122, 48, 1.0f);
+    colors[ImGuiCol_Separator] = colorFromBytes(91, 75, 48, 0.78f);
+    colors[ImGuiCol_SeparatorHovered] = colorFromBytes(197, 154, 66, 0.88f);
+    colors[ImGuiCol_SeparatorActive] = colorFromBytes(225, 193, 106, 1.0f);
+    colors[ImGuiCol_ResizeGrip] = colorFromBytes(197, 154, 66, 0.24f);
+    colors[ImGuiCol_ResizeGripHovered] = colorFromBytes(197, 154, 66, 0.56f);
+    colors[ImGuiCol_ResizeGripActive] = colorFromBytes(225, 193, 106, 0.78f);
+    colors[ImGuiCol_Tab] = colorFromBytes(34, 28, 20, 1.0f);
+    colors[ImGuiCol_TabHovered] = colorFromBytes(109, 80, 37, 1.0f);
+    colors[ImGuiCol_TabActive] = colorFromBytes(68, 51, 28, 1.0f);
+    colors[ImGuiCol_TabUnfocused] = colorFromBytes(22, 19, 15, 1.0f);
+    colors[ImGuiCol_TabUnfocusedActive] = colorFromBytes(43, 34, 22, 1.0f);
+    colors[ImGuiCol_TextSelectedBg] = colorFromBytes(154, 112, 44, 0.42f);
+    colors[ImGuiCol_NavHighlight] = colorFromBytes(225, 193, 106, 0.74f);
 }
 
 void setupImGuiLookAndFeel() {
@@ -425,6 +470,13 @@ void tcApp::setup() {
     imguiSetup();
     setupImGuiLookAndFeel();
 
+    copyText(projectName_, "workflow-demo");
+    copyText(initImagePath_, "inputs/source.png");
+    copyText(maskImagePath_, "inputs/mask.png");
+    copyText(controlImagePath_, "inputs/control_canny.png");
+    copyText(sourceImagePath_, "inputs/source.png");
+    copyText(loraPath_, "loras/style.safetensors");
+
     selectModel(0, true);
     setupSmokeMode();
 
@@ -493,7 +545,7 @@ void tcApp::update() {
 }
 
 void tcApp::draw() {
-    clear(0.07f, 0.075f, 0.085f);
+    clear(0.045f, 0.040f, 0.032f);
 
     if (preview_.isAllocated()) {
         const float margin = kPanelWidth + 30.0f;
@@ -535,6 +587,11 @@ void tcApp::setupSmokeMode() {
 
     copyEnvText("TCXSD_SMOKE_PROMPT", prompt_);
     copyEnvText("TCXSD_SMOKE_NEGATIVE", negativePrompt_);
+    copyEnvText("TCXSD_SMOKE_INIT_IMAGE", initImagePath_);
+    copyEnvText("TCXSD_SMOKE_MASK_IMAGE", maskImagePath_);
+    copyEnvText("TCXSD_SMOKE_CONTROL_IMAGE", controlImagePath_);
+    copyEnvText("TCXSD_SMOKE_SOURCE_IMAGE", sourceImagePath_);
+    copyEnvText("TCXSD_SMOKE_LORA", loraPath_);
     width_ = envInt("TCXSD_SMOKE_WIDTH", width_);
     height_ = envInt("TCXSD_SMOKE_HEIGHT", height_);
     steps_ = envInt("TCXSD_SMOKE_STEPS", steps_);
@@ -544,6 +601,17 @@ void tcApp::setupSmokeMode() {
     }
     if (envExists("TCXSD_SMOKE_COMPOSE")) {
         usePromptComposer_ = envEnabled("TCXSD_SMOKE_COMPOSE") && profileAt(selectedModel_).supportsIdeogramComposer;
+    }
+    if (const char* workflow = std::getenv("TCXSD_SMOKE_WORKFLOW")) {
+        std::string text = workflow;
+        text = trimText(std::move(text));
+        if (text == "img2img" || text == "image_to_image") workflowMode_ = static_cast<int>(WorkflowMode::ImageToImage);
+        else if (text == "inpaint") workflowMode_ = static_cast<int>(WorkflowMode::Inpaint);
+        else if (text == "controlnet" || text == "control_net") workflowMode_ = static_cast<int>(WorkflowMode::ControlNet);
+        else if (text == "lora" || text == "lora_stack") workflowMode_ = static_cast<int>(WorkflowMode::LoraStack);
+        else if (text == "refine") workflowMode_ = static_cast<int>(WorkflowMode::Refine);
+        else if (text == "upscale") workflowMode_ = static_cast<int>(WorkflowMode::Upscale);
+        else workflowMode_ = static_cast<int>(WorkflowMode::TextToImage);
     }
     autoSave_ = true;
     writeSmokeLog("smoke enabled");
@@ -595,14 +663,28 @@ void tcApp::initializeModel() {
     status_ = "正在初始化模型";
     lastError_.clear();
 
+    if (profileAt(selectedModel_).kind == ProfileKind::SD15ControlNetCanny) {
+        lastError_ = "BACKEND_UNSUPPORTED: SD 1.5 ControlNet Canny runs through the tracked Node CLI and JSON job examples. The C++ workbench blocks this native path because GUI smoke testing found a Windows native backend access violation during ControlNet startup.";
+        status_ = "初始化失败";
+        writeSmokeLog("model failed: " + lastError_);
+        if (smokeMode_) {
+            std::_Exit(0);
+        }
+        return;
+    }
+
 #if defined(__APPLE__)
     auto settings = tcx::sd::RuntimeSettings::macMetal();
 #else
-    auto settings = lowVramMode_
-        ? tcx::sd::RuntimeSettings::lowVramCuda()
-        : tcx::sd::RuntimeSettings::windowsCuda();
+    auto settings = tcx::sd::ModelProfile::byId(profileAt(selectedModel_).id).runtime(
+        lowVramMode_ ? tcx::sd::RuntimePreset::LowVram : tcx::sd::RuntimePreset::Default);
 #endif
-    settings.outputDirectory = exampleRoot() / "outputs" / profileAt(selectedModel_).id / "native";
+    auto project = tcx::sd::GenerationProject::at(exampleRoot() / "outputs", projectName_.data());
+    settings = project.apply(settings);
+    settings.outputDirectory = project.outputRoot / profileAt(selectedModel_).id / "native";
+    settings.tempDirectory = project.tempRoot;
+    settings.cacheDirectory = project.cacheRoot;
+    settings.loraModelDirectory = exampleRoot() / "bin" / "data" / "models" / "loras";
 
     bool started = false;
     switch (profileAt(selectedModel_).kind) {
@@ -614,6 +696,9 @@ void tcApp::initializeModel() {
             break;
         case ProfileKind::ZImageTurbo:
             started = sd_.setupZImageTurboAsync(modelDir_, settings);
+            break;
+        case ProfileKind::SD15ControlNetCanny:
+            started = sd_.setupSD15ControlNetCannyAsync(modelDir_, settings);
             break;
     }
 
@@ -694,13 +779,71 @@ void tcApp::submitPrompt() {
     }
 
     const auto& profile = profileAt(selectedModel_);
-    tcx::StableDiffusionRequest request = (usePromptComposer_ && profile.supportsIdeogramComposer)
-        ? tcx::StableDiffusionRequest::fromIdeogram4(buildPromptTemplate())
-        : tcx::StableDiffusionRequest::fromPrompt(prompt_.data());
+    const auto workflow = static_cast<WorkflowMode>(std::clamp(workflowMode_, 0, 6));
+    auto basePrompt = std::string(prompt_.data());
+    if (usePromptComposer_ && profile.supportsIdeogramComposer) {
+        auto composed = tcx::StableDiffusionRequest::fromIdeogram4(buildPromptTemplate());
+        basePrompt = composed.prompt;
+        copyText(prompt_, composed.prompt);
+        copyText(negativePrompt_, composed.negativePrompt);
+    }
+
+    tcx::StableDiffusionRequest request;
+    if (workflow == WorkflowMode::ImageToImage) {
+        const auto image = resolveExamplePath(initImagePath_.data());
+        if (image.empty()) {
+            lastError_ = "Image-to-image requires an init image path.";
+            status_ = "缺少输入图";
+            return;
+        }
+        request = tcx::StableDiffusionRequest::imageToImage(basePrompt, image, strength_);
+    } else if (workflow == WorkflowMode::Inpaint) {
+        const auto image = resolveExamplePath(initImagePath_.data());
+        const auto mask = resolveExamplePath(maskImagePath_.data());
+        if (image.empty() || mask.empty()) {
+            lastError_ = "Inpaint requires both init image and mask image paths.";
+            status_ = "缺少修补输入";
+            return;
+        }
+        request = tcx::StableDiffusionRequest::inpaint(basePrompt, image, mask, strength_);
+    } else if (workflow == WorkflowMode::ControlNet) {
+        const auto control = resolveExamplePath(controlImagePath_.data());
+        if (control.empty()) {
+            lastError_ = "ControlNet requires a control image path.";
+            status_ = "缺少控制图";
+            return;
+        }
+        request = tcx::StableDiffusionRequest::controlNet(basePrompt, control, controlStrength_);
+    } else if (workflow == WorkflowMode::LoraStack) {
+        const auto lora = resolveExamplePath(loraPath_.data());
+        if (lora.empty()) {
+            lastError_ = "LoRA stack requires a LoRA file path.";
+            status_ = "缺少 LoRA";
+            return;
+        }
+        request = tcx::StableDiffusionRequest::loraStack(basePrompt, {{lora, 0.8f}});
+    } else if (workflow == WorkflowMode::Refine) {
+        const auto source = resolveExamplePath(sourceImagePath_.data());
+        if (source.empty()) {
+            lastError_ = "Refine requires a source image path.";
+            status_ = "缺少源图";
+            return;
+        }
+        request = tcx::StableDiffusionRequest::refine(basePrompt, source, strength_);
+    } else if (workflow == WorkflowMode::Upscale) {
+        const auto source = resolveExamplePath(sourceImagePath_.data());
+        if (source.empty()) {
+            lastError_ = "Upscale requires a source image path.";
+            status_ = "缺少源图";
+            return;
+        }
+        request = tcx::StableDiffusionRequest::upscale(basePrompt, source, upscaleFactor_);
+    } else {
+        request = tcx::StableDiffusionRequest::textToImage(basePrompt);
+    }
 
     if (usePromptComposer_ && profile.supportsIdeogramComposer) {
-        copyText(prompt_, request.prompt);
-        copyText(negativePrompt_, request.negativePrompt);
+        request.negativePrompt = negativePrompt_.data();
     } else {
         request.negative(negativePrompt_.data());
     }
@@ -713,6 +856,7 @@ void tcApp::submitPrompt() {
     request.metadata["model"] = profile.id;
     request.metadata["prompt_profile"] = profile.promptProfile;
     request.metadata["prompt_kind"] = profile.promptKind;
+    request.metadata["project_name"] = projectName_.data();
 
     if (seed_ >= 0) {
         request.seedValue(seed_);
@@ -732,10 +876,13 @@ void tcApp::submitPrompt() {
 
 void tcApp::adoptResult(tcx::StableDiffusionImage&& result) {
     const auto& profile = profileAt(selectedModel_);
-    if (!result.ok || !result.hasImage()) {
+    const bool hasPixels = result.hasImage();
+    const bool hasOutputFile = !result.outputPath.empty() && std::filesystem::exists(result.outputPath);
+    if (!result.ok || (!hasPixels && !hasOutputFile)) {
         lastError_ = result.error;
         if (autoSave_) {
-            const auto outputDir = exampleRoot() / "outputs" / profile.id;
+            const auto project = tcx::sd::GenerationProject::at(exampleRoot() / "outputs", projectName_.data());
+            const auto outputDir = project.outputRoot / profile.id;
             std::filesystem::create_directories(outputDir);
             lastMetadata_ = outputDir / (std::string(profile.id) + "_job_" + std::to_string(result.jobId) + "_failed.json");
             result.saveMetadata(lastMetadata_);
@@ -749,7 +896,7 @@ void tcApp::adoptResult(tcx::StableDiffusionImage&& result) {
         return;
     }
 
-    if (looksLikeSafetyPlaceholder(result.pixels)) {
+    if (hasPixels && looksLikeSafetyPlaceholder(result.pixels)) {
         result.metadata["placeholder_detected"] = "true";
         result.metadata["placeholder_detector"] = "neutral_gray_warning_screen";
         result.metadata["placeholder_note"] = "The model generated a neutral warning-style placeholder image; this is image content, not an addon safety filter.";
@@ -759,26 +906,40 @@ void tcApp::adoptResult(tcx::StableDiffusionImage&& result) {
     }
 
     if (autoSave_) {
-        const auto outputDir = exampleRoot() / "outputs" / profile.id;
+        const auto project = tcx::sd::GenerationProject::at(exampleRoot() / "outputs", projectName_.data());
+        const auto outputDir = project.outputRoot / profile.id;
         std::filesystem::create_directories(outputDir);
         lastOutput_ = outputDir / (std::string(profile.id) + "_job_" + std::to_string(result.jobId) + ".png");
         lastMetadata_ = lastOutput_;
         lastMetadata_.replace_extension(".json");
         result.metadata["saved_image_path"] = lastOutput_.string();
-        result.saveWithMetadata(lastOutput_, lastMetadata_);
+        if (hasPixels) {
+            result.saveWithMetadata(lastOutput_, lastMetadata_);
+        } else {
+            result.metadata["preview_decode"] = "skipped_for_cli_process";
+            std::error_code copyError;
+            std::filesystem::copy_file(result.outputPath, lastOutput_, std::filesystem::copy_options::overwrite_existing, copyError);
+            if (copyError) {
+                result.metadata["file_copy_error"] = copyError.message();
+                lastError_ = "生成完成，但复制输出文件失败: " + copyError.message();
+            }
+            result.saveMetadata(lastMetadata_);
+        }
         writeSmokeLog("saved: " + lastOutput_.string());
         writeSmokeLog("saved metadata: " + lastMetadata_.string());
     }
 
-    preview_.allocate(result.pixels.getWidth(), result.pixels.getHeight(), result.pixels.getChannels());
-    std::memcpy(preview_.getPixelsData(), result.pixels.getData(), result.pixels.getTotalBytes());
-    preview_.setDirty();
-    preview_.update();
+    if (hasPixels) {
+        preview_.allocate(result.pixels.getWidth(), result.pixels.getHeight(), result.pixels.getChannels());
+        std::memcpy(preview_.getPixelsData(), result.pixels.getData(), result.pixels.getTotalBytes());
+        preview_.setDirty();
+        preview_.update();
+    }
     if (smokeMode_) {
         smokeExitRequested_ = true;
     }
 
-    status_ = "生成完成";
+    status_ = hasPixels ? "生成完成" : "生成完成，已保存文件";
 }
 
 void tcApp::drawGui() {
@@ -788,7 +949,7 @@ void tcApp::drawGui() {
     ImGui::SetNextWindowSize(ImVec2(kPanelWidth, 850), ImGuiCond_FirstUseEver);
     ImGui::Begin("tcxStableDiffusion 多模型工作台", nullptr, ImGuiWindowFlags_NoCollapse);
 
-    ImGui::TextColored(colorFromBytes(45, 212, 191), "状态");
+    ImGui::TextColored(colorFromBytes(225, 193, 106), "状态");
     ImGui::SameLine();
     ImGui::TextWrapped("%s", status_.c_str());
     if (!lastError_.empty()) {
@@ -821,6 +982,25 @@ void tcApp::drawGui() {
     ImGui::PushStyleColor(ImGuiCol_Text, colorFromBytes(168, 180, 198));
     ImGui::TextWrapped("%s", modelDir_.string().c_str());
     ImGui::PopStyleColor();
+
+    ImGui::SeparatorText("工作流");
+    const char* workflowLabels[] = {
+        "文生图",
+        "图生图",
+        "局部重绘",
+        "ControlNet Canny",
+        "LoRA 风格",
+        "细化",
+        "放大/细化",
+    };
+    ImGui::TextUnformatted("任务类型");
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::Combo("##workflow", &workflowMode_, workflowLabels, 7)) {
+        if (static_cast<WorkflowMode>(workflowMode_) == WorkflowMode::ControlNet && selectedModel_ != 3 && !busy) {
+            selectModel(3, true);
+        }
+    }
+    inputTextFullWidth("项目名", "##project_name", projectName_);
 
     if (busy) {
         ImGui::BeginDisabled();
@@ -867,6 +1047,29 @@ void tcApp::drawGui() {
     }
     inputTextMultilineFullWidth("提示词", "##prompt", prompt_, 150.0f);
     inputTextMultilineFullWidth("反向提示词", "##negative_prompt", negativePrompt_, 82.0f);
+
+    const auto workflow = static_cast<WorkflowMode>(std::clamp(workflowMode_, 0, 6));
+    if (workflow == WorkflowMode::ImageToImage || workflow == WorkflowMode::Inpaint) {
+        inputTextFullWidth("输入图路径", "##init_image", initImagePath_);
+        sliderFloatFullWidth("重绘强度", "##strength_img", &strength_, 0.05f, 1.0f);
+    }
+    if (workflow == WorkflowMode::Inpaint) {
+        inputTextFullWidth("遮罩图路径", "##mask_image", maskImagePath_);
+    }
+    if (workflow == WorkflowMode::ControlNet) {
+        inputTextFullWidth("ControlNet 控制图路径", "##control_image", controlImagePath_);
+        sliderFloatFullWidth("ControlNet 强度", "##control_strength", &controlStrength_, 0.0f, 2.0f);
+    }
+    if (workflow == WorkflowMode::LoraStack) {
+        inputTextFullWidth("LoRA 文件路径", "##lora_path", loraPath_);
+    }
+    if (workflow == WorkflowMode::Refine || workflow == WorkflowMode::Upscale) {
+        inputTextFullWidth("源图路径", "##source_image", sourceImagePath_);
+        sliderFloatFullWidth("细化强度", "##strength_refine", &strength_, 0.05f, 1.0f);
+    }
+    if (workflow == WorkflowMode::Upscale) {
+        sliderFloatFullWidth("放大倍率", "##upscale_factor", &upscaleFactor_, 1.0f, 4.0f);
+    }
 
     ImGui::SeparatorText("生成参数");
     sliderIntFullWidth("宽度", "##width", &width_, 512, 1536);

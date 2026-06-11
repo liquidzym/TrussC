@@ -41,6 +41,12 @@ private:
     std::array<char, 256> templateText_{};
     std::array<char, 512> templateStyle_{};
     std::array<char, 256> templatePalette_{};
+    std::array<char, 512> initImagePath_{};
+    std::array<char, 512> maskImagePath_{};
+    std::array<char, 512> controlImagePath_{};
+    std::array<char, 512> sourceImagePath_{};
+    std::array<char, 512> loraPath_{};
+    std::array<char, 128> projectName_{};
 
     std::filesystem::path modelDir_;
     std::filesystem::path lastOutput_;
@@ -54,6 +60,10 @@ private:
     int steps_ = 8;
     int seed_ = -1;
     float cfgScale_ = 1.0f;
+    float strength_ = 0.75f;
+    float controlStrength_ = 0.9f;
+    float upscaleFactor_ = 2.0f;
+    int workflowMode_ = 0;
     bool lowVramMode_ = true;
     bool autoSave_ = true;
     bool usePromptComposer_ = true;

@@ -162,14 +162,33 @@ export const modelProfiles = {
       lowVram: { backend: "cuda0,te=cpu", paramsBackend: "cpu", offloadToCpu: true, diffusionFlashAttention: true, mmap: true, streamLayers: true, maxVramGiB: 6 },
       rtx4090FullSpeed: { backend: "cuda0", paramsBackend: "cuda0", offloadToCpu: false, diffusionFlashAttention: true, mmap: true, streamLayers: false, maxVramGiB: 0 }
     }
+  },
+  "sd15-controlnet-canny": {
+    family: "SD 1.5 ControlNet Canny",
+    assets: {
+      model: "v1-5-pruned-emaonly.safetensors",
+      control_net: "control_v11p_sd15_canny_fp16.safetensors"
+    },
+    quality: {
+      draft: { width: 512, height: 512, steps: 12, cfgScale: 7.5, sampler: "euler" },
+      balanced: { width: 512, height: 512, steps: 20, cfgScale: 7.5, sampler: "euler" },
+      final: { width: 768, height: 768, steps: 28, cfgScale: 7.5, sampler: "euler" }
+    },
+    runtime: {
+      default: { backend: "cuda0", paramsBackend: "cpu", offloadToCpu: true, diffusionFlashAttention: true, mmap: true, streamLayers: false, maxVramGiB: 0 },
+      lowVram: { backend: "cuda0", paramsBackend: "cpu", offloadToCpu: true, diffusionFlashAttention: true, mmap: true, streamLayers: true, maxVramGiB: 6 },
+      rtx4090FullSpeed: { backend: "cuda0", paramsBackend: "cuda0", offloadToCpu: false, diffusionFlashAttention: true, mmap: true, streamLayers: false, maxVramGiB: 0 }
+    }
   }
 };
 
 const roleArgs = {
+  model: "-m",
   diffusion: "--diffusion-model",
   uncond_diffusion: "--uncond-diffusion-model",
   llm: "--llm",
-  vae: "--vae"
+  vae: "--vae",
+  control_net: "--control-net"
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -337,6 +356,127 @@ function readPngSize(filePath) {
   } catch {
     return undefined;
   }
+}
+
+export const requestModes = {
+  TEXT_TO_IMAGE: "text_to_image",
+  IMAGE_TO_IMAGE: "image_to_image",
+  INPAINT: "inpaint",
+  CONTROL_NET: "control_net",
+  LORA_STACK: "lora_stack",
+  REFINE: "refine",
+  UPSCALE: "upscale"
+};
+
+function withRequestMetadata(options, requestMode, metadata = {}) {
+  return {
+    ...options,
+    requestMode,
+    metadata: {
+      ...(options.metadata || {}),
+      ...metadata,
+      request_mode: requestMode
+    }
+  };
+}
+
+export function createTextToImageRequest(options = {}) {
+  return withRequestMetadata(options, requestModes.TEXT_TO_IMAGE);
+}
+
+export function createImageToImageRequest(options = {}) {
+  if (!options.initImage) throw new TcxSdError("image_to_image requires initImage", { code: errorCodes.MODEL_ASSET_MISSING });
+  return withRequestMetadata({ ...options, strength: options.strength ?? 0.75 }, requestModes.IMAGE_TO_IMAGE, {
+    init_image: String(options.initImage),
+    strength: String(options.strength ?? 0.75)
+  });
+}
+
+export function createInpaintRequest(options = {}) {
+  if (!options.initImage || !options.maskImage) {
+    throw new TcxSdError("inpaint requires initImage and maskImage", { code: errorCodes.MODEL_ASSET_MISSING });
+  }
+  return withRequestMetadata({ ...options, strength: options.strength ?? 0.75 }, requestModes.INPAINT, {
+    init_image: String(options.initImage),
+    mask_image: String(options.maskImage),
+    strength: String(options.strength ?? 0.75)
+  });
+}
+
+export function createControlNetRequest(options = {}) {
+  if (!options.controlImage) throw new TcxSdError("control_net requires controlImage", { code: errorCodes.MODEL_ASSET_MISSING });
+  return withRequestMetadata({ ...options, controlStrength: options.controlStrength ?? 1.0 }, requestModes.CONTROL_NET, {
+    control_image: String(options.controlImage),
+    control_strength: String(options.controlStrength ?? 1.0)
+  });
+}
+
+export function createLoraStackRequest(options = {}) {
+  const loras = Array.isArray(options.loras) ? options.loras : [];
+  if (!loras.length) throw new TcxSdError("lora_stack requires at least one LoRA", { code: errorCodes.MODEL_ASSET_MISSING });
+  return withRequestMetadata({ ...options, loras }, requestModes.LORA_STACK, {
+    lora_count: String(loras.length),
+    lora_stack: "true"
+  });
+}
+
+export function createRefineRequest(options = {}) {
+  const source = options.sourceImage || options.initImage;
+  if (!source) throw new TcxSdError("refine requires sourceImage", { code: errorCodes.MODEL_ASSET_MISSING });
+  return withRequestMetadata({ ...options, initImage: source, strength: options.strength ?? 0.35 }, requestModes.REFINE, {
+    refine_source_image: String(source),
+    init_image: String(source),
+    strength: String(options.strength ?? 0.35)
+  });
+}
+
+export function createUpscaleRequest(options = {}) {
+  const source = options.sourceImage || options.initImage;
+  if (!source) throw new TcxSdError("upscale requires sourceImage", { code: errorCodes.MODEL_ASSET_MISSING });
+  const scale = Number(options.upscaleFactor ?? 2);
+  return withRequestMetadata({ ...options, initImage: source, strength: options.strength ?? 0.25, upscaleFactor: scale }, requestModes.UPSCALE, {
+    upscale_source_image: String(source),
+    init_image: String(source),
+    strength: String(options.strength ?? 0.25),
+    upscale_factor: String(scale),
+    upscale_method: "img2img_refine"
+  });
+}
+
+export function getBackendCapabilities(options = {}) {
+  const mode = options.executionMode || options.mode || "persistent_server";
+  const modelId = options.model || "ideogram4-q4_0";
+  const profile = modelProfiles[modelId];
+  const hasControlNet = Boolean(options.hasControlNet ?? profile?.assets?.control_net);
+  const hasLoraDir = Boolean(options.loraModelDir);
+  if (mode === "in_process") {
+    return { textToImage: true, imageToImage: false, inpaint: false, controlNet: false, loraStack: false, refine: false, upscale: false };
+  }
+  if (mode === "cli_process") {
+    return { textToImage: true, imageToImage: true, inpaint: true, controlNet: hasControlNet, loraStack: false, refine: true, upscale: true };
+  }
+  return { textToImage: true, imageToImage: true, inpaint: true, controlNet: hasControlNet, loraStack: hasLoraDir, refine: true, upscale: true };
+}
+
+export function assertRequestSupported(options = {}, capabilityOptions = {}) {
+  const caps = getBackendCapabilities({ model: options.model, ...capabilityOptions });
+  const mode = options.requestMode || requestModes.TEXT_TO_IMAGE;
+  const checks = {
+    [requestModes.TEXT_TO_IMAGE]: caps.textToImage,
+    [requestModes.IMAGE_TO_IMAGE]: caps.imageToImage,
+    [requestModes.INPAINT]: caps.inpaint,
+    [requestModes.CONTROL_NET]: caps.controlNet,
+    [requestModes.LORA_STACK]: caps.loraStack,
+    [requestModes.REFINE]: caps.refine,
+    [requestModes.UPSCALE]: caps.upscale
+  };
+  if (checks[mode] === false || (options.controlImage && !caps.controlNet) || (options.maskImage && !caps.inpaint) || (options.initImage && !caps.imageToImage) || (options.loras?.length && !caps.loraStack)) {
+    throw new TcxSdError(`BACKEND_UNSUPPORTED: ${mode} is not supported by ${capabilityOptions.executionMode || "persistent_server"} for this runtime/model.`, {
+      code: errorCodes.BACKEND_UNSUPPORTED,
+      details: { requestMode: mode, capabilities: caps }
+    });
+  }
+  return true;
 }
 
 export function buildImageRequest(options = {}) {
@@ -519,12 +659,25 @@ export function buildSidecar({ ok, status, error = "", outputPath = "", options 
     seed: String(options.seed ?? -1),
     cfg_scale: String(options.cfgScale || defaults.cfgScale),
     sampler: String(options.sampler || defaults.sampler || "euler"),
+    request_mode: options.requestMode || "text_to_image",
     execution_mode: "persistent_server",
     runtime_execution_mode: "persistent_server",
     model: modelId,
     model_family: profileFor(modelId).family,
     backend: options.backend || runtimeDefaults(modelId, options).backend || "auto"
   };
+  for (const [optionKey, metadataKey] of [
+    ["initImage", "init_image"],
+    ["maskImage", "mask_image"],
+    ["controlImage", "control_image"],
+    ["sourceImage", "source_image"]
+  ]) {
+    if (options[optionKey]) metadata[metadataKey] = String(options[optionKey]);
+  }
+  if (options.controlStrength !== undefined) metadata.control_strength = String(options.controlStrength);
+  if (options.strength !== undefined) metadata.strength = String(options.strength);
+  if (options.upscaleFactor !== undefined) metadata.upscale_factor = String(options.upscaleFactor);
+  if (Array.isArray(options.loras) && options.loras.length) metadata.lora_count = String(options.loras.length);
   const sidecar = {
     job_id: Number(options.jobId || 1),
     job_label: path.basename(outputPath || options.output || "node_job", path.extname(outputPath || options.output || "node_job")),
@@ -586,11 +739,270 @@ export function createServerSession(options = {}) {
   return new TcxSdServerSession(options);
 }
 
+export class GenerationProject {
+  constructor(options = {}) {
+    const root = path.resolve(options.root || defaultExampleRoot);
+    this.name = options.name || "tcxsd-project";
+    this.root = path.join(root, this.name);
+    this.outputRoot = path.resolve(options.outputRoot || path.join(this.root, "outputs"));
+    this.tempRoot = path.resolve(options.tempRoot || path.join(this.root, "tmp"));
+    this.cacheRoot = path.resolve(options.cacheRoot || path.join(this.root, "cache"));
+    this.logRoot = path.resolve(options.logRoot || path.join(this.root, "logs"));
+    this.inputRoot = path.resolve(options.inputRoot || path.join(this.root, "inputs"));
+  }
+
+  storageOptions() {
+    return {
+      outputRoot: this.outputRoot,
+      tempRoot: this.tempRoot,
+      cacheRoot: this.cacheRoot
+    };
+  }
+
+  outputPath(label, extension = ".png") {
+    const suffix = extension.startsWith(".") ? extension : `.${extension}`;
+    return path.join(this.outputRoot, `${label}${suffix}`);
+  }
+
+  sidecarPath(label) {
+    return path.join(this.outputRoot, `${label}.json`);
+  }
+
+  artifact(label, metadata = {}) {
+    return new GenerationArtifact({
+      id: label,
+      outputPath: this.outputPath(label),
+      sidecarPath: this.sidecarPath(label),
+      metadata
+    });
+  }
+}
+
+export class GenerationArtifact {
+  constructor({ id = "", outputPath = "", sidecarPath = "", parentSidecarPath = "", metadata = {} } = {}) {
+    this.id = id;
+    this.outputPath = outputPath;
+    this.sidecarPath = sidecarPath;
+    this.parentSidecarPath = parentSidecarPath;
+    this.metadata = { ...metadata };
+  }
+
+  static fromResult(result = {}, sidecar = {}) {
+    return new GenerationArtifact({
+      id: String(result.serverJobId || sidecar.job_id || path.basename(result.outputPath || "artifact", path.extname(result.outputPath || ""))),
+      outputPath: result.outputPath || sidecar.saved_image_path || "",
+      sidecarPath: result.sidecarPath || sidecar.sidecar_path || "",
+      metadata: sidecar.metadata || {}
+    });
+  }
+}
+
+export function createGenerationProject(options = {}) {
+  return new GenerationProject(options);
+}
+
+export class GenerationSession {
+  constructor(options = {}) {
+    const model = options.model || "ideogram4-q4_0";
+    this.id = options.id || model;
+    this.model = model;
+    this.profile = profileFor(model);
+    this.runtimePreset = options.runtimePreset || "default";
+    this.project = options.project instanceof GenerationProject
+      ? options.project
+      : createGenerationProject({
+        root: options.projectRoot || options.root,
+        name: options.projectName || options.name || model,
+        outputRoot: options.outputRoot,
+        tempRoot: options.tempRoot,
+        cacheRoot: options.cacheRoot,
+        logRoot: options.logRoot,
+        inputRoot: options.inputRoot
+      });
+    this.options = {
+      ...this.project.storageOptions(),
+      ...options,
+      model,
+      runtimePreset: this.runtimePreset,
+      project: this.project
+    };
+    this.capabilities = getBackendCapabilities({
+      executionMode: options.executionMode || "persistent_server",
+      model,
+      hasControlNet: Boolean(this.profile.assets.control_net),
+      loraModelDir: options.loraModelDir
+    });
+    this.server = null;
+  }
+
+  request(quality = "balanced", options = {}) {
+    return createTextToImageRequest({
+      ...this.options,
+      quality,
+      ...options,
+      metadata: {
+        ...(this.options.metadata || {}),
+        ...(options.metadata || {}),
+        generation_session: this.id,
+        model_profile: this.model,
+        runtime_preset: this.runtimePreset,
+        project_root: this.project.root
+      }
+    });
+  }
+
+  artifact(label, metadata = {}) {
+    return this.project.artifact(label, metadata);
+  }
+
+  supports(request) {
+    try {
+      assertRequestSupported(request, {
+        executionMode: this.options.executionMode || "persistent_server",
+        model: this.model,
+        hasControlNet: Boolean(this.profile.assets.control_net),
+        loraModelDir: this.options.loraModelDir
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof TcxSdError && error.code === errorCodes.BACKEND_UNSUPPORTED) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  unsupportedReason(request) {
+    try {
+      assertRequestSupported(request, {
+        executionMode: this.options.executionMode || "persistent_server",
+        model: this.model,
+        hasControlNet: Boolean(this.profile.assets.control_net),
+        loraModelDir: this.options.loraModelDir
+      });
+      return "";
+    } catch (error) {
+      return error?.message || String(error);
+    }
+  }
+
+  serverSession(options = {}) {
+    return createServerSession({ ...this.options, ...options });
+  }
+
+  async start(options = {}) {
+    this.server = await this.serverSession(options).start();
+    return this;
+  }
+
+  async generate(options = {}) {
+    if (this.server) {
+      return this.server.generate({ ...this.options, ...options });
+    }
+    return runTextToImage({ ...this.options, ...options });
+  }
+
+  async runBatch(batch, options = {}) {
+    return runBatchJob(batch, { ...this.options, project: this.project, ...options });
+  }
+
+  close() {
+    if (this.server) {
+      this.server.close();
+      this.server = null;
+    }
+  }
+}
+
+export function createGenerationSession(options = {}) {
+  return new GenerationSession(options);
+}
+
+export class BatchJob {
+  constructor(options = "batch") {
+    const config = typeof options === "string" ? { label: options } : { ...options };
+    this.label = config.label || "batch";
+    this.baseRequest = config.baseRequest ? { ...config.baseRequest } : null;
+    this.requests = [];
+    for (const request of config.requests || []) {
+      this.add(request);
+    }
+  }
+
+  add(request) {
+    this.requests.push({
+      ...request,
+      metadata: {
+        ...(request.metadata || {}),
+        batch_label: this.label,
+        batch_index: String(this.requests.length)
+      }
+    });
+    return this;
+  }
+
+  seedSweep(seeds = [], baseRequest = this.baseRequest) {
+    if (!baseRequest) {
+      throw new TcxSdError("seedSweep requires a baseRequest", { code: errorCodes.MODEL_ASSET_MISSING });
+    }
+    for (const seed of seeds) {
+      this.add({
+        ...baseRequest,
+        seed,
+        metadata: {
+          ...(baseRequest.metadata || {}),
+          batch_kind: "seed_sweep",
+          batch_seed: String(seed)
+        }
+      });
+    }
+    return this;
+  }
+}
+
+export function createBatchJob(options = "batch") {
+  return new BatchJob(options);
+}
+
+export function createVariantJob(artifact, options = {}) {
+  const request = createImageToImageRequest({
+    ...options,
+    initImage: options.initImage || artifact.outputPath,
+    strength: options.strength ?? 0.55,
+    metadata: {
+      ...(options.metadata || {}),
+      variant_source: artifact.id || "",
+      parent_sidecar_path: artifact.sidecarPath || ""
+    }
+  });
+  return { artifact, request };
+}
+
+export async function runBatchJob(batch, options = {}) {
+  const results = [];
+  for (const [index, request] of batch.requests.entries()) {
+    const label = `${batch.label.replace(/[^a-z0-9_-]+/gi, "_")}_${index}`;
+    results.push(await runTextToImage({
+      ...options,
+      ...request,
+      output: request.output || (options.project ? options.project.outputPath(label) : undefined),
+      sidecar: request.sidecar || (options.project ? options.project.sidecarPath(label) : undefined)
+    }));
+  }
+  return results;
+}
+
 export async function runTextToImage(options = {}) {
   let child = null;
   const manageServer = options.manageServer !== false;
   const started = Date.now();
   try {
+    assertRequestSupported(options, {
+      executionMode: "persistent_server",
+      model: options.model,
+      hasControlNet: Boolean(profileFor(options.model || "ideogram4-q4_0").assets.control_net),
+      loraModelDir: options.loraModelDir
+    });
     if (manageServer) {
       child = startServer(options);
       await waitForServer(options);
@@ -743,5 +1155,70 @@ export const promptPacks = {
         language: zh ? "zh" : "en"
       }
     };
+  },
+  productShot({ subject = "a local AI image generation product", language = "en" } = {}) {
+    const zh = String(language).toLowerCase().startsWith("zh");
+    return {
+      prompt: zh
+        ? `${subject}，干净产品摄影，受控棚拍光线，清晰材质，商业展示级构图`
+        : `${subject}, clean product photography, controlled studio lighting, crisp materials, commercial catalog quality`,
+      negative_prompt: zh ? "低质量，模糊，杂乱，水印，签名" : "low quality, blurry, clutter, watermark, signature",
+      metadata: { prompt_pack: "product_shot", language: zh ? "zh" : "en" }
+    };
+  },
+  wideScene({ subject = "a cinematic local creative studio", language = "en" } = {}) {
+    const zh = String(language).toLowerCase().startsWith("zh");
+    return {
+      prompt: zh
+        ? `${subject}，宽幅电影构图，主体层级清楚，色彩精致，氛围明确但不杂乱`
+        : `${subject}, cinematic wide composition, readable subject hierarchy, refined color, atmospheric but clear`,
+      negative_prompt: zh ? "低质量，模糊，透视扭曲，杂乱，水印，签名" : "low quality, blurry, distorted perspective, clutter, watermark, signature",
+      metadata: { prompt_pack: "wide_scene", language: zh ? "zh" : "en" }
+    };
+  },
+  gameAsset({ subject = "a readable game asset", language = "en" } = {}) {
+    const zh = String(language).toLowerCase().startsWith("zh");
+    return {
+      prompt: zh
+        ? `${subject}，清晰轮廓，适合游戏制作，形体明确，材质一致，干净背景`
+        : `${subject}, isolated readable silhouette, production-ready game art, clean shape language, consistent material detail`,
+      negative_prompt: zh ? "低质量，模糊，轮廓混乱，多余肢体，水印，签名" : "low quality, blurry, messy silhouette, extra limbs, watermark, signature",
+      metadata: { prompt_pack: "game_asset", language: zh ? "zh" : "en" }
+    };
+  },
+  uiMockup({ subject = "a professional software UI mockup", language = "en" } = {}) {
+    const zh = String(language).toLowerCase().startsWith("zh");
+    return {
+      prompt: zh
+        ? `${subject}，专业软件界面，信息分组清楚，面板有序，克制视觉设计`
+        : `${subject}, professional interface mockup, organized panels, readable layout, restrained visual design`,
+      negative_prompt: zh ? "低质量，不可读文字，杂乱，变形界面，水印，签名" : "low quality, unreadable text, clutter, distorted UI, watermark, signature",
+      metadata: { prompt_pack: "ui_mockup", language: zh ? "zh" : "en" }
+    };
   }
 };
+
+export const canvasPresets = {
+  squarePreview: { width: 512, height: 512, label: "square_preview" },
+  mobilePoster: { width: 768, height: 1344, label: "mobile_poster" },
+  wideHero: { width: 1280, height: 720, label: "wide_hero" },
+  desktopWallpaper: { width: 1536, height: 864, label: "desktop_wallpaper" },
+  appIcon: { width: 1024, height: 1024, label: "app_icon" }
+};
+
+export const stylePresets = {
+  commercialPoster: { promptPack: "ideogram4Poster", preferredModel: "ideogram4-q4_0" },
+  cleanProductShot: { promptPack: "productShot", preferredModel: "flux2-klein-4b-q4_0" },
+  wideScene: { promptPack: "wideScene", preferredModel: "z-image-turbo-q3_k" },
+  gameAsset: { promptPack: "gameAsset", preferredModel: "flux2-klein-4b-q4_0" },
+  uiMockup: { promptPack: "uiMockup", preferredModel: "flux2-klein-4b-q4_0" },
+  controlNetCanny: { promptPack: "wideScene", preferredModel: "sd15-controlnet-canny" }
+};
+
+export function routeModelForIntent(intent = "cleanProductShot", options = {}) {
+  if (options.model) return options.model;
+  if (options.controlImage || intent === "controlNetCanny") return "sd15-controlnet-canny";
+  if (intent === "commercialPoster" || intent === "poster" || options.visibleText) return "ideogram4-q4_0";
+  if (intent === "wideScene" || intent === "wide") return "z-image-turbo-q3_k";
+  return stylePresets[intent]?.preferredModel || "flux2-klein-4b-q4_0";
+}

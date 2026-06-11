@@ -39,8 +39,20 @@ class ModelToolTests(unittest.TestCase):
 
         self.assertEqual(
             [registry.model(model_id).example for model_id in registry.priority],
-            ["ideogram4-basic", "ideogram4-basic", "ideogram4-basic"],
+            ["ideogram4-basic", "ideogram4-basic", "ideogram4-basic", "ideogram4-basic"],
         )
+
+    def test_sd15_controlnet_profile_has_real_assets(self):
+        registry = tcxsd_models.load_model_registry()
+        model = registry.model("sd15-controlnet-canny")
+
+        self.assertEqual(model.family, "SD 1.5 ControlNet Canny")
+        self.assertIn("sd15-controlnet-canny", registry.priority)
+        assets = {asset.role: asset for asset in model.files}
+        self.assertEqual(assets["model"].filename, "v1-5-pruned-emaonly.safetensors")
+        self.assertEqual(assets["control_net"].filename, "control_v11p_sd15_canny_fp16.safetensors")
+        self.assertIn("stable-diffusion-v1-5/stable-diffusion-v1-5", assets["model"].url)
+        self.assertIn("ControlNet-v1-1_fp16_safetensors", assets["control_net"].url)
 
     def test_download_stops_after_three_failures_with_manual_urls(self):
         registry = tcxsd_models.load_model_registry()
