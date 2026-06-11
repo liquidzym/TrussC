@@ -1,12 +1,14 @@
 # Z-Image Turbo Starter
 
-This folder contains the first Z-Image Turbo JSON job entry for script, Node-adjacent, and future C++ examples.
+This folder contains the first Z-Image Turbo JSON job entry for script and Node workflows. The full GUI selector lives in `..\ideogram4-basic`.
 
 Download the model assets:
 
 ```powershell
 python ..\..\tools\setup_sd.py download-model --model z-image-turbo-q3_k
 ```
+
+The downloader places files in `..\ideogram4-basic\data\models\z-image-turbo-q3_k`.
 
 Run the starter job:
 

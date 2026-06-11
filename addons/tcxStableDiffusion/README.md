@@ -17,7 +17,7 @@ python tools\verify_sd.py
 If model download fails 3 times, the setup script prints exact manual download URLs. Place downloaded files in:
 
 ```text
-examples/ideogram4-basic/models
+examples/ideogram4-basic/data/models/<model-id>
 ```
 
 ## First Example
@@ -26,7 +26,7 @@ examples/ideogram4-basic/models
 examples/ideogram4-basic
 ```
 
-The example uses `tcxImGui` and a Chinese GUI. It initializes Ideogram4 only when the user clicks the initialization button, then generates images asynchronously.
+The example uses `tcxImGui` and a Chinese GUI. It is now the main multi-model workbench: Ideogram4, FLUX.2-klein, and Z-Image Turbo all live under `data/models/<model-id>` and can be selected from one GUI.
 
 The Windows example bundles both:
 
@@ -38,7 +38,7 @@ The Windows example bundles both:
 
 ```cpp
 tcx::StableDiffusion sd;
-sd.setupIdeogram4Async("models", tcx::sd::RuntimeSettings::windowsCuda());
+sd.setupIdeogram4Async("data/models/ideogram4-q4_0", tcx::sd::RuntimeSettings::windowsCuda());
 
 sd.createImage("A precise product render, studio lighting")
     .size(1024, 1024)
@@ -51,7 +51,7 @@ Call `sd.update()` in the app loop, wait for `sd.isReady()`, then drain results 
 
 Advanced users can force `settings.executionMode = tcx::sd::ExecutionMode::PersistentServer`, `CliProcess`, or `InProcess`. Normal C++ app usage does not require Python; Python scripts are setup, verification, and optional Node-adjacent tooling only.
 
-## Script And Node-Adjacent Jobs
+## Script And Node Jobs
 
 Use the tracked JSON job file as the first automation/Node integration surface:
 
@@ -66,6 +66,14 @@ Generation writes a PNG, backend log (`sd-server` or `sd-cli`), and JSON sidecar
 
 ```powershell
 python tools\tcxsd_sidecar.py summary examples\ideogram4-basic\outputs\jobs\ideogram4_poster_job.json --json
+```
+
+The first pure Node package lives in `node/` and talks directly to `sd-server.exe` without Python:
+
+```powershell
+cd node
+npm test
+node .\bin\tcxsd-node.mjs --job ..\examples\flux2-klein-basic\jobs\flux2_klein_product_job.json
 ```
 
 Detailed docs:

@@ -9,7 +9,7 @@ tcx::StableDiffusion sd;
 
 void setup() {
     auto settings = tcx::sd::RuntimeSettings::windowsCuda();
-    bool ok = sd.setupIdeogram4Async("models", settings);
+    bool ok = sd.setupIdeogram4Async("data/models/ideogram4-q4_0", settings);
     if (!ok) {
         tc::logError("sd") << sd.lastError();
     }
@@ -74,14 +74,23 @@ The composer returns plain strings under the hood, so it stays compatible with `
 
 ## Model Initialization
 
-First example model layout:
+The main example keeps all priority models in one shared data folder:
 
 ```text
-examples/ideogram4-basic/models/
-  ideogram4-Q4_0.gguf
-  ideogram4_uncond-Q4_0.gguf
-  Qwen3VL-8B-Instruct-Q4_K_M.gguf
-  flux2_ae.safetensors
+examples/ideogram4-basic/data/models/
+  ideogram4-q4_0/
+    ideogram4-Q4_0.gguf
+    ideogram4_uncond-Q4_0.gguf
+    Qwen3VL-8B-Instruct-Q4_K_M.gguf
+    flux2_ae.safetensors
+  flux2-klein-4b-q4_0/
+    flux-2-klein-4b-Q4_0.gguf
+    Qwen3-4B-Q4_K_M.gguf
+    flux2_ae.safetensors
+  z-image-turbo-q3_k/
+    z_image_turbo-Q3_K.gguf
+    Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+    z_image_ae.safetensors
 ```
 
 Use the helper script:
@@ -95,8 +104,8 @@ If download fails 3 times, the script prints exact manual URLs and the target di
 Other built-in starter profiles:
 
 ```cpp
-sd.setupFlux2KleinAsync("models", tcx::sd::RuntimeSettings::windowsCuda());
-sd.setupZImageTurboAsync("models", tcx::sd::RuntimeSettings::windowsCuda());
+sd.setupFlux2KleinAsync("data/models/flux2-klein-4b-q4_0", tcx::sd::RuntimeSettings::windowsCuda());
+sd.setupZImageTurboAsync("data/models/z-image-turbo-q3_k", tcx::sd::RuntimeSettings::windowsCuda());
 ```
 
 Download their assets with:
@@ -113,7 +122,17 @@ examples/flux2-klein-basic/jobs/flux2_klein_product_job.json
 examples/z-image-basic/jobs/z_image_turbo_wide_job.json
 ```
 
-In this workspace both priority starter models have been downloaded, verified, and smoke-tested through `persistent_server`.
+In this workspace all three priority models have been downloaded into the shared data folder, verified, and smoke-tested through `persistent_server`.
+
+## Multi-Model Example
+
+`examples/ideogram4-basic` is the main multi-model workbench despite the historical folder name. The Chinese GUI exposes:
+
+- model selector for Ideogram4, FLUX.2-klein, and Z-Image Turbo,
+- per-model default prompt, negative prompt, size, steps, CFG, and seed,
+- async model initialization,
+- persistent server generation,
+- per-model output folders under `outputs/<model-id>`.
 
 ## Building The Example
 
@@ -258,14 +277,39 @@ The JSON request can contain either a plain `prompt` string or a structured `pro
 
 Set `runtime.execution_mode` to `persistent_server` in JSON jobs to use the same persistent backend as C++ `Auto`.
 
+## Node Package
+
+The initial Node-facing package lives in `node/`. It does not call Python; it resolves the shared `data/models/<model-id>` layout, starts `sd-server.exe`, submits `/sdcpp/v1/img_gen`, polls status, and writes PNG output.
+
+```powershell
+cd node
+npm test
+node .\bin\tcxsd-node.mjs --job ..\examples\z-image-basic\jobs\z_image_turbo_wide_job.json
+```
+
+Programmatic use:
+
+```js
+import { runTextToImage } from "@trussc/tcx-stable-diffusion";
+
+await runTextToImage({
+  model: "flux2-klein-4b-q4_0",
+  prompt: "A polished local AI image tool interface",
+  output: "outputs/node/flux.png",
+  backend: "cuda0",
+  paramsBackend: "cpu",
+  offloadToCpu: true
+});
+```
+
 ## Explicit Model Paths
 
 ```cpp
 tcx::sd::ModelPaths paths;
-paths.diffusionModel = "models/ideogram4-Q4_0.gguf";
-paths.unconditionalDiffusionModel = "models/ideogram4_uncond-Q4_0.gguf";
-paths.llm = "models/Qwen3VL-8B-Instruct-Q4_K_M.gguf";
-paths.vae = "models/flux2_ae.safetensors";
+paths.diffusionModel = "data/models/ideogram4-q4_0/ideogram4-Q4_0.gguf";
+paths.unconditionalDiffusionModel = "data/models/ideogram4-q4_0/ideogram4_uncond-Q4_0.gguf";
+paths.llm = "data/models/ideogram4-q4_0/Qwen3VL-8B-Instruct-Q4_K_M.gguf";
+paths.vae = "data/models/ideogram4-q4_0/flux2_ae.safetensors";
 
 sd.setup(paths, tcx::sd::RuntimeSettings::windowsCuda());
 ```

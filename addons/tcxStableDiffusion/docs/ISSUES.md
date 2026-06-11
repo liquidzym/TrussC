@@ -12,6 +12,8 @@ decode_first_stage completed
 
 and then did not return a final `sd_image_t*`. The same model path completed through upstream `sd-cli` and through the new managed `sd-server` backend. Windows CUDA `Auto` now prefers the pure C++ persistent `sd-server.exe` backend when available, then falls back to `sd-cli`. `ExecutionMode::InProcess` remains available only for controlled experiments and future upstream/debug work.
 
+Current investigation details live in `docs/DIRECT_INPROCESS_DEBUG.md`. The direct path now emits progress breadcrumbs before and after the upstream `generate_image()` call so isolated diagnostics can prove whether the function returns.
+
 ### P1 - Upstream progress callback is global
 
 `stable-diffusion.cpp` exposes global progress callbacks. The current addon serializes generation through one worker/runtime instance, which is correct for the first version. If we support multiple simultaneous in-process runtimes later, callback routing must be redesigned carefully.
@@ -28,15 +30,16 @@ The persistent server backend can cancel queued jobs through `/sdcpp/v1/jobs/{id
 
 `PersistentServer` wires `imageToImage`, `mask`, `control`, and `lora` through upstream's `/sdcpp/v1/img_gen` API. `CliProcess` and direct `InProcess` still reject those fields until their image loading/argument paths are implemented.
 
-### P2 - Node mode is architectural, not implemented
+### P2 - Node package needs production hardening
 
-The addon now has clean C++ service boundaries, a persistent C++ `sd-server` backend, a process-isolated CLI fallback, model registry tooling, setup manifests, result sidecars, and JSON job runners. A full Node-facing runtime interface still needs one of:
+The first Node-facing package now exists in `node/` and talks directly to `sd-server.exe` without Python. It resolves shared model paths, starts the server, submits image jobs, polls status, and writes PNG output.
 
-- TrussC Node wrapper around `StableDiffusion`
-- local HTTP/WebSocket service
-- command/IPC bridge that calls the same model registry and setup manifest
+Remaining hardening:
 
-The current bridge is `tools/tcxsd_job.py`, which can run JSON jobs through either `cli_process` or `persistent_server` and emit PNG/JSON/log artifacts. The remaining Node task is a dedicated package/API shape, not first-use generation.
+- npm package naming/versioning policy,
+- generated sidecar parity with the Python job runner,
+- richer error types and cancellation,
+- optional long-lived server reuse across many Node calls.
 
 ### P2 - Ideogram4 prompt quality needs calibration
 
@@ -51,7 +54,7 @@ The first `IdeogramPrompt` composer pass is wired into the API and example, and 
 
 ### Resolved - Ideogram4 model assets are present
 
-The first example now has these files in `examples/ideogram4-basic/models` and `python tools/verify_sd.py` confirms them:
+The first example now has these files in `examples/ideogram4-basic/data/models/ideogram4-q4_0` and `python tools/verify_sd.py` confirms them:
 
 - `ideogram4-Q4_0.gguf`
 - `ideogram4_uncond-Q4_0.gguf`
@@ -106,13 +109,13 @@ sd.createImage("Redesign this sketch as a poster")
 
 These fields are wired through the persistent server backend first.
 
-### Resolved - Priority starter model assets and jobs
+### Resolved - Shared priority model assets and jobs
 
 FLUX.2-klein and Z-Image Turbo starter assets were downloaded successfully without hitting the 3-failure manual-download rule:
 
 ```text
-examples/flux2-klein-basic/models
-examples/z-image-basic/models
+examples/ideogram4-basic/data/models/flux2-klein-4b-q4_0
+examples/ideogram4-basic/data/models/z-image-turbo-q3_k
 ```
 
 Both starter JSON jobs validate and complete through `runtime.execution_mode = persistent_server`:
@@ -123,6 +126,28 @@ examples/z-image-basic/jobs/z_image_turbo_wide_job.json
 ```
 
 The current outputs are smoke/architecture checks, not curated quality presets.
+
+### Resolved - Multi-model GUI example
+
+The main `examples/ideogram4-basic` GUI is now a multi-model workbench. It selects between Ideogram4, FLUX.2-klein, and Z-Image Turbo, loading each from:
+
+```text
+examples/ideogram4-basic/data/models/<model-id>
+```
+
+Each profile has model-specific defaults for prompt, negative prompt, size, steps, CFG, seed, and output folder.
+
+### Resolved - Initial Node-facing package
+
+Added `node/` with an ESM package and CLI:
+
+```text
+node/src/index.mjs
+node/bin/tcxsd-node.mjs
+node/test/model-paths.test.mjs
+```
+
+It uses the shared data-model layout and direct `sd-server.exe` HTTP calls. It does not require Python.
 
 ### Resolved - TrussC release build command for Ninja single-config presets
 
@@ -196,4 +221,4 @@ The runner supports:
 - `run` for producing PNG, log, and JSON sidecar artifacts,
 - `runtime.execution_mode = persistent_server` for the same server-backed flow used by pure C++.
 
-Relative paths are resolved from the job file location, which keeps Node, PowerShell, CI, and manual calls consistent. This is the first stable external generation contract while the formal Node package/API design remains open.
+Relative paths are resolved from the job file location, which keeps Node, PowerShell, CI, and manual calls consistent. This remains a stable script contract alongside the first formal Node package in `node/`.

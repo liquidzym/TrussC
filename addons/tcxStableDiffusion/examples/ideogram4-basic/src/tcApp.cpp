@@ -10,8 +10,119 @@
 #include <vector>
 
 namespace {
+enum class ProfileKind {
+    Ideogram4,
+    Flux2Klein,
+    ZImageTurbo,
+};
+
+struct ModelProfile {
+    ProfileKind kind;
+    const char* id;
+    const char* label;
+    const char* promptProfile;
+    const char* promptKind;
+    int width;
+    int height;
+    int steps;
+    int seed;
+    float cfg;
+    bool supportsIdeogramComposer;
+    const char* subject;
+    const char* visibleText;
+    const char* style;
+    const char* palette;
+    const char* prompt;
+    const char* negative;
+};
+
+const std::array<ModelProfile, 3> kProfiles = {{
+    {
+        ProfileKind::Ideogram4,
+        "ideogram4-q4_0",
+        "Ideogram4 Q4_0",
+        "ideogram4",
+        "poster",
+        1024,
+        1024,
+        8,
+        -1,
+        1.0f,
+        true,
+        "A clean futuristic product poster for tcxStableDiffusion, a modular local AI image addon for creative coders",
+        "tcxStableDiffusion",
+        "premium technical product poster, refined typography, elegant studio lighting, precise interface details",
+        "#F7F4EC, #111111, #2F80ED, #27AE60, #FFFFFF",
+        "",
+        "low quality, blurry, cluttered layout, distorted anatomy, duplicate subjects, watermark, signature, misspelled text, unreadable text, cropped text, mirrored text, rotated text, extra words",
+    },
+    {
+        ProfileKind::Flux2Klein,
+        "flux2-klein-4b-q4_0",
+        "FLUX.2-klein 4B Q4_0",
+        "flux2-klein",
+        "product",
+        512,
+        512,
+        4,
+        2048,
+        1.0f,
+        false,
+        "A modular local AI image generation addon running on a Windows workstation",
+        "tcxStableDiffusion",
+        "clean product visualization, crisp interface panels, refined studio lighting, professional software-tool aesthetic",
+        "#F5F7FA, #111111, #2F80ED, #00A878, #FFFFFF",
+        "A clean product visualization of a modular local AI image generation addon running on a Windows workstation, crisp interface panels, refined studio lighting, professional software-tool aesthetic",
+        "low quality, blurry, noisy text, cluttered layout, watermark, signature",
+    },
+    {
+        ProfileKind::ZImageTurbo,
+        "z-image-turbo-q3_k",
+        "Z-Image Turbo Q3_K",
+        "z-image",
+        "wide-scene",
+        1024,
+        512,
+        8,
+        4096,
+        1.0f,
+        false,
+        "A local creative coding studio with a Windows CUDA workstation",
+        "tcxStableDiffusion",
+        "cinematic wide composition, polished technical atmosphere, clear subject hierarchy, refined color and lighting",
+        "#F2F0EA, #151515, #3A7BD5, #36C486, #FFFFFF",
+        "A cinematic wide composition of a local creative coding studio, a Windows CUDA workstation generating images in real time, polished technical atmosphere, clear subject hierarchy, refined color and lighting",
+        "low quality, blurry, distorted perspective, clutter, watermark, signature",
+    },
+}};
+
 std::filesystem::path exampleRoot() {
     return std::filesystem::path(__FILE__).parent_path().parent_path();
+}
+
+const ModelProfile& profileAt(int index) {
+    const int safeIndex = std::clamp(index, 0, static_cast<int>(kProfiles.size()) - 1);
+    return kProfiles[static_cast<size_t>(safeIndex)];
+}
+
+int profileIndexForId(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    for (size_t i = 0; i < kProfiles.size(); ++i) {
+        const std::string id = kProfiles[i].id;
+        const std::string profile = kProfiles[i].promptProfile;
+        if (text == id || text == profile) {
+            return static_cast<int>(i);
+        }
+    }
+    if (text == "flux" || text == "flux2" || text == "klein") {
+        return 1;
+    }
+    if (text == "z" || text == "z-image" || text == "zimage") {
+        return 2;
+    }
+    return 0;
 }
 
 bool envEnabled(const char* name) {
@@ -76,15 +187,10 @@ void copyText(std::array<char, N>& target, const std::string& text) {
 } // namespace
 
 void tcApp::setup() {
-    setWindowTitle("tcxStableDiffusion - Ideogram4");
+    setWindowTitle("tcxStableDiffusion - 多模型工作台");
     imguiSetup();
 
-    modelDir_ = exampleRoot() / "models";
-    copyText(templateSubject_, "A clean futuristic product poster for tcxStableDiffusion, a modular local AI image addon for creative coders");
-    copyText(templateText_, "tcxStableDiffusion");
-    copyText(templateStyle_, "premium technical product poster, refined typography, elegant studio lighting, precise interface details");
-    copyText(templatePalette_, "#F7F4EC, #111111, #2F80ED, #27AE60, #FFFFFF");
-    applyPromptTemplate();
+    selectModel(0, true);
     setupSmokeMode();
 
     sd_.onProgress([this](const tcx::sd::Progress& progress) {
@@ -95,11 +201,15 @@ void tcApp::setup() {
             out << "模型已加载";
         } else if (progress.state == tcx::sd::JobState::Failed) {
             out << "任务失败";
-        } else {
+        } else if (progress.totalSteps > 0) {
             out << "生成中 " << progress.step << "/" << progress.totalSteps;
             if (progress.seconds > 0.0f) {
                 out << "  " << progress.seconds << "s";
             }
+        } else if (!progress.message.empty()) {
+            out << progress.message;
+        } else {
+            out << "正在运行";
         }
         status_ = out.str();
         if (smokeMode_) {
@@ -116,6 +226,7 @@ void tcApp::setup() {
             status_ = "生成失败";
         }
     });
+
     if (smokeMode_) {
         initializeModel();
         submitWhenReady_ = true;
@@ -150,7 +261,7 @@ void tcApp::draw() {
     clear(0.07f, 0.075f, 0.085f);
 
     if (preview_.isAllocated()) {
-        const float margin = 390.0f;
+        const float margin = 410.0f;
         const float areaW = std::max(100.0f, static_cast<float>(getWindowWidth()) - margin - 28.0f);
         const float areaH = std::max(100.0f, static_cast<float>(getWindowHeight()) - 28.0f);
         const float scale = std::min(areaW / preview_.getWidth(), areaH / preview_.getHeight());
@@ -174,6 +285,10 @@ void tcApp::setupSmokeMode() {
         return;
     }
 
+    if (const char* model = std::getenv("TCXSD_SMOKE_MODEL")) {
+        selectModel(profileIndexForId(model), true);
+    }
+
     auto copyEnvText = [](const char* name, auto& target) {
         const char* value = std::getenv(name);
         if (!value) {
@@ -193,12 +308,12 @@ void tcApp::setupSmokeMode() {
         lowVramMode_ = envEnabled("TCXSD_SMOKE_LOW_VRAM");
     }
     if (envExists("TCXSD_SMOKE_COMPOSE")) {
-        usePromptComposer_ = envEnabled("TCXSD_SMOKE_COMPOSE");
-    } else {
-        usePromptComposer_ = false;
+        usePromptComposer_ = envEnabled("TCXSD_SMOKE_COMPOSE") && profileAt(selectedModel_).supportsIdeogramComposer;
     }
     autoSave_ = true;
     writeSmokeLog("smoke enabled");
+    writeSmokeLog("model=" + std::string(profileAt(selectedModel_).id));
+    writeSmokeLog("model_dir=" + modelDir_.string());
     writeSmokeLog("size=" + std::to_string(width_) + "x" + std::to_string(height_) +
         " steps=" + std::to_string(steps_) +
         " seed=" + std::to_string(seed_) +
@@ -216,8 +331,32 @@ void tcApp::writeSmokeLog(const std::string& message) {
     out << message << "\n";
 }
 
+void tcApp::selectModel(int index, bool resetPrompt) {
+    const int safeIndex = std::clamp(index, 0, static_cast<int>(kProfiles.size()) - 1);
+    const bool changed = selectedModel_ != safeIndex;
+    if (changed && (sd_.isReady() || sd_.isRunning() || sd_.isSettingUp())) {
+        sd_.shutdown();
+    }
+
+    selectedModel_ = safeIndex;
+    refreshModelDir();
+    setupAttempted_ = false;
+    currentJob_ = 0;
+    lastError_.clear();
+    status_ = std::string("已选择模型: ") + profileAt(selectedModel_).label;
+
+    if (resetPrompt || changed) {
+        applyModelDefaults();
+    }
+}
+
+void tcApp::refreshModelDir() {
+    modelDir_ = exampleRoot() / "data" / "models" / profileAt(selectedModel_).id;
+}
+
 void tcApp::initializeModel() {
     setupAttempted_ = true;
+    refreshModelDir();
     status_ = "正在初始化模型";
     lastError_.clear();
 
@@ -228,8 +367,22 @@ void tcApp::initializeModel() {
         ? tcx::sd::RuntimeSettings::lowVramCuda()
         : tcx::sd::RuntimeSettings::windowsCuda();
 #endif
+    settings.outputDirectory = exampleRoot() / "outputs" / profileAt(selectedModel_).id / "native";
 
-    if (sd_.setupIdeogram4Async(modelDir_, settings)) {
+    bool started = false;
+    switch (profileAt(selectedModel_).kind) {
+        case ProfileKind::Ideogram4:
+            started = sd_.setupIdeogram4Async(modelDir_, settings);
+            break;
+        case ProfileKind::Flux2Klein:
+            started = sd_.setupFlux2KleinAsync(modelDir_, settings);
+            break;
+        case ProfileKind::ZImageTurbo:
+            started = sd_.setupZImageTurboAsync(modelDir_, settings);
+            break;
+    }
+
+    if (started) {
         writeSmokeLog("model loading");
         status_ = "正在异步加载模型";
         return;
@@ -261,9 +414,32 @@ tcx::sd::IdeogramPrompt tcApp::buildPromptTemplate() const {
 }
 
 void tcApp::applyPromptTemplate() {
+    if (!profileAt(selectedModel_).supportsIdeogramComposer) {
+        return;
+    }
     const auto prompt = buildPromptTemplate();
     copyText(prompt_, prompt.build());
     copyText(negativePrompt_, prompt.negative());
+}
+
+void tcApp::applyModelDefaults() {
+    const auto& profile = profileAt(selectedModel_);
+    width_ = profile.width;
+    height_ = profile.height;
+    steps_ = profile.steps;
+    seed_ = profile.seed;
+    cfgScale_ = profile.cfg;
+    usePromptComposer_ = profile.supportsIdeogramComposer;
+    copyText(templateSubject_, profile.subject);
+    copyText(templateText_, profile.visibleText);
+    copyText(templateStyle_, profile.style);
+    copyText(templatePalette_, profile.palette);
+    if (profile.supportsIdeogramComposer) {
+        applyPromptTemplate();
+    } else {
+        copyText(prompt_, profile.prompt);
+        copyText(negativePrompt_, profile.negative);
+    }
 }
 
 void tcApp::submitPrompt() {
@@ -276,11 +452,12 @@ void tcApp::submitPrompt() {
         return;
     }
 
-    tcx::StableDiffusionRequest request = usePromptComposer_
+    const auto& profile = profileAt(selectedModel_);
+    tcx::StableDiffusionRequest request = (usePromptComposer_ && profile.supportsIdeogramComposer)
         ? tcx::StableDiffusionRequest::fromIdeogram4(buildPromptTemplate())
         : tcx::StableDiffusionRequest::fromPrompt(prompt_.data());
 
-    if (usePromptComposer_) {
+    if (usePromptComposer_ && profile.supportsIdeogramComposer) {
         copyText(prompt_, request.prompt);
         copyText(negativePrompt_, request.negativePrompt);
     } else {
@@ -292,7 +469,9 @@ void tcApp::submitPrompt() {
         .stepsCount(steps_)
         .cfg(cfgScale_);
     request.metadata["example"] = "ideogram4-basic";
-    request.metadata["model"] = "ideogram4-q4_0";
+    request.metadata["model"] = profile.id;
+    request.metadata["prompt_profile"] = profile.promptProfile;
+    request.metadata["prompt_kind"] = profile.promptKind;
 
     if (seed_ >= 0) {
         request.seedValue(seed_);
@@ -311,12 +490,13 @@ void tcApp::submitPrompt() {
 }
 
 void tcApp::adoptResult(tcx::StableDiffusionImage&& result) {
+    const auto& profile = profileAt(selectedModel_);
     if (!result.ok || !result.hasImage()) {
         lastError_ = result.error;
         if (autoSave_) {
-            const auto outputDir = exampleRoot() / "outputs";
+            const auto outputDir = exampleRoot() / "outputs" / profile.id;
             std::filesystem::create_directories(outputDir);
-            lastMetadata_ = outputDir / ("ideogram4_job_" + std::to_string(result.jobId) + "_failed.json");
+            lastMetadata_ = outputDir / (std::string(profile.id) + "_job_" + std::to_string(result.jobId) + "_failed.json");
             result.saveMetadata(lastMetadata_);
             writeSmokeLog("saved metadata: " + lastMetadata_.string());
         }
@@ -329,9 +509,9 @@ void tcApp::adoptResult(tcx::StableDiffusionImage&& result) {
     }
 
     if (autoSave_) {
-        const auto outputDir = exampleRoot() / "outputs";
+        const auto outputDir = exampleRoot() / "outputs" / profile.id;
         std::filesystem::create_directories(outputDir);
-        lastOutput_ = outputDir / ("ideogram4_job_" + std::to_string(result.jobId) + ".png");
+        lastOutput_ = outputDir / (std::string(profile.id) + "_job_" + std::to_string(result.jobId) + ".png");
         lastMetadata_ = lastOutput_;
         lastMetadata_.replace_extension(".json");
         result.metadata["saved_image_path"] = lastOutput_.string();
@@ -355,8 +535,8 @@ void tcApp::drawGui() {
     imguiBegin();
 
     ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(360, 820), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Ideogram4 本地生成");
+    ImGui::SetNextWindowSize(ImVec2(390, 840), ImGuiCond_FirstUseEver);
+    ImGui::Begin("tcxStableDiffusion 多模型工作台");
 
     ImGui::TextWrapped("状态: %s", status_.c_str());
     if (!lastError_.empty()) {
@@ -364,10 +544,34 @@ void tcApp::drawGui() {
     }
     ImGui::Separator();
 
+    const bool busy = sd_.isRunning() || sd_.isSettingUp();
+    int comboIndex = selectedModel_;
+    const char* labels[] = {
+        kProfiles[0].label,
+        kProfiles[1].label,
+        kProfiles[2].label,
+    };
+    if (busy) {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Combo("模型", &comboIndex, labels, static_cast<int>(kProfiles.size()))) {
+        selectModel(comboIndex, true);
+    }
+    if (busy) {
+        ImGui::EndDisabled();
+    }
+
     ImGui::TextWrapped("模型目录:");
     ImGui::TextWrapped("%s", modelDir_.string().c_str());
-    if (ImGui::Button("初始化模型")) {
+
+    if (busy) {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Button("初始化当前模型")) {
         initializeModel();
+    }
+    if (busy) {
+        ImGui::EndDisabled();
     }
     ImGui::SameLine();
     if (ImGui::Button("取消任务")) {
@@ -376,10 +580,23 @@ void tcApp::drawGui() {
 
     ImGui::Checkbox("低显存模式", &lowVramMode_);
     ImGui::Checkbox("自动保存图片", &autoSave_);
-    ImGui::Checkbox("使用 Ideogram4 模板", &usePromptComposer_);
+
+    const bool composerAvailable = profileAt(selectedModel_).supportsIdeogramComposer;
+    if (!composerAvailable) {
+        ImGui::BeginDisabled();
+    }
+    ImGui::Checkbox("使用 Ideogram4 结构化模板", &usePromptComposer_);
+    if (!composerAvailable) {
+        ImGui::EndDisabled();
+        usePromptComposer_ = false;
+    }
+
+    if (ImGui::Button("套用当前模型默认提示词", ImVec2(-1, 28))) {
+        applyModelDefaults();
+    }
 
     ImGui::Separator();
-    if (usePromptComposer_) {
+    if (usePromptComposer_ && composerAvailable) {
         ImGui::InputText("主题", templateSubject_.data(), templateSubject_.size());
         ImGui::InputText("画面文字", templateText_.data(), templateText_.size());
         ImGui::InputTextMultiline("风格", templateStyle_.data(), templateStyle_.size(), ImVec2(-1, 64));

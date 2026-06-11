@@ -411,13 +411,13 @@ def write_manifest(
 def model_target_dir(model: tcxsd_models.ModelSpec, target: str | None) -> pathlib.Path:
     if target:
         return pathlib.Path(target).resolve()
-    return (ADDON_ROOT / "examples" / model.example / "models").resolve()
+    return (ADDON_ROOT / "examples" / "ideogram4-basic" / "data" / "models" / model.id).resolve()
 
 
 def list_models() -> None:
     registry = tcxsd_models.load_model_registry()
     for model in registry.all():
-        print(f"{model.id} [{model.family}] -> examples/{model.example}/models")
+        print(f"{model.id} [{model.family}] -> examples/ideogram4-basic/data/models/{model.id}")
         for asset in model.files:
             print(f"  - {asset.role}: {asset.filename}")
 

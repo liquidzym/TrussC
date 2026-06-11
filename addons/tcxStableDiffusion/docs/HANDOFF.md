@@ -14,7 +14,8 @@ This addon is in the first implementation pass, with the core structure, scripts
 - First example: `G:/TrussC/addons/tcxStableDiffusion/examples/ideogram4-basic`
 - FLUX.2-klein starter: `G:/TrussC/addons/tcxStableDiffusion/examples/flux2-klein-basic`
 - Z-Image starter: `G:/TrussC/addons/tcxStableDiffusion/examples/z-image-basic`
-- First example models: `G:/TrussC/addons/tcxStableDiffusion/examples/ideogram4-basic/models`
+- Shared example models: `G:/TrussC/addons/tcxStableDiffusion/examples/ideogram4-basic/data/models/<model-id>`
+- Node package: `G:/TrussC/addons/tcxStableDiffusion/node`
 - First smoke output: `G:/TrussC/addons/tcxStableDiffusion/examples/ideogram4-basic/outputs/ideogram4_job_1.png`
 - First smoke sidecar: `G:/TrussC/addons/tcxStableDiffusion/examples/ideogram4-basic/outputs/ideogram4_job_1.json`
 - Docs:
@@ -63,6 +64,13 @@ python tools\tcxsd_job.py validate examples\ideogram4-basic\jobs\ideogram4_poste
 python tools\tcxsd_job.py run examples\ideogram4-basic\jobs\ideogram4_poster_job.json
 python tools\tcxsd_job.py run examples\flux2-klein-basic\jobs\flux2_klein_product_job.json
 python tools\tcxsd_job.py run examples\z-image-basic\jobs\z_image_turbo_wide_job.json
+```
+
+Run the pure Node package tests:
+
+```powershell
+cd node
+npm test
 ```
 
 Run tests:
@@ -126,15 +134,17 @@ $env:TCXSD_SMOKE_LOW_VRAM='1'
 - `tools/tcxsd_sidecar.py` is the first script/Node-adjacent reader for sidecar validation and summaries.
 - `tools/tcxsd_job.py` is the first script/Node-adjacent generation entry. It reads JSON, resolves paths relative to the job file, calls either `sd-cli` or persistent `sd-server`, and writes PNG/JSON/log outputs.
 - `tools/tcxsd_server.py` provides optional script-side helpers for `/sdcpp/v1/img_gen`; it is not required by normal C++ runtime use.
+- `node/` is the first formal Node-facing package. It starts `sd-server.exe` directly and does not call Python.
 - `RuntimeSettings::executionMode` controls `Auto`, `PersistentServer`, `CliProcess`, and `InProcess`.
 - Windows CUDA `Auto` prefers the bundled `sd-server.exe` persistent backend when present, then falls back to `sd-cli.exe`.
 - Worker threads only produce CPU `Pixels`; examples upload to GPU textures on the main thread.
 - `ModelPaths` already reserves fields for video/audio/controlnet/photo maker additions.
 - `ImageRequest` exposes chain helpers for img2img, inpainting masks, ControlNet images, LoRA stacks, and metadata. `PersistentServer` wires those image/LoRA fields first.
+- `examples/ideogram4-basic` is now the main multi-model GUI workbench despite the historical folder name.
 
 ## Next Best Step
 
-Tune the Ideogram4 prompt composer defaults for text fidelity and add named prompt profiles for poster, product, typography, and logo workflows. FLUX.2-klein and Z-Image assets are already downloaded and smoke-verified; the next product pass is turning those starter JSON jobs into richer GUI examples if needed.
+Tune final prompt quality for each model and harden the Node package sidecar/cancellation story. The three priority model assets are already centralized under the main example data folder and smoke-verified.
 
 ## Latest Verified State
 
@@ -158,6 +168,8 @@ Tune the Ideogram4 prompt composer defaults for text fidelity and add named prom
 - Z-Image model check: `python tools/verify_sd.py --model z-image-turbo-q3_k`, exit code 0
 - Z-Image JSON job: `python tools/tcxsd_job.py run examples/z-image-basic/jobs/z_image_turbo_wide_job.json`, exit code 0
   - Sidecar summary: `ok=true`, `execution_mode=persistent_server`, `backend=cuda0`, `image_width=1024`, `image_height=512`, `duration_seconds=4.040`
+- Node package tests: `cd node; npm test`, 4 tests passing
+- Node package smoke: `node .\bin\tcxsd-node.mjs --job ..\examples\flux2-klein-basic\jobs\flux2_klein_product_job.json`, exit code 0
 - Python compile: `python -m py_compile tools/setup_sd.py tools/tcxsd_models.py tools/verify_sd.py tools/tcxsd_sidecar.py tools/tcxsd_job.py tools/tcxsd_server.py`
 - Tests: `python -m unittest discover -s tests`, 20 tests passing
 

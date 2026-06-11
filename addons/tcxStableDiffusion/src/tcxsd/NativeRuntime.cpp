@@ -1909,7 +1909,9 @@ ImageResult NativeRuntime::generateImage(
     ProgressBridge bridge{jobId, progress};
     sd_set_log_callback(logCallback, &bridge);
     sd_set_progress_callback(progressCallback, &bridge);
+    sendProgress(progress, jobId, JobState::Running, "direct in-process generate_image enter");
     sd_image_t* images = generate_image(impl_->ctx, &params);
+    sendProgress(progress, jobId, JobState::Running, "direct in-process generate_image returned");
     sd_set_progress_callback(nullptr, nullptr);
     sd_set_log_callback(nullptr, nullptr);
 

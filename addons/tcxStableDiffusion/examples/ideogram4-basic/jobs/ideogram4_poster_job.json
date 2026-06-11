@@ -1,6 +1,6 @@
 {
   "model": "ideogram4-q4_0",
-  "model_dir": "../models",
+  "model_dir": "../data/models/ideogram4-q4_0",
   "native_dir": "../../../libs/stable-diffusion/current",
   "output_dir": "../outputs/jobs",
   "output_name": "ideogram4_poster_job",

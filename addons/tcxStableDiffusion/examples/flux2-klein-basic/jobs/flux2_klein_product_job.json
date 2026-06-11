@@ -1,6 +1,6 @@
 {
   "model": "flux2-klein-4b-q4_0",
-  "model_dir": "../models",
+  "model_dir": "../../ideogram4-basic/data/models/flux2-klein-4b-q4_0",
   "native_dir": "../../../libs/stable-diffusion/current",
   "output_dir": "../outputs/jobs",
   "output_name": "flux2_klein_product_job",

@@ -125,7 +125,7 @@ def load_model_registry() -> ModelRegistry:
     flux2_klein = ModelSpec(
         id="flux2-klein-4b-q4_0",
         family="FLUX.2-klein",
-        example="flux2-klein-basic",
+        example="ideogram4-basic",
         description="FLUX.2-klein 4B GGUF starter profile for fast local generation/editing.",
         files=[
             ModelAsset(
@@ -160,7 +160,7 @@ def load_model_registry() -> ModelRegistry:
     z_image = ModelSpec(
         id="z-image-turbo-q3_k",
         family="Z-Image",
-        example="z-image-basic",
+        example="ideogram4-basic",
         description="Z-Image Turbo GGUF profile, kept ready for the second wave of examples.",
         files=[
             ModelAsset(

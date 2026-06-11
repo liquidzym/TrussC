@@ -34,6 +34,14 @@ class ModelToolTests(unittest.TestCase):
             [asset.url for asset in model.files],
         )
 
+    def test_priority_models_share_the_main_example(self):
+        registry = tcxsd_models.load_model_registry()
+
+        self.assertEqual(
+            [registry.model(model_id).example for model_id in registry.priority],
+            ["ideogram4-basic", "ideogram4-basic", "ideogram4-basic"],
+        )
+
     def test_download_stops_after_three_failures_with_manual_urls(self):
         registry = tcxsd_models.load_model_registry()
         model = registry.model("ideogram4-q4_0")

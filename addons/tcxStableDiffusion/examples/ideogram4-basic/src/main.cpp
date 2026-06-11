@@ -3,7 +3,7 @@
 
 int main() {
     WindowSettings settings;
-    settings.title = "tcxStableDiffusion - Ideogram4";
+    settings.title = "tcxStableDiffusion - Multi Model Studio";
     settings.width = 1280;
     settings.height = 860;
     settings.highDpi = false;

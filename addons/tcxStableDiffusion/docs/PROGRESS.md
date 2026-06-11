@@ -31,7 +31,7 @@
 - Added first example at `examples/ideogram4-basic`.
   - Uses `tcxImGui`.
   - Chinese GUI.
-  - Loads Ideogram4 from `examples/ideogram4-basic/models`.
+  - Historical note: this first pass loaded Ideogram4 from `examples/ideogram4-basic/models`; current layout uses `examples/ideogram4-basic/data/models/<model-id>`.
   - Separates model initialization from image generation.
 
 ### Verified
@@ -261,3 +261,25 @@
 - Z-Image Turbo persistent-server JSON smoke:
   - `python tools/tcxsd_job.py run examples/z-image-basic/jobs/z_image_turbo_wide_job.json`
   - Summary: `ok=true`, `execution_mode=persistent_server`, `backend=cuda0`, `image_width=1024`, `image_height=512`, `duration_seconds=4.040`.
+
+### 2026-06-11 Multi-Model And Node Pass
+
+- Centralized model storage under the main example:
+  - `examples/ideogram4-basic/data/models/ideogram4-q4_0`
+  - `examples/ideogram4-basic/data/models/flux2-klein-4b-q4_0`
+  - `examples/ideogram4-basic/data/models/z-image-turbo-q3_k`
+- Updated `tools/setup_sd.py` so default downloads and verification use `data/models/<model-id>`.
+- Updated the main GUI example into a multi-model workbench:
+  - model selector for Ideogram4, FLUX.2-klein, and Z-Image Turbo,
+  - model-specific defaults for prompt, negative prompt, size, steps, CFG, and seed,
+  - output folders under `outputs/<model-id>`,
+  - smoke model selection through `TCXSD_SMOKE_MODEL`.
+- Added direct in-process diagnostic breadcrumbs around upstream `generate_image()`.
+- Added `docs/DIRECT_INPROCESS_DEBUG.md` with the current root-cause evidence and safe diagnostic rules.
+- Added the first formal Node-facing package:
+  - `node/src/index.mjs`
+  - `node/bin/tcxsd-node.mjs`
+  - `node/test/model-paths.test.mjs`
+  - Uses `sd-server.exe` directly and does not call Python.
+- Verified `npm test` with 4 passing Node tests.
+- Verified `node .\bin\tcxsd-node.mjs --job ..\examples\flux2-klein-basic\jobs\flux2_klein_product_job.json`, exit code 0.

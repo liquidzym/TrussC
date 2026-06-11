@@ -22,9 +22,12 @@ public:
 private:
     void setupSmokeMode();
     void writeSmokeLog(const std::string& message);
+    void selectModel(int index, bool resetPrompt);
+    void refreshModelDir();
     void initializeModel();
     tcx::sd::IdeogramPrompt buildPromptTemplate() const;
     void applyPromptTemplate();
+    void applyModelDefaults();
     void submitPrompt();
     void adoptResult(tcx::StableDiffusionImage&& result);
     void drawGui();
@@ -45,6 +48,7 @@ private:
     std::string status_ = "等待初始化";
     std::string lastError_;
 
+    int selectedModel_ = 0;
     int width_ = 1024;
     int height_ = 1024;
     int steps_ = 8;
