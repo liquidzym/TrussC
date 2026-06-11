@@ -31,7 +31,7 @@
 - Added first example at `examples/ideogram4-basic`.
   - Uses `tcxImGui`.
   - Chinese GUI.
-  - Historical note: this first pass loaded Ideogram4 from `examples/ideogram4-basic/models`; current layout uses `examples/ideogram4-basic/data/models/<model-id>`.
+  - Historical note: this first pass loaded Ideogram4 from `examples/ideogram4-basic/models`; current layout uses `examples/ideogram4-basic/bin/data/models/<model-id>`.
   - Separates model initialization from image generation.
 
 ### Verified
@@ -265,10 +265,10 @@
 ### 2026-06-11 Multi-Model And Node Pass
 
 - Centralized model storage under the main example:
-  - `examples/ideogram4-basic/data/models/ideogram4-q4_0`
-  - `examples/ideogram4-basic/data/models/flux2-klein-4b-q4_0`
-  - `examples/ideogram4-basic/data/models/z-image-turbo-q3_k`
-- Updated `tools/setup_sd.py` so default downloads and verification use `data/models/<model-id>`.
+  - `examples/ideogram4-basic/bin/data/models/ideogram4-q4_0`
+  - `examples/ideogram4-basic/bin/data/models/flux2-klein-4b-q4_0`
+  - `examples/ideogram4-basic/bin/data/models/z-image-turbo-q3_k`
+- Updated `tools/setup_sd.py` so default downloads and verification use `bin/data/models/<model-id>`.
 - Updated the main GUI example into a multi-model workbench:
   - model selector for Ideogram4, FLUX.2-klein, and Z-Image Turbo,
   - model-specific defaults for prompt, negative prompt, size, steps, CFG, and seed,

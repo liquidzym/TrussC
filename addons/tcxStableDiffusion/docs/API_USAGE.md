@@ -9,7 +9,7 @@ tcx::StableDiffusion sd;
 
 void setup() {
     auto settings = tcx::sd::RuntimeSettings::windowsCuda();
-    bool ok = sd.setupIdeogram4Async("data/models/ideogram4-q4_0", settings);
+    bool ok = sd.setupIdeogram4Async("bin/data/models/ideogram4-q4_0", settings);
     if (!ok) {
         tc::logError("sd") << sd.lastError();
     }
@@ -74,10 +74,10 @@ The composer returns plain strings under the hood, so it stays compatible with `
 
 ## Model Initialization
 
-The main example keeps all priority models in one shared data folder:
+The main example keeps all priority models in one shared bin data folder:
 
 ```text
-examples/ideogram4-basic/data/models/
+examples/ideogram4-basic/bin/data/models/
   ideogram4-q4_0/
     ideogram4-Q4_0.gguf
     ideogram4_uncond-Q4_0.gguf
@@ -104,8 +104,8 @@ If download fails 3 times, the script prints exact manual URLs and the target di
 Other built-in starter profiles:
 
 ```cpp
-sd.setupFlux2KleinAsync("data/models/flux2-klein-4b-q4_0", tcx::sd::RuntimeSettings::windowsCuda());
-sd.setupZImageTurboAsync("data/models/z-image-turbo-q3_k", tcx::sd::RuntimeSettings::windowsCuda());
+sd.setupFlux2KleinAsync("bin/data/models/flux2-klein-4b-q4_0", tcx::sd::RuntimeSettings::windowsCuda());
+sd.setupZImageTurboAsync("bin/data/models/z-image-turbo-q3_k", tcx::sd::RuntimeSettings::windowsCuda());
 ```
 
 Download their assets with:
@@ -122,7 +122,7 @@ examples/flux2-klein-basic/jobs/flux2_klein_product_job.json
 examples/z-image-basic/jobs/z_image_turbo_wide_job.json
 ```
 
-In this workspace all three priority models have been downloaded into the shared data folder, verified, and smoke-tested through `persistent_server`.
+In this workspace all three priority models have been downloaded into the shared bin data folder, verified, and smoke-tested through `persistent_server`.
 
 ## Multi-Model Example
 
@@ -281,7 +281,7 @@ Set `runtime.execution_mode` to `persistent_server` in JSON jobs to use the same
 
 ## Node Package
 
-The initial Node-facing package lives in `node/`. It does not call Python; it resolves the shared `data/models/<model-id>` layout, starts `sd-server.exe`, submits `/sdcpp/v1/img_gen`, polls status, and writes PNG output.
+The initial Node-facing package lives in `node/`. It does not call Python; it resolves the shared `bin/data/models/<model-id>` layout, starts `sd-server.exe`, submits `/sdcpp/v1/img_gen`, polls status, and writes PNG output.
 
 ```powershell
 cd node
@@ -308,10 +308,10 @@ await runTextToImage({
 
 ```cpp
 tcx::sd::ModelPaths paths;
-paths.diffusionModel = "data/models/ideogram4-q4_0/ideogram4-Q4_0.gguf";
-paths.unconditionalDiffusionModel = "data/models/ideogram4-q4_0/ideogram4_uncond-Q4_0.gguf";
-paths.llm = "data/models/ideogram4-q4_0/Qwen3VL-8B-Instruct-Q4_K_M.gguf";
-paths.vae = "data/models/ideogram4-q4_0/flux2_ae.safetensors";
+paths.diffusionModel = "bin/data/models/ideogram4-q4_0/ideogram4-Q4_0.gguf";
+paths.unconditionalDiffusionModel = "bin/data/models/ideogram4-q4_0/ideogram4_uncond-Q4_0.gguf";
+paths.llm = "bin/data/models/ideogram4-q4_0/Qwen3VL-8B-Instruct-Q4_K_M.gguf";
+paths.vae = "bin/data/models/ideogram4-q4_0/flux2_ae.safetensors";
 
 sd.setup(paths, tcx::sd::RuntimeSettings::windowsCuda());
 ```

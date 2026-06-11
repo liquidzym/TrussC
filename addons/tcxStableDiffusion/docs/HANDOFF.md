@@ -4,6 +4,118 @@
 
 This addon is in the first implementation pass, with the core structure, scripts, CMake integration, C++ API, worker queue, Windows CUDA native build, pure C++ persistent `sd-server` backend, process-isolated CLI fallback, first Ideogram4 prompt composer, result sidecar JSON, and first Chinese ImGui example in place. Ideogram4 starter models are present and real smoke generations completed through the TrussC example.
 
+## 2026-06-11 Immediate Handoff Addendum
+
+This section is the current resume point for a new Codex thread.
+
+Current local pass changes:
+
+- `src/tcxsd/NativeRuntime.cpp`
+  - Default native output/log directory no longer falls back to the Windows system temp directory.
+  - If `RuntimeSettings::outputDirectory` is empty, fallback is now `<current-working-directory>/tcxStableDiffusionOutputs`.
+- `tools/setup_sd.py`
+  - Temporary `vcvars` batch files now use `G:/TrussC/addons/tcxStableDiffusion/.codex-logs/tmp`, not the system temp directory.
+  - Default model downloads and verification now target `examples/ideogram4-basic/bin/data/models/<model-id>`.
+- `src/tcxsd/Types.cpp`
+  - `RuntimeSettings::lowVramCuda()` now uses `backendAssignment = "cuda0,te=cpu"`, `paramsBackendAssignment = "cpu"`, `streamLayers = true`, and `maxVramGiB = 8.0`.
+  - This avoids Qwen/TE runtime offload spikes on busy RTX 4090 Windows desktops.
+- `examples/ideogram4-basic/src/tcApp.cpp`
+  - Model folders are now loaded from `examples/ideogram4-basic/bin/data/models/<model-id>`.
+  - Ideogram4 default prompt is now an upstream-verified 1024 poster prompt.
+  - Ideogram4 defaults are now `1024x1024`, `steps=20`, `cfg=7.0`, `seed=42`.
+  - The workbench still exposes the Ideogram4 composer, but raw verified prompt is the default starter.
+  - Safety-placeholder image detection now reports a diagnostic instead of repeatedly changing seed.
+- `examples/ideogram4-basic/jobs/ideogram4_poster_job.json`
+  - `model_dir` now points into `../bin/data/models/ideogram4-q4_0`.
+  - Updated to the same verified Ideogram4 prompt and low-VRAM streaming runtime.
+- `examples/flux2-klein-basic/jobs/flux2_klein_product_job.json`
+  - `model_dir` now points into `../../ideogram4-basic/bin/data/models/flux2-klein-4b-q4_0`.
+- `examples/z-image-basic/jobs/z_image_turbo_wide_job.json`
+  - `model_dir` now points into `../../ideogram4-basic/bin/data/models/z-image-turbo-q3_k`.
+- `node/src/index.mjs`
+  - Default `modelRoot` now points into the example `bin/data/models` folder.
+
+C-drive / temp status:
+
+- Earlier historical outputs did write native images and server logs to `C:/Users/Admin/AppData/Local/Temp/tcxStableDiffusion` when `outputDirectory` was not set.
+- The current example sets `settings.outputDirectory` under `examples/ideogram4-basic/outputs/<model-id>/native`, so latest GUI smoke outputs are on `G:`.
+- Future tests should also set process temp variables to the ignored local temp folder:
+
+```powershell
+$tmp = 'G:\TrussC\addons\tcxStableDiffusion\.codex-logs\tmp'
+New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+$env:TEMP = $tmp
+$env:TMP = $tmp
+$env:TMPDIR = $tmp
+```
+
+Latest model-diagnosis conclusion:
+
+- The `Image blocked by safety filter` frame is not produced by tcxStableDiffusion code and is not logged by `sd-server` as a moderation block.
+- Direct `sd-cli.exe` can also generate that frame for some custom Ideogram4 prompts, so it is model output, not an addon/UI keyword mutation.
+- Upstream Ideogram4 verified prompt works with the same local assets and seed class, so the assets and CUDA path are usable.
+- FLUX.2-klein and Z-Image do not reproduce the safety-placeholder issue in the current multi-model workbench smoke tests. This points to Ideogram4 prompt/model behavior, not a common code-path failure.
+- Ideogram4 text spelling is still imperfect even on a good image; that remains prompt/model tuning, not backend failure.
+
+Latest smoke evidence:
+
+- Ideogram4 GUI smoke:
+  - `TCXSD_SMOKE=1 TCXSD_SMOKE_MODEL=ideogram4 TCXSD_SMOKE_LOW_VRAM=1`
+  - Output: `examples/ideogram4-basic/outputs/ideogram4-q4_0/ideogram4-q4_0_job_1.png`
+  - Sidecar: `examples/ideogram4-basic/outputs/ideogram4-q4_0/ideogram4-q4_0_job_1.json`
+  - Summary: `ok=true`, `1024x1024`, `steps=20`, `cfg_scale=7`, `seed=42`, `backend_assignment=cuda0,te=cpu`, `stream_layers=true`, `duration_seconds=115.952`.
+- FLUX.2-klein GUI smoke:
+  - `TCXSD_SMOKE=1 TCXSD_SMOKE_MODEL=flux2-klein TCXSD_SMOKE_LOW_VRAM=1 TCXSD_SMOKE_WIDTH=512 TCXSD_SMOKE_HEIGHT=512 TCXSD_SMOKE_STEPS=4 TCXSD_SMOKE_SEED=2048`
+  - Output: `examples/ideogram4-basic/outputs/flux2-klein-4b-q4_0/flux2-klein-4b-q4_0_job_1.png`
+  - Sidecar: `examples/ideogram4-basic/outputs/flux2-klein-4b-q4_0/flux2-klein-4b-q4_0_job_1.json`
+  - Summary: `ok=true`, `512x512`, `steps=4`, `seed=2048`, no safety-placeholder image, output/log paths on `G:`, `duration_seconds=9.556`.
+- FLUX.2-klein bin-data relocation smoke:
+  - `TCXSD_SMOKE=1 TCXSD_SMOKE_MODEL=flux2-klein TCXSD_SMOKE_LOW_VRAM=1 TCXSD_SMOKE_WIDTH=512 TCXSD_SMOKE_HEIGHT=512 TCXSD_SMOKE_STEPS=1 TCXSD_SMOKE_SEED=777`
+  - Model dir: `examples/ideogram4-basic/bin/data/models/flux2-klein-4b-q4_0`
+  - Summary: `ok=true`, `512x512`, `steps=1`, `seed=777`, `execution_mode=persistent_server`, `duration_seconds=9.063`.
+- Z-Image GUI smoke:
+  - `TCXSD_SMOKE=1 TCXSD_SMOKE_MODEL=z-image TCXSD_SMOKE_LOW_VRAM=1`
+  - Output: `examples/ideogram4-basic/outputs/z-image-turbo-q3_k/z-image-turbo-q3_k_job_1.png`
+  - Sidecar: `examples/ideogram4-basic/outputs/z-image-turbo-q3_k/z-image-turbo-q3_k_job_1.json`
+  - Summary: `ok=true`, `1024x512`, `steps=8`, `seed=4096`, no safety-placeholder image, output/log paths on `G:`, `duration_seconds=10.067`.
+
+This pass has already been verified with `trusscli build --release`, full Python/Node tests, model path validation, and a short FLUX.2-klein GUI smoke from the relocated `bin/data/models` folder.
+
+Next continuation focus: turn the roadmap below into model-profile presets, storage/runtime cleanup APIs, Node sidecar/cancellation hardening, and image-input parity across backends.
+
+## Persistent Encapsulation Roadmap
+
+High-priority encapsulation work to keep iterating:
+
+- Model profiles:
+  - Add per-model runtime defaults instead of using one global low-VRAM profile for all models.
+  - Expose validated presets: fast preview, balanced, high-quality, low-VRAM, and dedicated 4090 full-speed.
+  - Store model capability metadata: text encoder type, native resolution, recommended size, step range, CFG/guidance range, VAE format, prompt style, and known caveats.
+- Runtime and storage:
+  - Make output/temp/cache roots explicit in `RuntimeSettings`, with no hidden C-drive fallback.
+  - Add a cleanup API for native logs, temporary outputs, and old sidecars.
+  - Add GPU memory policy knobs: `te=cpu`, `vae=cpu`, `stream_layers`, `max_vram`, persistent model reuse, and server reuse.
+  - Detect CUDA OOM and return structured remediation hints instead of generic failed generation text.
+- Prompt and quality:
+  - Keep Ideogram4 verified templates separate from general high-level prompt builders.
+  - Add prompt packs for poster, product, typography, logo, UI mockup, photo, and illustration.
+  - Add a result quality classifier for placeholder images, blank images, severe text failure, and wrong aspect output.
+  - Record prompt profile/version in every sidecar for reproducibility.
+- Node-facing package:
+  - Turn the current `node/` package into a stable public API around job creation, model profiles, progress events, cancellation, sidecar parsing, and path resolution.
+  - Keep Node pure process/server based; do not depend on Python for normal runtime.
+  - Add TypeScript declarations and examples.
+- C++ API:
+  - Add strongly typed request structs for text-to-image, image-to-image, inpainting, ControlNet, LoRA, upscale, and future video/audio.
+  - Keep designer-friendly high-level helpers, but preserve low-level escape hatches for professional tuning.
+  - Add structured error codes and retry policies at the addon layer.
+- Examples:
+  - Keep all example model folders under `examples/ideogram4-basic/bin/data/models/<model-id>`.
+  - Turn the current workbench into the main multi-model example, then add smaller focused examples for CLI/job, Node, batch, img2img, ControlNet, and LoRA.
+  - Keep GUI labels Chinese and use a modern restrained theme.
+- Future media:
+  - Reserve architecture for video generation, audio generation, ControlNet, reference images, upscalers, and prompt/asset caching without breaking current API names.
+
 ## Important Paths
 
 - Addon root: `G:/TrussC/addons/tcxStableDiffusion`
@@ -14,7 +126,7 @@ This addon is in the first implementation pass, with the core structure, scripts
 - First example: `G:/TrussC/addons/tcxStableDiffusion/examples/ideogram4-basic`
 - FLUX.2-klein starter: `G:/TrussC/addons/tcxStableDiffusion/examples/flux2-klein-basic`
 - Z-Image starter: `G:/TrussC/addons/tcxStableDiffusion/examples/z-image-basic`
-- Shared example models: `G:/TrussC/addons/tcxStableDiffusion/examples/ideogram4-basic/data/models/<model-id>`
+- Shared example models: `G:/TrussC/addons/tcxStableDiffusion/examples/ideogram4-basic/bin/data/models/<model-id>`
 - Node package: `G:/TrussC/addons/tcxStableDiffusion/node`
 - First smoke output: `G:/TrussC/addons/tcxStableDiffusion/examples/ideogram4-basic/outputs/ideogram4_job_1.png`
 - First smoke sidecar: `G:/TrussC/addons/tcxStableDiffusion/examples/ideogram4-basic/outputs/ideogram4_job_1.json`
@@ -145,7 +257,7 @@ $env:TCXSD_SMOKE_LOW_VRAM='1'
 
 ## Next Best Step
 
-Tune final prompt quality for each model and harden the Node package sidecar/cancellation story. The three priority model assets are already centralized under the main example data folder and smoke-verified. For GUI polish, the next useful step is a small responsive pass for very short window heights, but the current 1280x900 workbench layout is visually verified.
+Tune final prompt quality for each model and harden the Node package sidecar/cancellation story. The three priority model assets are already centralized under the main example bin data folder and smoke-verified. For GUI polish, the next useful step is a small responsive pass for very short window heights, but the current 1280x900 workbench layout is visually verified.
 
 ## Latest Verified State
 
@@ -176,7 +288,7 @@ Tune final prompt quality for each model and harden the Node package sidecar/can
 - GUI release rebuild: `G:/TrussC/tools/bin/trusscli.exe build --release`, exit code 0.
 - GUI short smoke: `TCXSD_SMOKE=1 TCXSD_SMOKE_MODEL=flux2-klein TCXSD_SMOKE_WIDTH=512 TCXSD_SMOKE_HEIGHT=512 TCXSD_SMOKE_STEPS=1 TCXSD_SMOKE_SEED=777 ./bin/ideogram4-basic.exe`, exit code 0.
 - Python compile: `python -m py_compile tools/setup_sd.py tools/tcxsd_models.py tools/verify_sd.py tools/tcxsd_sidecar.py tools/tcxsd_job.py tools/tcxsd_server.py`
-- Tests: `python -m unittest discover -s tests`, 20 tests passing
+- Tests: `python -m unittest discover -s tests`, 22 tests passing
 
 ## Known Caveat
 

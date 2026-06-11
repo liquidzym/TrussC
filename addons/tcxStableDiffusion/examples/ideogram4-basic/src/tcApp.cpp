@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -37,6 +38,8 @@ struct ModelProfile {
     const char* negative;
 };
 
+constexpr const char* kIdeogramVerifiedPrompt = R"tcxsd({"high_level_description":"A square 1024 x 1024 luxury fashion magazine cover featuring exactly one short chubby fluffy cat as the main model. The cat sits on a soft ivory studio floor, facing the viewer with a stylish calm expression, wearing tiny black sunglasses, a red silk scarf, and a small gold collar charm. In front of the cat on the floor is a wide horizontal luxury nameplate that clearly reads ideogram4.cpp. The whole design feels premium, fashionable, clean, and editorial.","style_description":{"aesthetics":"luxury fashion magazine cover, high-end pet couture campaign, minimalist editorial design, elegant studio photography, soft paper texture, refined typography, fashionable and polished","lighting":"Soft diffused studio lighting, gentle spotlight on the cat, subtle floor shadow, warm ivory highlights, clean separation between subject and background","photo":"high-resolution fashion editorial photography look, front-facing cat portrait, crisp fur details, glossy sunglasses, clear readable nameplate text, shallow depth of field","medium":"mixed media fashion photography and premium editorial graphic design","color_palette":["#F4EFE7","#111111","#D8B56D","#B73A3A","#FFFFFF","#8A7A6A"]},"compositional_deconstruction":{"canvas":"Square 1024 x 1024 canvas with a normal upright orientation. Do not rotate the poster or any text. Use a clean fashion magazine cover layout.","background":"Warm ivory studio backdrop with subtle paper grain, a soft spotlight gradient, faint floor shadow, and a few minimal gold editorial lines. The background is spacious, premium, and uncluttered.","layout":"Top center has a small elegant headline. Center area features one cat as the main fashion model. Lower foreground has a wide horizontal luxury nameplate placed on the floor in front of the cat. Bottom center has a small footer. All text is horizontal, upright, and readable left to right.","elements":[{"type":"text","desc":"Top center headline reading LOOK WHAT I FOUND in a refined high-fashion serif font. The headline is horizontal, centered, elegant, and secondary to the nameplate text."},{"type":"obj","desc":"Exactly one short chubby fluffy cat sitting in the center like a luxury fashion model. The cat has a large round head, compact body, short legs, soft detailed fur, expressive eyes, and a calm confident pose. The cat is cute and rounded, not tall, not stretched, not duplicated."},{"type":"obj","desc":"Tiny glossy black sunglasses worn naturally by the cat, slightly oversized but still showing the cat face clearly. The sunglasses add a chic fashion-editorial attitude."},{"type":"obj","desc":"A red silk scarf tied neatly around the cat neck, with soft folds and a couture feeling. The scarf must not cover the cat face or the nameplate."},{"type":"obj","desc":"A small gold collar charm or fashion accessory under the scarf, subtle and premium, adding a luxury campaign detail."},{"type":"obj","desc":"In the lower foreground, place a wide horizontal luxury nameplate on the floor in front of the cat. The nameplate is low, flat, landscape-oriented, much wider than tall, like a fashion show seat card or premium display plaque. It is centered, front-facing, level, and fully visible. It must not become vertical, tall, standing, rotated, or side-facing."},{"type":"text","desc":"Print the exact text ideogram4.cpp only on the wide horizontal nameplate. Use clean bold black lettering, perfectly spelled, lowercase, with the number 4 and .cpp extension. The text must fit completely inside the nameplate, stay horizontal, and be readable from left to right."},{"type":"obj","desc":"Add sparse premium editorial accents around the edges: thin gold lines, small code brackets, tiny cursor marks, subtle dots, and minimal geometric details. No extra cats, no stickers, no animal faces, no busy decorations."},{"type":"text","desc":"Bottom center footer reading tiny paws, big compile energy in a small refined monospace or editorial font. The footer is horizontal, centered, understated, and much smaller than the nameplate text."}]}})tcxsd";
+
 const std::array<ModelProfile, 3> kProfiles = {{
     {
         ProfileKind::Ideogram4,
@@ -46,16 +49,16 @@ const std::array<ModelProfile, 3> kProfiles = {{
         "poster",
         1024,
         1024,
-        8,
-        -1,
-        1.0f,
+        20,
+        42,
+        7.0f,
         true,
-        "A clean futuristic product poster for tcxStableDiffusion, a modular local AI image addon for creative coders",
-        "tcxStableDiffusion",
-        "premium technical product poster, refined typography, elegant studio lighting, precise interface details",
-        "#F7F4EC, #111111, #2F80ED, #27AE60, #FFFFFF",
+        "A square 1024 x 1024 luxury fashion magazine cover featuring exactly one short chubby fluffy cat as the main model. The cat sits on a soft ivory studio floor, facing the viewer with a stylish calm expression, wearing tiny black sunglasses, a red silk scarf, and a small gold collar charm. In front of the cat on the floor is a wide horizontal luxury nameplate that clearly reads ideogram4.cpp. The whole design feels premium, fashionable, clean, and editorial",
+        "ideogram4.cpp",
+        "luxury fashion magazine cover, high-end pet couture campaign, minimalist editorial design, elegant studio photography, soft paper texture, refined typography, fashionable and polished",
+        "#F4EFE7, #111111, #D8B56D, #B73A3A, #FFFFFF, #8A7A6A",
+        kIdeogramVerifiedPrompt,
         "",
-        "low quality, blurry, cluttered layout, distorted anatomy, duplicate subjects, watermark, signature, misspelled text, unreadable text, cropped text, mirrored text, rotated text, extra words",
     },
     {
         ProfileKind::Flux2Klein,
@@ -348,6 +351,73 @@ bool inputIntFullWidth(const char* label, const char* id, int* value) {
     ImGui::SetNextItemWidth(-1.0f);
     return ImGui::InputInt(id, value);
 }
+
+bool looksLikeSafetyPlaceholder(const Pixels& pixels) {
+    if (!pixels.isAllocated() || pixels.isFloat() || pixels.getChannels() < 3 || pixels.getWidth() < 128 || pixels.getHeight() < 128) {
+        return false;
+    }
+
+    const int width = pixels.getWidth();
+    const int height = pixels.getHeight();
+    const int channels = pixels.getChannels();
+    const unsigned char* data = pixels.getData();
+    const int stride = std::max(1, (width * height) / 32768);
+
+    std::uint64_t sampled = 0;
+    std::uint64_t neutral = 0;
+    std::uint64_t midGray = 0;
+    std::uint64_t brightNeutral = 0;
+    std::uint64_t colored = 0;
+    double sum = 0.0;
+    double sumSq = 0.0;
+
+    for (int index = 0; index < width * height; index += stride) {
+        const unsigned char* px = data + static_cast<size_t>(index) * static_cast<size_t>(channels);
+        const int r = px[0];
+        const int g = px[1];
+        const int b = px[2];
+        const int maxChannel = std::max({r, g, b});
+        const int minChannel = std::min({r, g, b});
+        const int spread = maxChannel - minChannel;
+        const double luminance = (static_cast<double>(r) + static_cast<double>(g) + static_cast<double>(b)) / 3.0;
+
+        ++sampled;
+        sum += luminance;
+        sumSq += luminance * luminance;
+
+        if (spread <= 6) {
+            ++neutral;
+            if (luminance >= 92.0 && luminance <= 150.0) {
+                ++midGray;
+            }
+            if (luminance >= 175.0) {
+                ++brightNeutral;
+            }
+        } else if (spread >= 24) {
+            ++colored;
+        }
+    }
+
+    if (sampled == 0) {
+        return false;
+    }
+
+    const double count = static_cast<double>(sampled);
+    const double neutralRatio = static_cast<double>(neutral) / count;
+    const double midGrayRatio = static_cast<double>(midGray) / count;
+    const double brightRatio = static_cast<double>(brightNeutral) / count;
+    const double coloredRatio = static_cast<double>(colored) / count;
+    const double mean = sum / count;
+    const double variance = std::max(0.0, (sumSq / count) - (mean * mean));
+    const double stddev = std::sqrt(variance);
+
+    const bool mostlyNeutral = neutralRatio > 0.90 && coloredRatio < 0.035;
+    const bool warningLikeContrast = stddev >= 7.0 && stddev <= 85.0;
+    const bool grayWarning = midGrayRatio > 0.55 && mean >= 85.0 && mean <= 165.0;
+    const bool brightWarning = brightRatio > 0.55 && mean >= 170.0 && mean <= 245.0;
+    return mostlyNeutral && warningLikeContrast && (grayWarning || brightWarning);
+}
+
 } // namespace
 
 void tcApp::setup() {
@@ -516,7 +586,7 @@ void tcApp::selectModel(int index, bool resetPrompt) {
 }
 
 void tcApp::refreshModelDir() {
-    modelDir_ = exampleRoot() / "data" / "models" / profileAt(selectedModel_).id;
+    modelDir_ = exampleRoot() / "bin" / "data" / "models" / profileAt(selectedModel_).id;
 }
 
 void tcApp::initializeModel() {
@@ -562,19 +632,22 @@ tcx::sd::IdeogramPrompt tcApp::buildPromptTemplate() const {
     auto prompt = tcx::sd::IdeogramPrompt::poster(templateSubject_.data())
         .text(templateText_.data())
         .styleDescription(templateStyle_.data())
-        .compositionDescription("upright poster layout with a clear title zone, central product/addon metaphor, visible interface fragments, and balanced technical details")
-        .backgroundDescription("clean dark-to-light studio background with subtle grid hints and restrained interface texture")
-        .lightingDescription("soft studio key light, crisp rim light on important edges, readable contrast for all text")
-        .mediumDescription("mixed media product photography, refined editorial graphic design, and precise software UI illustration")
-        .moodDescription("professional, calm, high-performance, and approachable");
+        .compositionDescription("Square 1024 x 1024 editorial layout with a clear top headline, one centered main subject, a wide horizontal foreground nameplate, and small footer text. All text is horizontal, upright, and readable left to right.")
+        .backgroundDescription("warm ivory studio backdrop with subtle paper grain, a soft spotlight gradient, faint floor shadow, and sparse premium edge accents")
+        .lightingDescription("soft diffused studio lighting, gentle spotlight on the main subject, subtle floor shadow, warm ivory highlights, clean separation between subject and background")
+        .mediumDescription("mixed media product photography and premium editorial graphic design")
+        .moodDescription("premium, calm, polished, and editorial");
 
     const auto colors = splitCsv(templatePalette_.data());
     if (!colors.empty()) {
         prompt.palette(colors);
     }
 
-    prompt.element("obj", "A tasteful local AI workstation or abstract addon module that suggests Windows CUDA acceleration without showing noisy hardware clutter.");
-    prompt.element("obj", "Small refined UI panels, node graph fragments, and generation preview tiles arranged as secondary details.");
+    prompt.element("text", "Top center headline reading LOOK WHAT I FOUND in a refined editorial serif font. The headline is horizontal, centered, elegant, and secondary to the foreground nameplate text.");
+    prompt.element("obj", "The main subject described above, centered as the single hero object with a premium studio photography look, clean silhouette, and no duplicated subjects.");
+    prompt.element("obj", "In the lower foreground, place a wide horizontal nameplate. It is low, flat, landscape-oriented, centered, front-facing, level, and fully visible.");
+    prompt.element("text", "Print the exact text from the requested visible-text field only on the wide horizontal nameplate. Use clean bold black lettering, keep the spelling exact, and keep the text horizontal and readable from left to right.");
+    prompt.element("obj", "Add sparse premium editorial accents around the edges: thin lines, tiny cursor marks, subtle dots, and minimal geometric details. Keep the background spacious and uncluttered.");
     return prompt;
 }
 
@@ -594,12 +667,15 @@ void tcApp::applyModelDefaults() {
     steps_ = profile.steps;
     seed_ = profile.seed;
     cfgScale_ = profile.cfg;
-    usePromptComposer_ = profile.supportsIdeogramComposer;
+    usePromptComposer_ = profile.supportsIdeogramComposer && (!profile.prompt || !*profile.prompt);
     copyText(templateSubject_, profile.subject);
     copyText(templateText_, profile.visibleText);
     copyText(templateStyle_, profile.style);
     copyText(templatePalette_, profile.palette);
-    if (profile.supportsIdeogramComposer) {
+    if (profile.prompt && *profile.prompt) {
+        copyText(prompt_, profile.prompt);
+        copyText(negativePrompt_, profile.negative);
+    } else if (profile.supportsIdeogramComposer) {
         applyPromptTemplate();
     } else {
         copyText(prompt_, profile.prompt);
@@ -671,6 +747,15 @@ void tcApp::adoptResult(tcx::StableDiffusionImage&& result) {
         }
         status_ = "生成失败";
         return;
+    }
+
+    if (looksLikeSafetyPlaceholder(result.pixels)) {
+        result.metadata["placeholder_detected"] = "true";
+        result.metadata["placeholder_detector"] = "neutral_gray_warning_screen";
+        result.metadata["placeholder_note"] = "The model generated a neutral warning-style placeholder image; this is image content, not an addon safety filter.";
+        lastError_ = "检测到模型生成了安全拦截占位图；这是模型画出来的内容，不是程序拦截。请使用官方验证模板、提高分辨率/步数，或改写提示词。";
+        status_ = "检测到占位图";
+        writeSmokeLog("placeholder detected");
     }
 
     if (autoSave_) {

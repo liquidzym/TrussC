@@ -9,7 +9,7 @@ const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 export const addonRoot = path.resolve(moduleDir, "..", "..");
 export const defaultExampleRoot = path.join(addonRoot, "examples", "ideogram4-basic");
 export const defaultNativeDir = path.join(addonRoot, "libs", "stable-diffusion", "current");
-export const defaultModelRoot = path.join(defaultExampleRoot, "data", "models");
+export const defaultModelRoot = path.join(defaultExampleRoot, "bin", "data", "models");
 
 export const modelProfiles = {
   "ideogram4-q4_0": {

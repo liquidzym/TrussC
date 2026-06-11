@@ -75,16 +75,16 @@ class SetupToolTests(unittest.TestCase):
             self.assertEqual(setup_sd.find_cli_file(install_dir), cli)
             self.assertEqual(setup_sd.find_server_file(install_dir), server)
 
-    def test_default_model_target_uses_shared_example_data_models_folder(self):
+    def test_default_model_target_uses_shared_example_bin_data_models_folder(self):
         registry = setup_sd.tcxsd_models.load_model_registry()
 
         ideogram = setup_sd.model_target_dir(registry.model("ideogram4-q4_0"), None)
         flux = setup_sd.model_target_dir(registry.model("flux2-klein-4b-q4_0"), None)
         z_image = setup_sd.model_target_dir(registry.model("z-image-turbo-q3_k"), None)
 
-        self.assertEqual(ideogram, ADDON_ROOT / "examples" / "ideogram4-basic" / "data" / "models" / "ideogram4-q4_0")
-        self.assertEqual(flux, ADDON_ROOT / "examples" / "ideogram4-basic" / "data" / "models" / "flux2-klein-4b-q4_0")
-        self.assertEqual(z_image, ADDON_ROOT / "examples" / "ideogram4-basic" / "data" / "models" / "z-image-turbo-q3_k")
+        self.assertEqual(ideogram, ADDON_ROOT / "examples" / "ideogram4-basic" / "bin" / "data" / "models" / "ideogram4-q4_0")
+        self.assertEqual(flux, ADDON_ROOT / "examples" / "ideogram4-basic" / "bin" / "data" / "models" / "flux2-klein-4b-q4_0")
+        self.assertEqual(z_image, ADDON_ROOT / "examples" / "ideogram4-basic" / "bin" / "data" / "models" / "z-image-turbo-q3_k")
 
 
 if __name__ == "__main__":

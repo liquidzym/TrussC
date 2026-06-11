@@ -66,7 +66,7 @@ examples/ideogram4-basic/outputs/ui_cjk_check.png
 
 ### Resolved - Ideogram4 model assets are present
 
-The first example now has these files in `examples/ideogram4-basic/data/models/ideogram4-q4_0` and `python tools/verify_sd.py` confirms them:
+The first example now has these files in `examples/ideogram4-basic/bin/data/models/ideogram4-q4_0` and `python tools/verify_sd.py` confirms them:
 
 - `ideogram4-Q4_0.gguf`
 - `ideogram4_uncond-Q4_0.gguf`
@@ -126,8 +126,8 @@ These fields are wired through the persistent server backend first.
 FLUX.2-klein and Z-Image Turbo starter assets were downloaded successfully without hitting the 3-failure manual-download rule:
 
 ```text
-examples/ideogram4-basic/data/models/flux2-klein-4b-q4_0
-examples/ideogram4-basic/data/models/z-image-turbo-q3_k
+examples/ideogram4-basic/bin/data/models/flux2-klein-4b-q4_0
+examples/ideogram4-basic/bin/data/models/z-image-turbo-q3_k
 ```
 
 Both starter JSON jobs validate and complete through `runtime.execution_mode = persistent_server`:
@@ -144,7 +144,7 @@ The current outputs are smoke/architecture checks, not curated quality presets.
 The main `examples/ideogram4-basic` GUI is now a multi-model workbench. It selects between Ideogram4, FLUX.2-klein, and Z-Image Turbo, loading each from:
 
 ```text
-examples/ideogram4-basic/data/models/<model-id>
+examples/ideogram4-basic/bin/data/models/<model-id>
 ```
 
 Each profile has model-specific defaults for prompt, negative prompt, size, steps, CFG, seed, and output folder.

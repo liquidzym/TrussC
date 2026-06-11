@@ -8,7 +8,7 @@ Download the model assets:
 python ..\..\tools\setup_sd.py download-model --model z-image-turbo-q3_k
 ```
 
-The downloader places files in `..\ideogram4-basic\data\models\z-image-turbo-q3_k`.
+The downloader places files in `..\ideogram4-basic\bin\data\models\z-image-turbo-q3_k`.
 
 Run the starter job:
 

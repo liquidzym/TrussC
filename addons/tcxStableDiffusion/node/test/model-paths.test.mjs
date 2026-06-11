@@ -4,12 +4,14 @@ import test from "node:test";
 import {
   buildImageRequest,
   buildServerArgs,
+  defaultExampleRoot,
   defaultModelRoot,
   extractImageBase64,
   resolveModelDir
 } from "../src/index.mjs";
 
-test("default model directory uses the shared example data folder", () => {
+test("default model directory uses the shared example bin data folder", () => {
+  assert.equal(defaultModelRoot, path.join(defaultExampleRoot, "bin", "data", "models"));
   assert.equal(resolveModelDir("ideogram4-q4_0"), path.join(defaultModelRoot, "ideogram4-q4_0"));
 });
 

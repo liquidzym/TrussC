@@ -138,6 +138,19 @@ fs::path addonServerCandidate() {
     return root.empty() ? fs::path() : fs::path(root) / "libs" / "stable-diffusion" / "current" / "bin" / name;
 }
 
+fs::path defaultOutputDirectory() {
+    std::error_code ec;
+    fs::path base = fs::current_path(ec);
+    if (ec || base.empty()) {
+        base = fs::path(".");
+    }
+    return base / "tcxStableDiffusionOutputs";
+}
+
+fs::path outputDirectoryForSettings(const RuntimeSettings& settings) {
+    return settings.outputDirectory.empty() ? defaultOutputDirectory() : settings.outputDirectory;
+}
+
 fs::path resolveCliExecutable(const RuntimeSettings& settings) {
     if (!settings.cliExecutable.empty()) {
         return absolutePath(settings.cliExecutable);
@@ -998,12 +1011,7 @@ std::string serverLoraPath(const fs::path& path, const RuntimeSettings& settings
 
 fs::path serverLogPathForSettings(const RuntimeSettings& settings) {
     std::error_code ec;
-    fs::path outputDir = settings.outputDirectory.empty()
-        ? fs::temp_directory_path(ec) / "tcxStableDiffusion"
-        : settings.outputDirectory;
-    if (ec) {
-        outputDir = fs::path("tcxStableDiffusionOutputs");
-    }
+    fs::path outputDir = outputDirectoryForSettings(settings);
     fs::create_directories(outputDir, ec);
     return outputDir / ("tcxsd_server_" + makeOutputStem(0) + ".log");
 }
@@ -1224,12 +1232,7 @@ ImageResult generateImageWithPersistentServer(
     }
 
     std::error_code ec;
-    fs::path outputDir = settings.outputDirectory.empty()
-        ? fs::temp_directory_path(ec) / "tcxStableDiffusion"
-        : settings.outputDirectory;
-    if (ec) {
-        outputDir = fs::path("tcxStableDiffusionOutputs");
-    }
+    fs::path outputDir = outputDirectoryForSettings(settings);
     fs::create_directories(outputDir, ec);
     if (ec) {
         result.error = "Failed to create output directory: " + outputDir.string() + " (" + ec.message() + ")";
@@ -1398,12 +1401,7 @@ ImageResult generateImageWithCli(
     }
 
     std::error_code ec;
-    fs::path outputDir = settings.outputDirectory.empty()
-        ? fs::temp_directory_path(ec) / "tcxStableDiffusion"
-        : settings.outputDirectory;
-    if (ec) {
-        outputDir = fs::path("tcxStableDiffusionOutputs");
-    }
+    fs::path outputDir = outputDirectoryForSettings(settings);
     fs::create_directories(outputDir, ec);
     if (ec) {
         result.error = "Failed to create output directory: " + outputDir.string() + " (" + ec.message() + ")";

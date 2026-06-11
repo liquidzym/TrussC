@@ -17,7 +17,7 @@ python tools\verify_sd.py
 If model download fails 3 times, the setup script prints exact manual download URLs. Place downloaded files in:
 
 ```text
-examples/ideogram4-basic/data/models/<model-id>
+examples/ideogram4-basic/bin/data/models/<model-id>
 ```
 
 ## First Example
@@ -26,7 +26,7 @@ examples/ideogram4-basic/data/models/<model-id>
 examples/ideogram4-basic
 ```
 
-The example uses `tcxImGui` and a Chinese GUI. It is now the main multi-model workbench: Ideogram4, FLUX.2-klein, and Z-Image Turbo all live under `data/models/<model-id>` and can be selected from one GUI.
+The example uses `tcxImGui` and a Chinese GUI. It is now the main multi-model workbench: Ideogram4, FLUX.2-klein, and Z-Image Turbo all live under `bin/data/models/<model-id>` and can be selected from one GUI.
 
 The Windows example bundles both:
 
@@ -38,7 +38,7 @@ The Windows example bundles both:
 
 ```cpp
 tcx::StableDiffusion sd;
-sd.setupIdeogram4Async("data/models/ideogram4-q4_0", tcx::sd::RuntimeSettings::windowsCuda());
+sd.setupIdeogram4Async("bin/data/models/ideogram4-q4_0", tcx::sd::RuntimeSettings::windowsCuda());
 
 sd.createImage("A precise product render, studio lighting")
     .size(1024, 1024)

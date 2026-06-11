@@ -237,11 +237,12 @@ RuntimeSettings RuntimeSettings::windowsCuda() {
 RuntimeSettings RuntimeSettings::lowVramCuda() {
     RuntimeSettings settings = RuntimeSettings::windowsCuda();
     settings.offloadParamsToCpu = true;
+    settings.backendAssignment = "cuda0,te=cpu";
     settings.paramsBackendAssignment = "cpu";
-    settings.keepTextEncoderOnCpu = false;
+    settings.keepTextEncoderOnCpu = true;
     settings.keepVaeOnCpu = false;
-    settings.maxVramGiB = 0.0f;
-    settings.streamLayers = false;
+    settings.maxVramGiB = 8.0f;
+    settings.streamLayers = true;
     return settings;
 }
 

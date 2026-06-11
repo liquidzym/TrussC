@@ -8,7 +8,7 @@ Download the model assets:
 python ..\..\tools\setup_sd.py download-model --model flux2-klein-4b-q4_0
 ```
 
-The downloader places files in `..\ideogram4-basic\data\models\flux2-klein-4b-q4_0`.
+The downloader places files in `..\ideogram4-basic\bin\data\models\flux2-klein-4b-q4_0`.
 
 Run the starter job:
 

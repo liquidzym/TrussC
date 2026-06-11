@@ -1,6 +1,6 @@
 {
   "model": "z-image-turbo-q3_k",
-  "model_dir": "../../ideogram4-basic/data/models/z-image-turbo-q3_k",
+  "model_dir": "../../ideogram4-basic/bin/data/models/z-image-turbo-q3_k",
   "native_dir": "../../../libs/stable-diffusion/current",
   "output_dir": "../outputs/jobs",
   "output_name": "z_image_turbo_wide_job",

@@ -23,6 +23,12 @@ CURRENT_DIR = NATIVE_ROOT / "current"
 SDCPP_REPOSITORY = "https://github.com/leejet/stable-diffusion.cpp.git"
 
 
+def local_temp_dir() -> pathlib.Path:
+    path = ADDON_ROOT / ".codex-logs" / "tmp"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def default_profile() -> str:
     system = platform.system().lower()
     if system == "windows":
@@ -175,7 +181,7 @@ def msvc_dev_environment() -> dict[str, str] | None:
 def _run_vcvars_batch(vcvars: pathlib.Path, tail_command: str) -> subprocess.CompletedProcess[str]:
     script = None
     try:
-        with tempfile.NamedTemporaryFile("w", suffix=".bat", delete=False, encoding="utf-8") as handle:
+        with tempfile.NamedTemporaryFile("w", suffix=".bat", delete=False, encoding="utf-8", dir=local_temp_dir()) as handle:
             script = pathlib.Path(handle.name)
             handle.write("@echo off\n")
             handle.write(f'call "{vcvars}" >nul\n')
@@ -411,13 +417,13 @@ def write_manifest(
 def model_target_dir(model: tcxsd_models.ModelSpec, target: str | None) -> pathlib.Path:
     if target:
         return pathlib.Path(target).resolve()
-    return (ADDON_ROOT / "examples" / "ideogram4-basic" / "data" / "models" / model.id).resolve()
+    return (ADDON_ROOT / "examples" / "ideogram4-basic" / "bin" / "data" / "models" / model.id).resolve()
 
 
 def list_models() -> None:
     registry = tcxsd_models.load_model_registry()
     for model in registry.all():
-        print(f"{model.id} [{model.family}] -> examples/ideogram4-basic/data/models/{model.id}")
+        print(f"{model.id} [{model.family}] -> examples/ideogram4-basic/bin/data/models/{model.id}")
         for asset in model.files:
             print(f"  - {asset.role}: {asset.filename}")
 
