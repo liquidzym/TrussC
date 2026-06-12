@@ -243,6 +243,8 @@ addons/tcxStableDiffusion/.codex-logs/
 addons/tcxStableDiffusion/.codex-logs/**
 addons/tcxStableDiffusion/build/
 addons/tcxStableDiffusion/build/**
+addons/tcxStableDiffusion/dist/
+addons/tcxStableDiffusion/dist/**
 addons/tcxStableDiffusion/libs/stable-diffusion/current/
 addons/tcxStableDiffusion/libs/stable-diffusion/current/**
 addons/tcxStableDiffusion/libs/stable-diffusion/build/
@@ -263,6 +265,14 @@ addons/tcxStableDiffusion/examples/**/CMakePresets.json
 addons/tcxStableDiffusion/examples/**/build-web.command
 addons/tcxStableDiffusion/examples/**/build-web.bat
 addons/tcxStableDiffusion/examples/**/build-web.sh
+addons/tcxStableDiffusion/examples/**/runtime/
+addons/tcxStableDiffusion/examples/**/runtime/**
+addons/tcxStableDiffusion/examples/**/node_modules/
+addons/tcxStableDiffusion/examples/**/node_modules/**
+addons/tcxStableDiffusion/examples/**/web/dist/
+addons/tcxStableDiffusion/examples/**/web/dist/**
+addons/tcxStableDiffusion/examples/**/worker/dist/
+addons/tcxStableDiffusion/examples/**/worker/dist/**
 addons/tcxStableDiffusion/examples/**/models/
 addons/tcxStableDiffusion/examples/**/models/**
 addons/tcxStableDiffusion/examples/**/data/models/

@@ -1,0 +1,83 @@
+{
+  "schema": "tcxsd.workflow.v1",
+  "id": "text-to-image.zh",
+  "title": "中文海报生成",
+  "language": "zh",
+  "nodes": [
+    {
+      "id": "model",
+      "kind": "ModelProfile",
+      "label": "Ideogram4",
+      "x": 80,
+      "y": 120,
+      "data": {
+        "model": "ideogram4-q4_0"
+      }
+    },
+    {
+      "id": "runtime",
+      "kind": "RuntimePreset",
+      "label": "低显存 CUDA",
+      "x": 80,
+      "y": 270,
+      "data": {
+        "runtimePreset": "lowVram",
+        "quality": "draft",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfgScale": 7
+      }
+    },
+    {
+      "id": "prompt",
+      "kind": "Prompt",
+      "label": "中文提示词",
+      "x": 360,
+      "y": 90,
+      "data": {
+        "prompt": "一张高端中文海报，画面中心有清晰可读文字“本地生成”，深色背景，土黄金标题，现代创作工具质感。"
+      }
+    },
+    {
+      "id": "negative",
+      "kind": "NegativePrompt",
+      "label": "负面提示词",
+      "x": 360,
+      "y": 250,
+      "data": {
+        "negativePrompt": "低质量，模糊，错别字，不可读文字，水印，签名"
+      }
+    },
+    {
+      "id": "generate",
+      "kind": "Generate",
+      "label": "生成",
+      "x": 670,
+      "y": 150,
+      "data": {
+        "requestMode": "text_to_image",
+        "outputName": "text_to_image_zh"
+      }
+    },
+    {
+      "id": "quality",
+      "kind": "QualityCheck",
+      "label": "质量检查",
+      "x": 930,
+      "y": 160,
+      "data": {
+        "rejectBlank": true,
+        "rejectWrongSize": true,
+        "rejectTextFailure": true
+      }
+    }
+  ],
+  "edges": [
+    { "id": "model-generate", "from": "model", "to": "generate", "kind": "settings" },
+    { "id": "runtime-generate", "from": "runtime", "to": "generate", "kind": "settings" },
+    { "id": "prompt-generate", "from": "prompt", "to": "generate", "kind": "prompt" },
+    { "id": "negative-generate", "from": "negative", "to": "generate", "kind": "negativePrompt" },
+    { "id": "generate-quality", "from": "generate", "to": "quality", "kind": "artifact" }
+  ]
+}

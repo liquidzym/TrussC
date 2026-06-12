@@ -1,0 +1,94 @@
+{
+  "schema": "tcxsd.workflow.v1",
+  "id": "lora-stack",
+  "title": "LoRA 风格栈",
+  "language": "zh",
+  "nodes": [
+    {
+      "id": "model",
+      "kind": "ModelProfile",
+      "label": "FLUX.2 Klein",
+      "x": 80,
+      "y": 110,
+      "data": {
+        "model": "flux2-klein-4b-q4_0"
+      }
+    },
+    {
+      "id": "runtime",
+      "kind": "RuntimePreset",
+      "label": "默认档",
+      "x": 80,
+      "y": 260,
+      "data": {
+        "runtimePreset": "default",
+        "quality": "draft",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "cfgScale": 1
+      }
+    },
+    {
+      "id": "prompt",
+      "kind": "Prompt",
+      "label": "提示词",
+      "x": 340,
+      "y": 100,
+      "data": {
+        "prompt": "带有精致自定义风格的本地 AI 工作流产品图。"
+      }
+    },
+    {
+      "id": "lora",
+      "kind": "LoRAStack",
+      "label": "LoRA 栈",
+      "x": 340,
+      "y": 250,
+      "data": {
+        "loras": [
+          {
+            "path": "starter/style.safetensors",
+            "weight": 0.65
+          }
+        ],
+        "missingAssetPolicy": {
+          "code": "MODEL_ASSET_MISSING",
+          "remediation_hints": [
+            "把 .safetensors LoRA 放到 bin/data/models/loras 下。",
+            "在工作流界面点击 LoRA 列表，并选择扫描到的相对路径。"
+          ]
+        }
+      }
+    },
+    {
+      "id": "generate",
+      "kind": "Generate",
+      "label": "生成",
+      "x": 700,
+      "y": 180,
+      "data": {
+        "requestMode": "lora_stack",
+        "outputName": "lora_stack"
+      }
+    },
+    {
+      "id": "quality",
+      "kind": "QualityCheck",
+      "label": "质量检查",
+      "x": 960,
+      "y": 190,
+      "data": {
+        "rejectBlank": true,
+        "rejectWrongSize": true
+      }
+    }
+  ],
+  "edges": [
+    { "id": "model-generate", "from": "model", "to": "generate", "kind": "settings" },
+    { "id": "runtime-generate", "from": "runtime", "to": "generate", "kind": "settings" },
+    { "id": "prompt-generate", "from": "prompt", "to": "generate", "kind": "prompt" },
+    { "id": "lora-generate", "from": "lora", "to": "generate", "kind": "lora" },
+    { "id": "generate-quality", "from": "generate", "to": "quality", "kind": "artifact" }
+  ]
+}

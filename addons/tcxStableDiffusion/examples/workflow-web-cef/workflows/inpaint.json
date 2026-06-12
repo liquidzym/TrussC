@@ -1,0 +1,94 @@
+{
+  "schema": "tcxsd.workflow.v1",
+  "id": "inpaint",
+  "title": "局部重绘修复",
+  "language": "zh",
+  "nodes": [
+    {
+      "id": "model",
+      "kind": "ModelProfile",
+      "label": "FLUX.2 Klein",
+      "x": 70,
+      "y": 110,
+      "data": {
+        "model": "flux2-klein-4b-q4_0"
+      }
+    },
+    {
+      "id": "runtime",
+      "kind": "RuntimePreset",
+      "label": "低显存",
+      "x": 70,
+      "y": 260,
+      "data": {
+        "runtimePreset": "lowVram",
+        "quality": "draft",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "cfgScale": 1
+      }
+    },
+    {
+      "id": "source",
+      "kind": "SourceImage",
+      "label": "源图",
+      "x": 330,
+      "y": 80,
+      "data": {
+        "path": "bin/data/inputs/inpaint/source.png"
+      }
+    },
+    {
+      "id": "mask",
+      "kind": "MaskImage",
+      "label": "遮罩图",
+      "x": 330,
+      "y": 220,
+      "data": {
+        "path": "bin/data/inputs/inpaint/mask.png"
+      }
+    },
+    {
+      "id": "prompt",
+      "kind": "Prompt",
+      "label": "修复提示词",
+      "x": 330,
+      "y": 360,
+      "data": {
+        "prompt": "修复高亮区域，保持温暖工作室材质和干净产品光。"
+      }
+    },
+    {
+      "id": "generate",
+      "kind": "Generate",
+      "label": "生成",
+      "x": 700,
+      "y": 210,
+      "data": {
+        "requestMode": "inpaint",
+        "strength": 0.68,
+        "outputName": "inpaint_repair"
+      }
+    },
+    {
+      "id": "quality",
+      "kind": "QualityCheck",
+      "label": "质量检查",
+      "x": 960,
+      "y": 220,
+      "data": {
+        "rejectBlank": true,
+        "rejectWrongSize": true
+      }
+    }
+  ],
+  "edges": [
+    { "id": "model-generate", "from": "model", "to": "generate", "kind": "settings" },
+    { "id": "runtime-generate", "from": "runtime", "to": "generate", "kind": "settings" },
+    { "id": "source-generate", "from": "source", "to": "generate", "kind": "image" },
+    { "id": "mask-generate", "from": "mask", "to": "generate", "kind": "mask" },
+    { "id": "prompt-generate", "from": "prompt", "to": "generate", "kind": "prompt" },
+    { "id": "generate-quality", "from": "generate", "to": "quality", "kind": "artifact" }
+  ]
+}

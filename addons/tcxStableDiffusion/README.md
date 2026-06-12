@@ -54,6 +54,33 @@ The Windows example bundles both:
 - `sd-cli.exe`
 - `sd-server.exe`
 
+## Workflow Web CEF Example
+
+```text
+examples/workflow-web-cef
+```
+
+This is the direct-launch Windows workflow workbench. The visible UI is Chinese
+by default with a dark/gold style, hosted through `tcxCEF`, and backed by the
+bundled Node worker plus real `sd-server.exe` requests. It includes concrete
+workflows for text-to-image, ControlNet Canny, inpaint, and LoRA-stack
+validation, with sidecar JSON, cancellation, seed reuse, LoRA listing, and
+structured remediation hints.
+
+Developer setup uses Python only to prepare assets and package the release:
+
+```powershell
+python tools\prepare_workflow_web_cef_assets.py --all
+cd examples\workflow-web-cef\web; npm install; npm run build
+cd ..\worker; npm install; npm run build
+cd ..\..\..
+python tools\package_workflow_web_cef.py
+```
+
+The packaged output under `dist/workflow-web-cef-windows-x64` contains the exe,
+CEF runtime, portable Node runtime, Node package, native SD runtime, models, and
+input/output data roots, so end users can open `workflow-web-cef.exe` directly.
+
 ## Core API
 
 ```cpp

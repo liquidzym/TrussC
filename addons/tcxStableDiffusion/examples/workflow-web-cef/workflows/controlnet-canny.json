@@ -1,0 +1,83 @@
+{
+  "schema": "tcxsd.workflow.v1",
+  "id": "controlnet-canny",
+  "title": "ControlNet Canny",
+  "language": "zh",
+  "nodes": [
+    {
+      "id": "model",
+      "kind": "ModelProfile",
+      "label": "SD15 ControlNet",
+      "x": 80,
+      "y": 100,
+      "data": {
+        "model": "sd15-controlnet-canny"
+      }
+    },
+    {
+      "id": "runtime",
+      "kind": "RuntimePreset",
+      "label": "草稿档",
+      "x": 80,
+      "y": 250,
+      "data": {
+        "runtimePreset": "default",
+        "quality": "draft",
+        "width": 512,
+        "height": 512,
+        "steps": 12,
+        "cfgScale": 7.5
+      }
+    },
+    {
+      "id": "control",
+      "kind": "ControlNet",
+      "label": "Canny 引导图",
+      "x": 360,
+      "y": 90,
+      "data": {
+        "controlImage": "bin/data/inputs/control/canny-guide.png",
+        "controlStrength": 1
+      }
+    },
+    {
+      "id": "prompt",
+      "kind": "Prompt",
+      "label": "提示词",
+      "x": 360,
+      "y": 260,
+      "data": {
+        "prompt": "由 Canny 图控制的精确建筑产品场景，深色工作室，土黄金高光，边缘清晰。"
+      }
+    },
+    {
+      "id": "generate",
+      "kind": "Generate",
+      "label": "生成",
+      "x": 700,
+      "y": 180,
+      "data": {
+        "requestMode": "control_net",
+        "outputName": "controlnet_canny"
+      }
+    },
+    {
+      "id": "quality",
+      "kind": "QualityCheck",
+      "label": "质量检查",
+      "x": 960,
+      "y": 190,
+      "data": {
+        "rejectBlank": true,
+        "rejectWrongSize": true
+      }
+    }
+  ],
+  "edges": [
+    { "id": "model-generate", "from": "model", "to": "generate", "kind": "settings" },
+    { "id": "runtime-generate", "from": "runtime", "to": "generate", "kind": "settings" },
+    { "id": "control-generate", "from": "control", "to": "generate", "kind": "control" },
+    { "id": "prompt-generate", "from": "prompt", "to": "generate", "kind": "prompt" },
+    { "id": "generate-quality", "from": "generate", "to": "quality", "kind": "artifact" }
+  ]
+}
