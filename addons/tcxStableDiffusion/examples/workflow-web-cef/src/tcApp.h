@@ -21,6 +21,7 @@ private:
     std::filesystem::path nodeExecutable() const;
     std::filesystem::path workerScript() const;
     void startWorker();
+    void resizeBrowserToWindow();
     void handleBridgeMessage(tcxCEF::WebSocketBridgeMessage& message);
     void sendStatus(const std::string& stage, const std::string& detail);
     std::string workerUnavailableJson() const;
@@ -30,6 +31,8 @@ private:
     tcxCEF::Browser browser_;
     tc::EventListener bridgeMessageListener_;
     NodeWorkerProcess worker_;
+    int browserWidth_ = 0;
+    int browserHeight_ = 0;
     std::string status_ = "Starting";
     std::string lastError_;
 };

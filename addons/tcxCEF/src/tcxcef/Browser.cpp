@@ -50,6 +50,7 @@ class Browser::Impl {
 public:
     bool setup(const BrowserSettings& settings);
     void update();
+    void resize(int x, int y, int width, int height);
     void shutdown();
     bool isReady() const;
     bool isAvailable() const;
@@ -357,6 +358,13 @@ public:
         CEF_REQUIRE_UI_THREAD();
         owner_->browser_ = browser;
         owner_->setReady(true);
+        if (owner_->settings_.parentWindowHandle) {
+            owner_->resize(
+                owner_->settings_.x,
+                owner_->settings_.y,
+                owner_->settings_.width,
+                owner_->settings_.height);
+        }
         if (owner_->settings_.openDevTools) {
             CefWindowInfo windowInfo;
 #if defined(_WIN32)
@@ -776,7 +784,18 @@ bool Browser::Impl::createBrowserOnUiThread() {
     CefWindowInfo windowInfo;
     if (settings_.showWindow) {
 #if defined(_WIN32)
-        windowInfo.SetAsPopup(nullptr, "tcxCEF");
+        if (settings_.parentWindowHandle) {
+            const CefRect bounds(
+                settings_.x,
+                settings_.y,
+                std::max(1, settings_.width),
+                std::max(1, settings_.height));
+            windowInfo.SetAsChild(
+                static_cast<HWND>(const_cast<void*>(settings_.parentWindowHandle)),
+                bounds);
+        } else {
+            windowInfo.SetAsPopup(nullptr, "tcxCEF");
+        }
 #elif defined(__APPLE__)
         (void)windowInfo;
 #else
@@ -826,6 +845,32 @@ void Browser::Impl::update() {
             gNextMessagePumpWorkMs.store(-1, std::memory_order_release);
         }
     }
+#endif
+}
+
+void Browser::Impl::resize(int x, int y, int width, int height) {
+    settings_.x = x;
+    settings_.y = y;
+    settings_.width = std::max(1, width);
+    settings_.height = std::max(1, height);
+
+#if TCXCEF_HAS_CEF && defined(_WIN32)
+    if (!browser_) {
+        return;
+    }
+    const HWND browserWindow = browser_->GetHost()->GetWindowHandle();
+    if (!browserWindow) {
+        return;
+    }
+    SetWindowPos(
+        browserWindow,
+        nullptr,
+        settings_.x,
+        settings_.y,
+        settings_.width,
+        settings_.height,
+        SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+    browser_->GetHost()->WasResized();
 #endif
 }
 
@@ -891,6 +936,10 @@ bool Browser::setup(const BrowserSettings& settings) {
 
 void Browser::update() {
     impl_->update();
+}
+
+void Browser::resize(int x, int y, int width, int height) {
+    impl_->resize(x, y, width, height);
 }
 
 void Browser::shutdown() {

@@ -78,6 +78,21 @@ class WorkflowWebCefPlanTest(unittest.TestCase):
         self.assertIn("TCXCEF_RESOURCE_DIR}/locales", cmake)
         self.assertIn("Copying CEF locales", cmake)
 
+    def test_workflow_web_cef_embeds_browser_in_native_window_on_windows(self):
+        browser_h = (ROOT.parent / "tcxCEF" / "src" / "tcxcef" / "Browser.h").read_text(encoding="utf-8")
+        browser_cpp = (ROOT.parent / "tcxCEF" / "src" / "tcxcef" / "Browser.cpp").read_text(encoding="utf-8")
+        app_h = (EXAMPLE / "src" / "tcApp.h").read_text(encoding="utf-8")
+        app_cpp = (EXAMPLE / "src" / "tcApp.cpp").read_text(encoding="utf-8")
+
+        self.assertIn("parentWindowHandle", browser_h)
+        self.assertIn("void resize(int x, int y, int width, int height)", browser_h)
+        self.assertIn("SetAsChild", browser_cpp)
+        self.assertIn("SetWindowPos", browser_cpp)
+        self.assertIn("WasResized", browser_cpp)
+        self.assertIn("sapp_win32_get_hwnd", app_cpp)
+        self.assertIn("resizeBrowserToWindow", app_h)
+        self.assertIn("browser_.resize", app_cpp)
+
     def test_no_runtime_python_dependency_in_cpp_or_worker(self):
         files = list((EXAMPLE / "src").glob("*.cpp")) + list((EXAMPLE / "src").glob("*.h"))
         files += list((EXAMPLE / "worker" / "src").glob("*.mjs"))

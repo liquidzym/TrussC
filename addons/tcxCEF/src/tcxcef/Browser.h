@@ -9,6 +9,9 @@ struct BrowserSettings {
     std::string url;
     bool showWindow = true;
     bool openDevTools = false;
+    const void* parentWindowHandle = nullptr;
+    int x = 0;
+    int y = 0;
     int width = 960;
     int height = 720;
 };
@@ -27,6 +30,7 @@ public:
 
     bool setup(const BrowserSettings& settings);
     void update();
+    void resize(int x, int y, int width, int height);
     void shutdown();
 
     bool isReady() const;

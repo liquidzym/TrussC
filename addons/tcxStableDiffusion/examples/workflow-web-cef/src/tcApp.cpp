@@ -2,6 +2,7 @@
 
 #include "tc/utils/tcJson.h"
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 
@@ -59,8 +60,11 @@ void tcApp::setup() {
     browserSettings.url = assetServer_.url("/dist/index.html") + "?bridgePort=" + std::to_string(bridge_.port());
     browserSettings.showWindow = true;
     browserSettings.openDevTools = false;
-    browserSettings.width = 1440;
-    browserSettings.height = 920;
+    browserSettings.width = std::max(1, tc::getWindowWidth());
+    browserSettings.height = std::max(1, tc::getWindowHeight());
+#ifdef _WIN32
+    browserSettings.parentWindowHandle = sapp_win32_get_hwnd();
+#endif
     if (!browser_.setup(browserSettings)) {
         lastError_ = browser_.lastError();
         worker_.stop();
@@ -68,6 +72,7 @@ void tcApp::setup() {
         assetServer_.stop();
         return;
     }
+    resizeBrowserToWindow();
 
     status_ = "就绪";
     sendStatus("native-host", "宿主已就绪");
@@ -75,6 +80,7 @@ void tcApp::setup() {
 
 void tcApp::update() {
     browser_.update();
+    resizeBrowserToWindow();
     worker_.drainMessages([this](const std::string& text) {
         bridge_.broadcast(text);
     });
@@ -136,6 +142,22 @@ void tcApp::startWorker() {
         return;
     }
     sendStatus("native-host", "Worker 已启动");
+}
+
+void tcApp::resizeBrowserToWindow() {
+    if (!lastError_.empty()) {
+        return;
+    }
+
+    const int width = std::max(1, tc::getWindowWidth());
+    const int height = std::max(1, tc::getWindowHeight());
+    if (width == browserWidth_ && height == browserHeight_) {
+        return;
+    }
+
+    browserWidth_ = width;
+    browserHeight_ = height;
+    browser_.resize(0, 0, width, height);
 }
 
 void tcApp::handleBridgeMessage(tcxCEF::WebSocketBridgeMessage& message) {
