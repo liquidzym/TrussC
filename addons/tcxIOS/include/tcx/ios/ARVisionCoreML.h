@@ -2,6 +2,7 @@
 
 #include "Types.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -35,10 +36,30 @@ struct VisionRectangle {
     float confidence = 0.0f;
 };
 
+enum class VisionMaskKind {
+    ForegroundInstances,
+    PersonSegmentation
+};
+
+struct VisionMaskRequest {
+    std::filesystem::path imagePath;
+    VisionMaskKind kind = VisionMaskKind::ForegroundInstances;
+    int outputWidth = 0;
+    int outputHeight = 0;
+};
+
+struct VisionMaskResult {
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> alpha;
+    std::filesystem::path debugPNG;
+};
+
 class VisionBridge {
 public:
     void detectRectangles(const std::filesystem::path& imagePath,
                           Completion<std::vector<VisionRectangle>> done);
+    void makeMask(const VisionMaskRequest& request, Completion<VisionMaskResult> done);
 };
 
 struct CoreMLModelInfo {

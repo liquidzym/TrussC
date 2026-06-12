@@ -429,6 +429,10 @@ void platformDetectVisionRectangles(const std::filesystem::path&,
     finishUnavailable(std::move(done), "Vision.detectRectangles");
 }
 
+void platformMakeVisionMask(const VisionMaskRequest&, Completion<VisionMaskResult> done) {
+    finishUnavailable(std::move(done), "Vision.makeMask");
+}
+
 Result<CoreMLModelInfo> platformInspectCoreMLModel(const std::filesystem::path&) {
     return unavailableResult<CoreMLModelInfo>("CoreML.inspectModel");
 }

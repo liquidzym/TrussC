@@ -39,6 +39,8 @@ This v0.3 implementation provides:
   StoreKit restore/update streams
 - Tests for public headers, event queue behavior, feature manifest metadata,
   logger/operation behavior, and non-iOS stub results
+- Vision rectangle detection plus foreground-instance and person-segmentation
+  mask generation for photo-editing workflows
 - v0.1 examples:
   - `examples/ios-basic-shell`
   - `examples/ios-files-photos-share`
@@ -181,6 +183,22 @@ future work.
 `TCXIOSHandleBackgroundURLSessionEvents(identifier, completionHandler)` so the
 addon can rebind the background session delegate and invoke the system
 completion handler after pending URLSession events finish.
+
+## Vision and CoreML
+
+`tcx::ios::vision()` exposes document-style rectangle detection and subject mask
+generation. `VisionBridge::makeMask()` accepts a `VisionMaskRequest` and returns
+a `VisionMaskResult` containing one byte per alpha pixel. Use
+`VisionMaskKind::ForegroundInstances` for iOS 17+ subject lifting style masks,
+or `VisionMaskKind::PersonSegmentation` for iOS 15+ person masks. The optional
+`outputWidth` and `outputHeight` fields resize the returned alpha buffer for
+preview or model-input use.
+
+Vision work runs off the main thread and returns through `eventQueue()`.
+Unsupported OS versions return `ErrorCode::Unavailable`, so apps can fall back
+to saving a direct render without a protection mask. CoreML currently exposes
+compiled-model inspection; full model compile/load/predict runtime support is
+tracked in `docs/reshot_ios_taskbook.md`.
 
 ## AudioSession
 

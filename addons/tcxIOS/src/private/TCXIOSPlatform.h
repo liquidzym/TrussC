@@ -171,6 +171,7 @@ void platformStopARSession();
 bool platformLatestARFrame(ARFrameInfo& out);
 void platformDetectVisionRectangles(const std::filesystem::path& imagePath,
                                     Completion<std::vector<VisionRectangle>> done);
+void platformMakeVisionMask(const VisionMaskRequest& request, Completion<VisionMaskResult> done);
 Result<CoreMLModelInfo> platformInspectCoreMLModel(const std::filesystem::path& compiledModelPath);
 
 } // namespace tcx::ios::detail

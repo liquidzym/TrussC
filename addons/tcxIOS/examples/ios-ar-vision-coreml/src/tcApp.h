@@ -13,6 +13,6 @@ public:
     void keyPressed(int key) override;
 
 private:
-    std::string status_ = "A: start AR, V: Vision rectangles, M: inspect CoreML model.";
+    std::string status_ = "A: start AR, V: Vision rectangles, S: Vision mask, M: inspect CoreML model.";
     tcx::ios::ARFrameInfo arFrame_;
 };

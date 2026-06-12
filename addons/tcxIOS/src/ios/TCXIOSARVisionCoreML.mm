@@ -6,6 +6,7 @@
 #import <CoreBluetooth/CoreBluetooth.h>
 #import <CoreImage/CoreImage.h>
 #import <CoreML/CoreML.h>
+#import <CoreVideo/CoreVideo.h>
 #import <GameController/GameController.h>
 #import <MultipeerConnectivity/MultipeerConnectivity.h>
 #import <PencilKit/PencilKit.h>
@@ -26,6 +27,67 @@ ARSession* gARSession = nil;
 id gARDelegate = nil;
 std::mutex gTCXIOSARMutex;
 tcx::ios::ARFrameInfo gTCXIOSLatestARFrame;
+
+tcx::ios::Result<tcx::ios::VisionMaskResult> TCXIOSVisionMaskFromPixelBuffer(CVPixelBufferRef pixelBuffer,
+                                                                               int requestedWidth,
+                                                                               int requestedHeight) {
+    if (!pixelBuffer) {
+        return tcx::ios::Result<tcx::ios::VisionMaskResult>::failure(
+            {tcx::ios::ErrorCode::InvalidState, "Vision mask request did not return a pixel buffer.", 0});
+    }
+
+    const int sourceWidth = static_cast<int>(CVPixelBufferGetWidth(pixelBuffer));
+    const int sourceHeight = static_cast<int>(CVPixelBufferGetHeight(pixelBuffer));
+    if (sourceWidth <= 0 || sourceHeight <= 0) {
+        return tcx::ios::Result<tcx::ios::VisionMaskResult>::failure(
+            {tcx::ios::ErrorCode::InvalidState, "Vision mask request returned an empty pixel buffer.", 0});
+    }
+
+    const int width = requestedWidth > 0 ? requestedWidth : sourceWidth;
+    const int height = requestedHeight > 0 ? requestedHeight : sourceHeight;
+    if (width <= 0 || height <= 0) {
+        return tcx::ios::Result<tcx::ios::VisionMaskResult>::failure(
+            {tcx::ios::ErrorCode::InvalidState, "Vision mask request returned an empty pixel buffer.", 0});
+    }
+
+    tcx::ios::VisionMaskResult result;
+    result.width = width;
+    result.height = height;
+    result.alpha.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+
+    const OSType format = CVPixelBufferGetPixelFormatType(pixelBuffer);
+    if (format == kCVPixelFormatType_OneComponent8 && sourceWidth == width && sourceHeight == height) {
+        CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
+        const auto* base = static_cast<const std::uint8_t*>(CVPixelBufferGetBaseAddress(pixelBuffer));
+        const std::size_t rowBytes = CVPixelBufferGetBytesPerRow(pixelBuffer);
+        for (int y = 0; y < height; ++y) {
+            std::memcpy(result.alpha.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(width),
+                        base + static_cast<std::size_t>(y) * rowBytes,
+                        static_cast<std::size_t>(width));
+        }
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
+        return tcx::ios::Result<tcx::ios::VisionMaskResult>::success(std::move(result));
+    }
+
+    CIImage* image = [CIImage imageWithCVPixelBuffer:pixelBuffer];
+    if (!image) {
+        return tcx::ios::Result<tcx::ios::VisionMaskResult>::failure(
+            {tcx::ios::ErrorCode::InvalidState, "Vision mask pixel buffer could not be converted to CIImage.", 0});
+    }
+
+    const CGFloat scaleX = static_cast<CGFloat>(width) / static_cast<CGFloat>(sourceWidth);
+    const CGFloat scaleY = static_cast<CGFloat>(height) / static_cast<CGFloat>(sourceHeight);
+    CIImage* scaled = [image imageByApplyingTransform:CGAffineTransformMakeScale(scaleX, scaleY)];
+    CIContext* context = [CIContext contextWithOptions:nil];
+    [context render:scaled
+           toBitmap:result.alpha.data()
+           rowBytes:static_cast<std::size_t>(width)
+             bounds:CGRectMake(0, 0, width, height)
+             format:kCIFormatR8
+         colorSpace:nil];
+
+    return tcx::ios::Result<tcx::ios::VisionMaskResult>::success(std::move(result));
+}
 
 } // namespace
 
@@ -111,6 +173,77 @@ void platformDetectVisionRectangles(const std::filesystem::path& imagePath,
             });
         }
         TCXIOSFinish(std::move(done), Result<std::vector<VisionRectangle>>::success(std::move(rectangles)));
+    });
+}
+
+void platformMakeVisionMask(const VisionMaskRequest& request, Completion<VisionMaskResult> done) {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSURL* url = [NSURL fileURLWithPath:TCXIOSNs(request.imagePath.string())];
+        CIImage* image = [CIImage imageWithContentsOfURL:url];
+        if (!image) {
+            TCXIOSFinish(std::move(done), Result<VisionMaskResult>::failure({ErrorCode::InvalidArgument, "Could not load image for Vision mask request.", 0}));
+            return;
+        }
+
+        VNImageRequestHandler* handler = [[VNImageRequestHandler alloc] initWithCIImage:image options:@{}];
+        NSError* error = nil;
+
+        if (request.kind == VisionMaskKind::ForegroundInstances) {
+            if (@available(iOS 17.0, *)) {
+                VNGenerateForegroundInstanceMaskRequest* maskRequest = [[VNGenerateForegroundInstanceMaskRequest alloc] init];
+                BOOL ok = [handler performRequests:@[maskRequest] error:&error];
+                if (!ok) {
+                    TCXIOSFinish(std::move(done), Result<VisionMaskResult>::failure(TCXIOSNativeError(error, "Vision foreground mask request failed.")));
+                    return;
+                }
+
+                VNInstanceMaskObservation* observation = maskRequest.results.firstObject;
+                if (!observation) {
+                    TCXIOSFinish(std::move(done), Result<VisionMaskResult>::failure({ErrorCode::InvalidState, "Vision foreground mask request returned no observations.", 0}));
+                    return;
+                }
+
+                CVPixelBufferRef mask = [observation generateScaledMaskForImageForInstances:observation.allInstances
+                                                                         fromRequestHandler:handler
+                                                                                      error:&error];
+                if (!mask) {
+                    TCXIOSFinish(std::move(done), Result<VisionMaskResult>::failure(TCXIOSNativeError(error, "Vision foreground mask conversion failed.")));
+                    return;
+                }
+
+                auto result = TCXIOSVisionMaskFromPixelBuffer(mask, request.outputWidth, request.outputHeight);
+                CVPixelBufferRelease(mask);
+                TCXIOSFinish(std::move(done), std::move(result));
+                return;
+            }
+
+            TCXIOSFinish(std::move(done), Result<VisionMaskResult>::failure({ErrorCode::Unavailable, "Vision foreground instance masks require iOS 17 or newer.", 0}));
+            return;
+        }
+
+        if (@available(iOS 15.0, *)) {
+            VNGeneratePersonSegmentationRequest* maskRequest = [[VNGeneratePersonSegmentationRequest alloc] init];
+            maskRequest.qualityLevel = VNGeneratePersonSegmentationRequestQualityLevelAccurate;
+            maskRequest.outputPixelFormat = kCVPixelFormatType_OneComponent8;
+
+            BOOL ok = [handler performRequests:@[maskRequest] error:&error];
+            if (!ok) {
+                TCXIOSFinish(std::move(done), Result<VisionMaskResult>::failure(TCXIOSNativeError(error, "Vision person segmentation request failed.")));
+                return;
+            }
+
+            VNPixelBufferObservation* observation = maskRequest.results.firstObject;
+            if (!observation) {
+                TCXIOSFinish(std::move(done), Result<VisionMaskResult>::failure({ErrorCode::InvalidState, "Vision person segmentation request returned no observations.", 0}));
+                return;
+            }
+
+            auto result = TCXIOSVisionMaskFromPixelBuffer(observation.pixelBuffer, request.outputWidth, request.outputHeight);
+            TCXIOSFinish(std::move(done), std::move(result));
+            return;
+        }
+
+        TCXIOSFinish(std::move(done), Result<VisionMaskResult>::failure({ErrorCode::Unavailable, "Vision person segmentation masks require iOS 15 or newer.", 0}));
     });
 }
 

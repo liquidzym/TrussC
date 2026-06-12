@@ -26,6 +26,7 @@ void tcApp::draw() {
          << "Latest AR frame: " << arFrame_.cameraImageWidth << " x " << arFrame_.cameraImageHeight << "\n\n"
          << "A: start AR world tracking\n"
          << "V: run Vision rectangles on /tmp/tcxios-vision.png\n"
+         << "S: make foreground mask for /tmp/tcxios-vision.png\n"
          << "M: inspect /tmp/tcxios-model.mlmodelc\n\n"
          << status_;
 
@@ -46,6 +47,22 @@ void tcApp::keyPressed(int key) {
             status_ = result.ok
                 ? "Vision rectangles: " + std::to_string(result.value.size())
                 : "Vision failed: " + ios::toString(result.error.code) + " - " + result.error.message;
+            tc::redraw();
+        });
+    } else if (key == 'S') {
+        ios::VisionMaskRequest request;
+        request.imagePath = std::filesystem::temp_directory_path() / "tcxios-vision.png";
+        request.kind = ios::VisionMaskKind::ForegroundInstances;
+        request.outputWidth = 320;
+        request.outputHeight = 320;
+        ios::vision().makeMask(request, [this](ios::Result<ios::VisionMaskResult> result) {
+            if (result.ok) {
+                status_ = "Vision mask: " + std::to_string(result.value.width) + " x " +
+                          std::to_string(result.value.height) + ", " +
+                          std::to_string(result.value.alpha.size()) + " alpha bytes";
+            } else {
+                status_ = "Vision mask failed: " + ios::toString(result.error.code) + " - " + result.error.message;
+            }
             tc::redraw();
         });
     } else if (key == 'M') {

@@ -1203,6 +1203,10 @@ void VisionBridge::detectRectangles(const std::filesystem::path& imagePath,
     detail::platformDetectVisionRectangles(imagePath, std::move(done));
 }
 
+void VisionBridge::makeMask(const VisionMaskRequest& request, Completion<VisionMaskResult> done) {
+    detail::platformMakeVisionMask(request, std::move(done));
+}
+
 CoreMLBridge& coreML() {
     return gCoreMLBridge;
 }

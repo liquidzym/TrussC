@@ -28,7 +28,8 @@ enum class IOSFeature {
     PhotoLibrary,
     Location,
     Motion,
-    Microphone
+    Microphone,
+    Vision
 };
 
 struct PrivacyManifestEntry {
