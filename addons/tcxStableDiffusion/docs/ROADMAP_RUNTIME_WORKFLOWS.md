@@ -52,6 +52,12 @@ Hard constraints:
 ## Example Program Requirements
 
 - Update `examples/ideogram4-basic` into the main workflow workbench.
+- Keep `examples/ideogram4-basic` as the native workbench, smoke harness, and
+  fallback example after the workflow controls already landed. Do not turn it
+  into the visual node editor; complex graph editing moves to
+  `examples/workflow-web-cef`.
+- Build the new CEF-hosted visual workflow example from the task book at
+  `docs/superpowers/plans/2026-06-12-workflow-web-cef-example.md`.
 - Include task modes for text-to-image, image-to-image, inpaint, ControlNet,
   LoRA, refine/upscale, batch, and variant workflows.
 - Update the ImGui theme to a dark charcoal, warm gray, and earthy-gold palette.
@@ -66,6 +72,26 @@ Hard constraints:
   model.
 - Include LoRA directory scanning and path normalization in the UI and Node
   package so LoRA requests submit server-relative asset names.
+
+## Workflow Web CEF Example Requirements
+
+- The final user-facing package must open by double-clicking
+  `workflow-web-cef.exe`; users must not install Python, npm, CMake, trusscli,
+  CEF, Node, stable-diffusion.cpp, or model assets manually.
+- Windows CEF preparation is a required first phase because `tcxCEF` has been
+  tested more deeply on macOS than Windows. Run and verify
+  `addons/tcxCEF/tools/setup_cef.py --config Release` before the example build.
+- The CMake target must call `tcxcef_copy_runtime_files(workflow-web-cef)` so
+  `libcef.dll`, resource `.pak` files, locale data, and other CEF runtime files
+  are copied beside the executable on Windows.
+- The app must serve built web assets through `tcxCEF::LocalAssetServer`, bridge
+  UI messages through `tcxCEF::WebSocketBridge`, and call the Node package
+  through a bundled Node worker rather than asking the user to install Node.
+- The package must include built web assets, worker files, portable Node runtime,
+  native `sd-server` files, model assets, ControlNet assets, input examples, and
+  explicit output/temp/cache/log roots under `bin/data`.
+- Chinese prompt and visible-text workflows must be verified as UTF-8 through
+  workflow JSON, web UI, Node worker messages, sidecar metadata, and saved logs.
 
 ## Model Asset Layout
 

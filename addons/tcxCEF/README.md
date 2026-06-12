@@ -20,6 +20,11 @@ python addons/tcxCEF/tools/setup_cef.py --config Release
 python addons/tcxCEF/tools/verify_cef.py
 ```
 
+On Windows, `setup_cef.py` adds `/utf-8` to the MSVC `CL` environment while
+building `libcef_dll_wrapper`. This prevents CEF UTF-8 headers from triggering
+warning C4819 under non-UTF-8 system code pages; the CEF wrapper project treats
+warnings as errors.
+
 The setup script writes:
 
 ```txt

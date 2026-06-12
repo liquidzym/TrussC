@@ -124,16 +124,30 @@ def extract_archive(archive: Path, destination: Path, force: bool) -> Path:
     return extracted[0]
 
 
-def run(command: list[str], cwd: Path) -> None:
+def wrapper_build_env(binary_platform: str, base_env: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(base_env or os.environ)
+    if not binary_platform.startswith("windows"):
+        return env
+
+    cl_flags = env.get("CL", "")
+    parts = cl_flags.split()
+    if not any(part.lower() == "/utf-8" for part in parts):
+        parts.append("/utf-8")
+    env["CL"] = " ".join(parts).strip()
+    return env
+
+
+def run(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command))
-    subprocess.run(command, cwd=cwd, check=True)
+    subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
-def build_wrapper(source_dir: Path, build_dir: Path, config: str) -> None:
+def build_wrapper(binary_platform: str, source_dir: Path, build_dir: Path, config: str) -> None:
     require_tool("cmake")
     build_dir.mkdir(parents=True, exist_ok=True)
-    run(["cmake", "-S", str(source_dir), "-B", str(build_dir), f"-DCMAKE_BUILD_TYPE={config}"], cwd=source_dir)
-    run(["cmake", "--build", str(build_dir), "--target", "libcef_dll_wrapper", "--config", config, "--parallel"], cwd=source_dir)
+    env = wrapper_build_env(binary_platform)
+    run(["cmake", "-S", str(source_dir), "-B", str(build_dir), f"-DCMAKE_BUILD_TYPE={config}"], cwd=source_dir, env=env)
+    run(["cmake", "--build", str(build_dir), "--target", "libcef_dll_wrapper", "--config", config, "--parallel"], cwd=source_dir, env=env)
 
 
 def first_existing(patterns: list[str], root: Path, description: str) -> Path:
@@ -294,7 +308,7 @@ def main() -> int:
         print(f"Using existing archive: {archive}")
 
     source_dir = extract_archive(archive, source_parent, args.force)
-    build_wrapper(source_dir, build_dir, args.config)
+    build_wrapper(binary_platform, source_dir, build_dir, args.config)
     paths = make_paths(binary_platform, version, root, source_dir, build_dir)
     write_outputs(paths, archive_url, addon_root() / "libs" / "cef" / "current")
 
