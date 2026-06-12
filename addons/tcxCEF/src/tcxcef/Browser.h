@@ -13,6 +13,10 @@ struct BrowserSettings {
     int height = 720;
 };
 
+// Call this at the very start of main(). CEF subprocesses must exit here before
+// the host app initializes its own windowing/runtime systems.
+int executeSubprocess();
+
 class Browser {
 public:
     Browser();

@@ -277,5 +277,13 @@ function(tcxcef_copy_runtime_files TARGET_NAME)
                     VERBATIM)
             endif()
         endforeach()
+        if(EXISTS "${TCXCEF_RESOURCE_DIR}/locales")
+            add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${TCXCEF_RESOURCE_DIR}/locales"
+                    "$<TARGET_FILE_DIR:${TARGET_NAME}>/locales"
+                COMMENT "[tcxCEF] Copying CEF locales"
+                VERBATIM)
+        endif()
     endif()
 endfunction()

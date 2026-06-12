@@ -59,6 +59,25 @@ class WorkflowWebCefPlanTest(unittest.TestCase):
         self.assertIn("ReadFile", source)
         self.assertIn("WORKER_UNAVAILABLE", source)
 
+    def test_main_dispatches_cef_subprocess_before_trussc_app_start(self):
+        source = (EXAMPLE / "src" / "main.cpp").read_text(encoding="utf-8")
+        self.assertIn("tcxCEF::executeSubprocess", source)
+        self.assertIn("workflow-web-cef-native.log", source)
+        self.assertLess(source.index("tcxCEF::executeSubprocess"), source.index("TC_RUN_APP"))
+
+    def test_tcxcef_windows_initialization_uses_explicit_runtime_paths(self):
+        browser = (ROOT.parent / "tcxCEF" / "src" / "tcxcef" / "Browser.cpp").read_text(encoding="utf-8")
+        cmake = (ROOT.parent / "tcxCEF" / "CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("settings.browser_subprocess_path", browser)
+        self.assertIn("settings.root_cache_path", browser)
+        self.assertIn("settings.resources_dir_path", browser)
+        self.assertIn("settings.locales_dir_path", browser)
+        self.assertIn("disable-gpu", browser)
+        self.assertIn("data\" / \"workflows\" / \"cache\" / \"cef", browser)
+        self.assertIn("cef-debug.log", browser)
+        self.assertIn("TCXCEF_RESOURCE_DIR}/locales", cmake)
+        self.assertIn("Copying CEF locales", cmake)
+
     def test_no_runtime_python_dependency_in_cpp_or_worker(self):
         files = list((EXAMPLE / "src").glob("*.cpp")) + list((EXAMPLE / "src").glob("*.h"))
         files += list((EXAMPLE / "worker" / "src").glob("*.mjs"))
@@ -97,7 +116,7 @@ class WorkflowWebCefPlanTest(unittest.TestCase):
         self.assertIn("bin/data/models", prepare_text)
 
         package_text = package.read_text(encoding="utf-8")
-        for entry in ["workflow-web-cef.exe", "runtime/node/node.exe", "workflow-web-cef/web/dist", "workflow-web-cef/worker/dist", "workflow-web-cef/workflows", "data/models"]:
+        for entry in ["workflow-web-cef.exe", "runtime/node/node.exe", "workflow-web-cef/web/dist", "workflow-web-cef/worker/dist", "workflow-web-cef/workflows", "data/models", "locales/zh-CN.pak"]:
             self.assertIn(entry, package_text)
         self.assertIn("copy_data_assets", package_text)
 

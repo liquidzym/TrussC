@@ -187,6 +187,7 @@ def verify_layout(package_root: pathlib.Path) -> None:
         "libcef.dll",
         "chrome_elf.dll",
         "icudtl.dat",
+        "locales/zh-CN.pak",
         "workflow-web-cef/web/dist/index.html",
         "workflow-web-cef/worker/dist/worker.mjs",
         "workflow-web-cef/workflows/text-to-image.zh.json",
