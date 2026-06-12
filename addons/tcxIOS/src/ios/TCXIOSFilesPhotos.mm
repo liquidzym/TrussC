@@ -86,6 +86,56 @@ NSString* TCXIOSPreferredProviderTypeIdentifier(NSItemProvider* provider,
     return nil;
 }
 
+bool TCXIOSContainsIdentifier(NSArray<NSString*>* identifiers, NSString* candidate) {
+    if (candidate.length == 0) return true;
+    for (NSString* identifier in identifiers) {
+        if ([identifier isEqualToString:candidate]) return true;
+    }
+    return false;
+}
+
+void TCXIOSAddProviderCandidate(NSMutableArray<NSString*>* candidates,
+                                NSItemProvider* provider,
+                                NSString* identifier) {
+    if (!provider || identifier.length == 0) return;
+    if (![provider hasItemConformingToTypeIdentifier:identifier]) return;
+    if (TCXIOSContainsIdentifier(candidates, identifier)) return;
+    [candidates addObject:identifier];
+}
+
+NSArray<NSString*>* TCXIOSProviderRepresentationCandidates(NSItemProvider* provider,
+                                                           NSString* preferredTypeIdentifier,
+                                                           tcx::ios::PhotoMediaType mediaType) {
+    NSMutableArray<NSString*>* candidates = [NSMutableArray array];
+    if (!provider) return candidates;
+
+    if (mediaType == tcx::ios::PhotoMediaType::Image) {
+        TCXIOSAddProviderCandidate(candidates, provider, UTTypeImage.identifier);
+        TCXIOSAddProviderCandidate(candidates, provider, preferredTypeIdentifier);
+        TCXIOSAddProviderCandidate(candidates, provider, @"public.jpeg");
+        TCXIOSAddProviderCandidate(candidates, provider, @"public.png");
+        TCXIOSAddProviderCandidate(candidates, provider, @"public.heic");
+        TCXIOSAddProviderCandidate(candidates, provider, @"public.heif");
+        for (NSString* identifier in provider.registeredTypeIdentifiers) {
+            UTType* type = [UTType typeWithIdentifier:identifier];
+            if (type && [type conformsToType:UTTypeImage]) {
+                TCXIOSAddProviderCandidate(candidates, provider, identifier);
+            }
+        }
+    } else {
+        TCXIOSAddProviderCandidate(candidates, provider, preferredTypeIdentifier);
+        TCXIOSAddProviderCandidate(candidates, provider, UTTypeMovie.identifier);
+        TCXIOSAddProviderCandidate(candidates, provider, @"com.apple.quicktime-movie");
+        for (NSString* identifier in provider.registeredTypeIdentifiers) {
+            UTType* type = [UTType typeWithIdentifier:identifier];
+            if (type && [type conformsToType:UTTypeMovie]) {
+                TCXIOSAddProviderCandidate(candidates, provider, identifier);
+            }
+        }
+    }
+    return candidates;
+}
+
 std::string TCXIOSProviderTypeSummary(NSItemProvider* provider) {
     if (!provider) return "none";
 
@@ -97,6 +147,19 @@ std::string TCXIOSProviderTypeSummary(NSItemProvider* provider) {
         first = false;
     }
     return first ? "none" : out.str();
+}
+
+std::string TCXIOSIdentifierSummary(NSArray<NSString*>* identifiers) {
+    if (!identifiers || identifiers.count == 0) return "none";
+
+    std::ostringstream out;
+    bool first = true;
+    for (NSString* identifier in identifiers) {
+        if (!first) out << ", ";
+        out << TCXIOSStr(identifier);
+        first = false;
+    }
+    return out.str();
 }
 
 NSString* TCXIOSFileExtensionForTypeIdentifier(NSString* typeIdentifier,
@@ -127,6 +190,136 @@ NSURL* TCXIOSTemporaryDataURL(NSData* data,
         return nil;
     }
     return destinationURL;
+}
+
+NSError* TCXIOSRepresentationError(NSString* description) {
+    NSString* message = description.length > 0 ? description : @"Photo representation loading failed.";
+    return [NSError errorWithDomain:@"tcxIOS.photos"
+                               code:1
+                           userInfo:@{NSLocalizedDescriptionKey: message}];
+}
+
+NSString* TCXIOSJoinedErrors(NSArray<NSString*>* errors) {
+    if (!errors || errors.count == 0) return @"no native error details";
+    return [errors componentsJoinedByString:@"; "];
+}
+
+typedef void (^TCXIOSPhotoRepresentationCompletion)(NSURL* copiedURL,
+                                                    NSString* typeIdentifier,
+                                                    NSError* error);
+
+void TCXIOSLoadFileRepresentationAtIndex(NSItemProvider* provider,
+                                         NSArray<NSString*>* typeIdentifiers,
+                                         NSUInteger index,
+                                         NSString* directoryName,
+                                         NSMutableArray<NSString*>* errors,
+                                         TCXIOSPhotoRepresentationCompletion completion) {
+    if (index >= typeIdentifiers.count) {
+        NSString* message = [NSString stringWithFormat:@"No file representation loaded. Tried %@. %@",
+                             [NSString stringWithUTF8String:TCXIOSIdentifierSummary(typeIdentifiers).c_str()],
+                             TCXIOSJoinedErrors(errors)];
+        completion(nil, nil, TCXIOSRepresentationError(message));
+        return;
+    }
+
+    NSString* typeIdentifier = typeIdentifiers[index];
+    NSLog(@"[tcxIOS.photos] trying file representation %@", typeIdentifier);
+    [provider loadFileRepresentationForTypeIdentifier:typeIdentifier completionHandler:^(NSURL* url, NSError* error) {
+        if (url && !error) {
+            NSError* copyError = nil;
+            NSURL* copiedURL = TCXIOSTemporaryCopyURL(url, directoryName, &copyError);
+            if (copiedURL) {
+                NSLog(@"[tcxIOS.photos] loaded file representation %@ -> %@", typeIdentifier, copiedURL.path);
+                completion(copiedURL, typeIdentifier, nil);
+                return;
+            }
+            error = copyError;
+        }
+
+        NSString* detail = error.localizedDescription ?: @"provider returned no file URL";
+        [errors addObject:[NSString stringWithFormat:@"%@: %@", typeIdentifier, detail]];
+        NSLog(@"[tcxIOS.photos] file representation %@ failed: %@", typeIdentifier, detail);
+        TCXIOSLoadFileRepresentationAtIndex(provider, typeIdentifiers, index + 1, directoryName, errors, completion);
+    }];
+}
+
+void TCXIOSLoadDataRepresentationAtIndex(NSItemProvider* provider,
+                                         NSArray<NSString*>* typeIdentifiers,
+                                         NSUInteger index,
+                                         tcx::ios::PhotoMediaType mediaType,
+                                         NSString* directoryName,
+                                         NSMutableArray<NSString*>* errors,
+                                         TCXIOSPhotoRepresentationCompletion completion) {
+    if (index >= typeIdentifiers.count) {
+        NSString* message = [NSString stringWithFormat:@"No data representation loaded. Tried %@. %@",
+                             [NSString stringWithUTF8String:TCXIOSIdentifierSummary(typeIdentifiers).c_str()],
+                             TCXIOSJoinedErrors(errors)];
+        completion(nil, nil, TCXIOSRepresentationError(message));
+        return;
+    }
+
+    NSString* typeIdentifier = typeIdentifiers[index];
+    NSLog(@"[tcxIOS.photos] trying data representation %@", typeIdentifier);
+    [provider loadDataRepresentationForTypeIdentifier:typeIdentifier completionHandler:^(NSData* data, NSError* dataError) {
+        NSError* writeError = nil;
+        NSURL* copiedURL = TCXIOSTemporaryDataURL(data, typeIdentifier, mediaType, directoryName, &writeError);
+        if (copiedURL) {
+            NSLog(@"[tcxIOS.photos] loaded data representation %@ -> %@", typeIdentifier, copiedURL.path);
+            completion(copiedURL, typeIdentifier, nil);
+            return;
+        }
+
+        NSError* error = dataError ?: writeError;
+        NSString* detail = error.localizedDescription ?: @"provider returned no image data";
+        [errors addObject:[NSString stringWithFormat:@"%@: %@", typeIdentifier, detail]];
+        NSLog(@"[tcxIOS.photos] data representation %@ failed: %@", typeIdentifier, detail);
+        TCXIOSLoadDataRepresentationAtIndex(provider,
+                                            typeIdentifiers,
+                                            index + 1,
+                                            mediaType,
+                                            directoryName,
+                                            errors,
+                                            completion);
+    }];
+}
+
+void TCXIOSLoadPickedPhotoRepresentation(NSItemProvider* provider,
+                                         NSArray<NSString*>* typeIdentifiers,
+                                         tcx::ios::PhotoMediaType mediaType,
+                                         TCXIOSPhotoRepresentationCompletion completion) {
+    if (mediaType == tcx::ios::PhotoMediaType::Image) {
+        NSMutableArray<NSString*>* dataErrors = [NSMutableArray array];
+        TCXIOSLoadDataRepresentationAtIndex(provider,
+                                            typeIdentifiers,
+                                            0,
+                                            mediaType,
+                                            @"tcxIOS-photos",
+                                            dataErrors,
+                                            ^(NSURL* copiedURL, NSString* usedTypeIdentifier, NSError* dataError) {
+            if (copiedURL) {
+                completion(copiedURL, usedTypeIdentifier, nil);
+                return;
+            }
+
+            NSLog(@"[tcxIOS.photos] data representations exhausted: %@", dataError.localizedDescription);
+            NSMutableArray<NSString*>* fileErrors = [NSMutableArray array];
+            TCXIOSLoadFileRepresentationAtIndex(provider,
+                                                typeIdentifiers,
+                                                0,
+                                                @"tcxIOS-photos",
+                                                fileErrors,
+                                                completion);
+        });
+        return;
+    }
+
+    NSMutableArray<NSString*>* fileErrors = [NSMutableArray array];
+    TCXIOSLoadFileRepresentationAtIndex(provider,
+                                        typeIdentifiers,
+                                        0,
+                                        @"tcxIOS-photos",
+                                        fileErrors,
+                                        completion);
 }
 
 tcx::ios::PickedPhoto TCXIOSPickedPhotoFromURL(NSURL* copiedURL,
@@ -318,7 +511,12 @@ tcx::ios::PickedPhoto TCXIOSPickedPhotoFromURL(NSURL* copiedURL,
         NSItemProvider* provider = result.itemProvider;
         tcx::ios::PhotoMediaType pickedMediaType = tcx::ios::PhotoMediaType::Image;
         NSString* typeIdentifier = TCXIOSPreferredProviderTypeIdentifier(provider, mediaTypes_, pickedMediaType);
-        if (!typeIdentifier || ![provider hasItemConformingToTypeIdentifier:typeIdentifier]) {
+        NSArray<NSString*>* typeIdentifiers =
+            TCXIOSProviderRepresentationCandidates(provider, typeIdentifier, pickedMediaType);
+        NSLog(@"[tcxIOS.photos] selected provider registered=[%s] candidates=[%s]",
+              TCXIOSProviderTypeSummary(provider).c_str(),
+              TCXIOSIdentifierSummary(typeIdentifiers).c_str());
+        if (typeIdentifiers.count == 0) {
             std::lock_guard<std::mutex> lock(*mutex);
             if (firstError->code == tcx::ios::ErrorCode::None) {
                 *firstError = {
@@ -331,50 +529,26 @@ tcx::ios::PickedPhoto TCXIOSPickedPhotoFromURL(NSURL* copiedURL,
         }
 
         dispatch_group_enter(group);
-        [provider loadFileRepresentationForTypeIdentifier:typeIdentifier completionHandler:^(NSURL* url, NSError* error) {
-            if (url && !error) {
-                NSError* copyError = nil;
-                NSURL* copiedURL = TCXIOSTemporaryCopyURL(url, @"tcxIOS-photos", &copyError);
-                if (copiedURL) {
-                    std::lock_guard<std::mutex> lock(*mutex);
-                    photos->push_back(TCXIOSPickedPhotoFromURL(copiedURL, typeIdentifier, pickedMediaType, limitedLibrary_));
-                    dispatch_group_leave(group);
-                    return;
-                }
-                error = copyError;
-            }
-
-            if (pickedMediaType == tcx::ios::PhotoMediaType::Image) {
-                [provider loadDataRepresentationForTypeIdentifier:typeIdentifier completionHandler:^(NSData* data, NSError* dataError) {
-                    NSError* writeError = nil;
-                    NSURL* copiedURL = TCXIOSTemporaryDataURL(data,
-                                                             typeIdentifier,
-                                                             pickedMediaType,
-                                                             @"tcxIOS-photos",
-                                                             &writeError);
-                    if (copiedURL) {
-                        std::lock_guard<std::mutex> lock(*mutex);
-                        photos->push_back(TCXIOSPickedPhotoFromURL(copiedURL, typeIdentifier, pickedMediaType, limitedLibrary_));
-                        dispatch_group_leave(group);
-                        return;
-                    }
-
-                    std::lock_guard<std::mutex> lock(*mutex);
-                    if (firstError->code == tcx::ios::ErrorCode::None) {
-                        *firstError = TCXIOSNativeError(dataError ?: writeError,
-                                                        "Failed to load picked photo data into the app sandbox.");
-                    }
-                    dispatch_group_leave(group);
-                }];
+        TCXIOSLoadPickedPhotoRepresentation(provider,
+                                            typeIdentifiers,
+                                            pickedMediaType,
+                                            ^(NSURL* copiedURL, NSString* usedTypeIdentifier, NSError* error) {
+            if (copiedURL) {
+                std::lock_guard<std::mutex> lock(*mutex);
+                photos->push_back(TCXIOSPickedPhotoFromURL(copiedURL,
+                                                           usedTypeIdentifier ?: typeIdentifier,
+                                                           pickedMediaType,
+                                                           limitedLibrary_));
+                dispatch_group_leave(group);
                 return;
             }
 
             std::lock_guard<std::mutex> lock(*mutex);
             if (firstError->code == tcx::ios::ErrorCode::None) {
-                *firstError = TCXIOSNativeError(error, "Failed to load photo representation.");
+                *firstError = TCXIOSNativeError(error, "Failed to load picked photo representation.");
             }
             dispatch_group_leave(group);
-        }];
+        });
     }
 
     dispatch_group_notify(group, dispatch_get_main_queue(), ^{

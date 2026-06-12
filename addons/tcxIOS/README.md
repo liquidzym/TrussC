@@ -146,6 +146,12 @@ filename, UTI/type identifier, file size, image dimensions, video duration when
 available, and whether the current Photos authorization is limited. Image
 dimensions are read from ImageIO metadata so picking a large HEIC/JPEG does not
 force a full UIKit image decode just to populate `PickedPhoto`.
+Image picking tries PHPicker's data representations first, starting with
+`public.image`, then falls back through concrete registered identifiers and file
+representations. This matches SwiftUI
+`PhotosPickerItem.loadTransferable(type: Data.self)` style behavior and handles
+edited, cloud-backed, or transcoded Photos assets more reliably than requiring a
+current file representation.
 `Photos::save()` writes image or video files into the user's Photos library
 through PhotoKit. As with all Photos writes, apps must provide
 `NSPhotoLibraryAddUsageDescription` and handle denied or limited authorization.
