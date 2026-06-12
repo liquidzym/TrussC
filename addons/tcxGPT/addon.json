@@ -1,0 +1,13 @@
+{
+  "name": "tcxGPT",
+  "description": "OpenAI ChatGPT API client",
+  "author": "tettou771",
+  "license": "MIT",
+  "category": "ai",
+  "keywords": [
+    "openai",
+    "gpt",
+    "llm",
+    "ai"
+  ]
+}

@@ -129,6 +129,15 @@ addons/*
 !addons/tcxMapWrap
 !addons/tcxCEF
 !addons/tcxMediaPipe
+!addons/tcxAruco
+!addons/tcxAzureKinect
+!addons/tcxGPT
+!addons/tcxGlitch
+!addons/tcxIME
+!addons/tcxMQTT
+!addons/tcxPhysics
+!addons/tcxPly
+!addons/tcxSyphon
 addons/tcxCloth/*task*.md
 addons/tcxArtNet/ref/
 addons/tcxArtNet/tcxArtNet_addon_task_spec.md

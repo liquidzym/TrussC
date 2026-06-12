@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  # Builds tcxPly + its examples on macOS / Windows / Linux and runs the
+  # headless tests/ harness. Addon name, platforms (addon.json) and the
+  # presence of tests/ are all auto-detected by the reusable workflow.
+  build:
+    uses: TrussC-org/ci-actions/.github/workflows/build-addon.yml@v1

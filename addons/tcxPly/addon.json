@@ -1,0 +1,9 @@
+{
+  "description": "Read/write PLY (Stanford Polygon) files as a tc::Mesh — meshes and point clouds, ASCII & binary",
+  "author": "tettou771",
+  "license": "MIT",
+  "category": "3d",
+  "screenshot": "docs/preview.png",
+  "platforms": ["macos", "windows", "linux"],
+  "keywords": ["ply", "mesh", "pointcloud", "io", "3d", "model"]
+}
