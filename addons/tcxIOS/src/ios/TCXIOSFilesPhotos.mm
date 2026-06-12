@@ -1,6 +1,7 @@
 #include "TCXIOSBridgeSupport.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <ImageIO/ImageIO.h>
 #import <Photos/Photos.h>
 #import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -11,6 +12,43 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+
+namespace {
+
+struct TCXIOSImagePixelSize {
+    int width = 0;
+    int height = 0;
+};
+
+TCXIOSImagePixelSize TCXIOSReadImagePixelSize(NSURL* url) {
+    TCXIOSImagePixelSize size;
+    if (!url) return size;
+
+    CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url, nullptr);
+    if (!source) return size;
+
+    NSDictionary* properties =
+        (__bridge_transfer NSDictionary*)CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr);
+    CFRelease(source);
+    if (!properties) return size;
+
+    NSNumber* width = properties[(__bridge NSString*)kCGImagePropertyPixelWidth];
+    NSNumber* height = properties[(__bridge NSString*)kCGImagePropertyPixelHeight];
+    size.width = width ? static_cast<int>(width.intValue) : 0;
+    size.height = height ? static_cast<int>(height.intValue) : 0;
+
+    NSNumber* orientation = properties[(__bridge NSString*)kCGImagePropertyOrientation];
+    const int orientationValue = orientation ? orientation.intValue : 1;
+    if (orientationValue >= 5 && orientationValue <= 8) {
+        const int rotatedWidth = size.height;
+        size.height = size.width;
+        size.width = rotatedWidth;
+    }
+
+    return size;
+}
+
+} // namespace
 
 @interface TCXIOSDocumentImportDelegate : NSObject <UIDocumentPickerDelegate>
 - (instancetype)initWithCopyIntoApp:(bool)copyIntoApp
@@ -202,11 +240,11 @@
                 return;
             }
 
-            UIImage* image = pickedMediaType == tcx::ios::PhotoMediaType::Image
-                ? [UIImage imageWithContentsOfFile:copiedURL.path]
-                : nil;
-            int pixelWidth = image ? static_cast<int>(image.size.width * image.scale) : 0;
-            int pixelHeight = image ? static_cast<int>(image.size.height * image.scale) : 0;
+            TCXIOSImagePixelSize imageSize = pickedMediaType == tcx::ios::PhotoMediaType::Image
+                ? TCXIOSReadImagePixelSize(copiedURL)
+                : TCXIOSImagePixelSize{};
+            int pixelWidth = imageSize.width;
+            int pixelHeight = imageSize.height;
             NSString* copiedTypeIdentifier = nil;
             [copiedURL getResourceValue:&copiedTypeIdentifier forKey:NSURLTypeIdentifierKey error:nil];
             NSNumber* fileSize = nil;

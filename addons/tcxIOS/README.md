@@ -80,7 +80,8 @@ with `#import <tcx/ios/native/TCXIOSBridgeObjC.h>` and
 `TCXIOSRegisterScenePresenter()` so modal presentation can prefer the active
 scene before falling back to the foreground key window. Use
 `TCXIOSSetActiveSceneIdentifier()` from scene activation callbacks when the host
-app owns multiple scenes.
+app owns multiple scenes. Native modal delegates and registered scene presenters
+are kept in bridge-owned lifetime containers until completion or scene teardown.
 
 ## Info.plist
 
@@ -135,7 +136,9 @@ TrussC event queue.
 `tcx::ios::photos()` can pick images, videos, or both through PHPicker and report
 the selected media type on each `PickedPhoto`. Picked items include the copied
 filename, UTI/type identifier, file size, image dimensions, video duration when
-available, and whether the current Photos authorization is limited.
+available, and whether the current Photos authorization is limited. Image
+dimensions are read from ImageIO metadata so picking a large HEIC/JPEG does not
+force a full UIKit image decode just to populate `PickedPhoto`.
 `Photos::save()` writes image or video files into the user's Photos library
 through PhotoKit. As with all Photos writes, apps must provide
 `NSPhotoLibraryAddUsageDescription` and handle denied or limited authorization.

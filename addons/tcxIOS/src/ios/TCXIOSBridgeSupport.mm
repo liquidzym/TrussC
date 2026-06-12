@@ -9,7 +9,7 @@ NSMutableSet* TCXIOSActiveDelegates() {
     static NSMutableSet* delegates = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        delegates = [NSMutableSet set];
+        delegates = [[NSMutableSet alloc] init];
     });
     return delegates;
 }
@@ -18,7 +18,9 @@ NSMapTable<NSString*, UIViewController*>* TCXIOSScenePresenters() {
     static NSMapTable<NSString*, UIViewController*>* presenters = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        presenters = [NSMapTable strongToWeakObjectsMapTable];
+        presenters = [[NSMapTable alloc] initWithKeyOptions:NSPointerFunctionsStrongMemory
+                                               valueOptions:NSPointerFunctionsWeakMemory
+                                                   capacity:0];
     });
     return presenters;
 }

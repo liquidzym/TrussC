@@ -44,6 +44,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS" OR IOS)
     target_link_libraries(tcxIOS PRIVATE
         "-framework UIKit"
         "-framework Foundation"
+        "-framework ImageIO"
         "-framework AVFoundation"
         "-framework AVFAudio"
         "-framework BackgroundTasks"
