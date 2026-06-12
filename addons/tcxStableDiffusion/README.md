@@ -38,6 +38,10 @@ tracked Node/JSON ControlNet examples under `bin/data/models/<model-id>`.
 The workbench can also generate a Canny-style control PNG from a source image,
 generate a center inpaint mask, and scan/select LoRA files from
 `bin/data/models/loras`.
+Model and workflow switching is visible in the example itself: the left panel
+shows model capability badges, recommended backend entry (`C++ 原生` or
+`Node/JSON`), defaults, and one-click workflow examples; the right panel switches
+between output, source, mask, control image, and Sidecar preview tabs.
 
 The C++ workbench still blocks the unstable native SD 1.5 ControlNet startup
 path by default. Use the tracked Node/JSON ControlNet paths for normal

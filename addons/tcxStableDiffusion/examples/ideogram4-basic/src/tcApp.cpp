@@ -29,6 +29,14 @@ enum class WorkflowMode {
     Upscale,
 };
 
+enum class PreviewTab {
+    Output,
+    Source,
+    Mask,
+    Control,
+    Sidecar,
+};
+
 struct ModelProfile {
     ProfileKind kind;
     const char* id;
@@ -130,7 +138,7 @@ const std::array<ModelProfile, 4> kProfiles = {{
     },
 }};
 
-constexpr float kPanelWidth = 460.0f;
+constexpr float kPanelWidth = 500.0f;
 
 std::filesystem::path exampleRoot() {
     return std::filesystem::path(__FILE__).parent_path().parent_path();
@@ -162,6 +170,112 @@ int profileIndexForId(std::string text) {
         return 3;
     }
     return 0;
+}
+
+WorkflowMode workflowAt(int index) {
+    return static_cast<WorkflowMode>(std::clamp(index, 0, 6));
+}
+
+PreviewTab previewTabAt(int index) {
+    return static_cast<PreviewTab>(std::clamp(index, 0, 4));
+}
+
+const char* workflowLabel(WorkflowMode workflow) {
+    switch (workflow) {
+        case WorkflowMode::TextToImage: return "文生图";
+        case WorkflowMode::ImageToImage: return "图生图";
+        case WorkflowMode::Inpaint: return "局部重绘";
+        case WorkflowMode::ControlNet: return "ControlNet Canny";
+        case WorkflowMode::LoraStack: return "LoRA 风格";
+        case WorkflowMode::Refine: return "细化";
+        case WorkflowMode::Upscale: return "放大/细化";
+    }
+    return "文生图";
+}
+
+const char* workflowDescription(WorkflowMode workflow) {
+    switch (workflow) {
+        case WorkflowMode::TextToImage:
+            return "只需要提示词，适合快速验证模型默认质量和中文提示词是否正常。";
+        case WorkflowMode::ImageToImage:
+            return "使用输入图作为构图起点，通过重绘强度控制保留程度。";
+        case WorkflowMode::Inpaint:
+            return "使用输入图和蒙版，只重绘白色蒙版区域。";
+        case WorkflowMode::ControlNet:
+            return "真实 ControlNet Canny 工作流，使用控制图约束边缘和布局。";
+        case WorkflowMode::LoraStack:
+            return "从 LoRA 根目录选择权重，叠加到当前模型请求中。";
+        case WorkflowMode::Refine:
+            return "对已有图片做细化再生成，适合补质量或重走风格。";
+        case WorkflowMode::Upscale:
+            return "对已有图片做放大和轻量细化，适合输出前处理。";
+    }
+    return "";
+}
+
+const char* profileSummary(ProfileKind kind) {
+    switch (kind) {
+        case ProfileKind::Ideogram4:
+            return "文本、海报、可读字样和中文描述优先；默认使用结构化 poster 模板。";
+        case ProfileKind::Flux2Klein:
+            return "轻量快速产品图和软件工具视觉，低步数也能快速出结果。";
+        case ProfileKind::ZImageTurbo:
+            return "宽画幅场景和气氛图优先，适合先跑构图再细化。";
+        case ProfileKind::SD15ControlNetCanny:
+            return "真实 ControlNet Canny 资产已接入；C++ 原生入口目前保护性禁用，推荐 Node/JSON。";
+    }
+    return "";
+}
+
+const char* profileRecommendedEntry(ProfileKind kind) {
+    return kind == ProfileKind::SD15ControlNetCanny ? "Node/JSON" : "C++ 原生";
+}
+
+const char* profileBackend(ProfileKind kind) {
+    return kind == ProfileKind::SD15ControlNetCanny ? "persistent_server via Node/JSON job" : "persistent_server via C++ 原生";
+}
+
+const char* workflowBackend(WorkflowMode workflow, ProfileKind kind) {
+    if (workflow == WorkflowMode::ControlNet || kind == ProfileKind::SD15ControlNetCanny) {
+        return "Node/JSON 真实 ControlNet";
+    }
+    return "C++ 原生 persistent_server";
+}
+
+bool workflowSupportedByProfile(WorkflowMode workflow, ProfileKind kind) {
+    if (workflow == WorkflowMode::ControlNet) {
+        return kind == ProfileKind::SD15ControlNetCanny;
+    }
+    if (kind == ProfileKind::SD15ControlNetCanny) {
+        return workflow == WorkflowMode::ControlNet;
+    }
+    return true;
+}
+
+int preferredPreviewTab(WorkflowMode workflow) {
+    switch (workflow) {
+        case WorkflowMode::ImageToImage:
+        case WorkflowMode::Refine:
+        case WorkflowMode::Upscale:
+            return static_cast<int>(PreviewTab::Source);
+        case WorkflowMode::Inpaint:
+            return static_cast<int>(PreviewTab::Mask);
+        case WorkflowMode::ControlNet:
+            return static_cast<int>(PreviewTab::Control);
+        case WorkflowMode::TextToImage:
+        case WorkflowMode::LoraStack:
+            return static_cast<int>(PreviewTab::Output);
+    }
+    return 0;
+}
+
+std::string formatDefaultParams(const ModelProfile& profile) {
+    std::ostringstream out;
+    out << profile.width << "x" << profile.height
+        << " / " << profile.steps << " steps"
+        << " / CFG " << profile.cfg
+        << " / seed " << profile.seed;
+    return out.str();
 }
 
 bool envEnabled(const char* name) {
@@ -230,6 +344,21 @@ ImVec4 colorFromBytes(int r, int g, int b, float a = 1.0f) {
         static_cast<float>(g) / 255.0f,
         static_cast<float>(b) / 255.0f,
         a);
+}
+
+void drawKeyValue(const char* key, const std::string& value) {
+    ImGui::TextColored(colorFromBytes(159, 142, 104), "%s", key);
+    ImGui::SameLine();
+    ImGui::TextWrapped("%s", value.c_str());
+}
+
+void drawBadge(const char* text, const ImVec4& color) {
+    ImGui::TextColored(color, "%s", text);
+    ImGui::SameLine();
+}
+
+void endBadgeLine() {
+    ImGui::NewLine();
 }
 
 bool pathExists(const std::filesystem::path& path) {
@@ -589,16 +718,7 @@ void tcApp::update() {
 void tcApp::draw() {
     clear(0.045f, 0.040f, 0.032f);
 
-    if (preview_.isAllocated()) {
-        const float margin = kPanelWidth + 30.0f;
-        const float areaW = std::max(100.0f, static_cast<float>(getWindowWidth()) - margin - 28.0f);
-        const float areaH = std::max(100.0f, static_cast<float>(getWindowHeight()) - 28.0f);
-        const float scale = std::min(areaW / preview_.getWidth(), areaH / preview_.getHeight());
-        const float drawW = preview_.getWidth() * scale;
-        const float drawH = preview_.getHeight() * scale;
-        preview_.draw(margin + (areaW - drawW) * 0.5f, 14.0f + (areaH - drawH) * 0.5f, drawW, drawH);
-    }
-
+    drawPreviewCanvas();
     drawGui();
 }
 
@@ -891,6 +1011,9 @@ void tcApp::generateControlImage() {
     }
 
     copyText(controlImagePath_, relativeToExamplePath(output));
+    auxiliaryPreview_.clear();
+    auxiliaryPreviewPath_.clear();
+    previewTab_ = static_cast<int>(PreviewTab::Control);
     lastError_.clear();
     status_ = "已生成 ControlNet 控制图";
 }
@@ -918,8 +1041,62 @@ void tcApp::generateInpaintMask() {
     }
 
     copyText(maskImagePath_, relativeToExamplePath(output));
+    auxiliaryPreview_.clear();
+    auxiliaryPreviewPath_.clear();
+    previewTab_ = static_cast<int>(PreviewTab::Mask);
     lastError_.clear();
     status_ = "已生成 inpaint 蒙版";
+}
+
+void tcApp::applyWorkflowExample(int workflowIndex) {
+    const auto workflow = workflowAt(workflowIndex);
+    workflowMode_ = static_cast<int>(workflow);
+    previewTab_ = preferredPreviewTab(workflow);
+    auxiliaryPreview_.clear();
+    auxiliaryPreviewPath_.clear();
+    lastError_.clear();
+
+    switch (workflow) {
+        case WorkflowMode::TextToImage:
+            applyModelDefaults();
+            previewTab_ = static_cast<int>(PreviewTab::Output);
+            break;
+        case WorkflowMode::ImageToImage:
+            copyText(initImagePath_, "inputs/source.png");
+            strength_ = 0.62f;
+            break;
+        case WorkflowMode::Inpaint:
+            copyText(initImagePath_, "inputs/source.png");
+            copyText(maskImagePath_, pathExists(resolveExamplePath("inputs/mask_generated.png")) ? "inputs/mask_generated.png" : "inputs/mask.png");
+            strength_ = 0.72f;
+            break;
+        case WorkflowMode::ControlNet:
+            if (selectedModel_ != 3 && !sd_.isRunning() && !sd_.isSettingUp()) {
+                selectModel(3, true);
+            }
+            copyText(sourceImagePath_, "inputs/source.png");
+            copyText(controlImagePath_, pathExists(resolveExamplePath("inputs/control_canny_generated.png")) ? "inputs/control_canny_generated.png" : "inputs/control_canny.png");
+            controlStrength_ = 0.9f;
+            break;
+        case WorkflowMode::LoraStack:
+            refreshLoraFiles();
+            if (loraFiles_.empty()) {
+                copyText(loraPath_, "style.safetensors");
+            }
+            previewTab_ = static_cast<int>(PreviewTab::Output);
+            break;
+        case WorkflowMode::Refine:
+            copyText(sourceImagePath_, "inputs/source.png");
+            strength_ = 0.35f;
+            break;
+        case WorkflowMode::Upscale:
+            copyText(sourceImagePath_, "inputs/source.png");
+            strength_ = 0.25f;
+            upscaleFactor_ = 2.0f;
+            break;
+    }
+
+    status_ = std::string("已套用一键示例: ") + workflowLabel(workflow);
 }
 
 void tcApp::submitPrompt() {
@@ -1089,6 +1266,9 @@ void tcApp::adoptResult(tcx::StableDiffusionImage&& result) {
         preview_.setDirty();
         preview_.update();
     }
+    previewTab_ = static_cast<int>(PreviewTab::Output);
+    auxiliaryPreview_.clear();
+    auxiliaryPreviewPath_.clear();
     if (smokeMode_) {
         smokeExitRequested_ = true;
     }
@@ -1096,114 +1276,125 @@ void tcApp::adoptResult(tcx::StableDiffusionImage&& result) {
     status_ = hasPixels ? "生成完成" : "生成完成，已保存文件";
 }
 
-void tcApp::drawGui() {
-    imguiBegin();
-
-    ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(kPanelWidth, 850), ImGuiCond_FirstUseEver);
-    ImGui::Begin("tcxStableDiffusion 多模型工作台", nullptr, ImGuiWindowFlags_NoCollapse);
-
-    ImGui::TextColored(colorFromBytes(225, 193, 106), "状态");
-    ImGui::SameLine();
-    ImGui::TextWrapped("%s", status_.c_str());
-    if (!lastError_.empty()) {
-        ImGui::TextColored(colorFromBytes(251, 113, 133), "错误");
-        ImGui::SameLine();
-        ImGui::TextWrapped("%s", lastError_.c_str());
+std::filesystem::path tcApp::previewPathForTab(int tab) const {
+    switch (previewTabAt(tab)) {
+        case PreviewTab::Output:
+            return lastOutput_;
+        case PreviewTab::Source: {
+            auto source = resolveExamplePath(sourceImagePath_.data());
+            if (!pathExists(source)) {
+                source = resolveExamplePath(initImagePath_.data());
+            }
+            return source;
+        }
+        case PreviewTab::Mask:
+            return resolveExamplePath(maskImagePath_.data());
+        case PreviewTab::Control:
+            return resolveExamplePath(controlImagePath_.data());
+        case PreviewTab::Sidecar:
+            return lastMetadata_;
     }
-    ImGui::SeparatorText("模型");
+    return {};
+}
 
-    const bool busy = sd_.isRunning() || sd_.isSettingUp();
-    int comboIndex = selectedModel_;
-    const char* labels[] = {
-        kProfiles[0].label,
-        kProfiles[1].label,
-        kProfiles[2].label,
-        kProfiles[3].label,
-    };
-    if (busy) {
-        ImGui::BeginDisabled();
+Image* tcApp::previewImageForTab(int tab) {
+    const auto selectedTab = previewTabAt(tab);
+    if (selectedTab == PreviewTab::Output && preview_.isAllocated()) {
+        return &preview_;
     }
-    ImGui::TextUnformatted("模型");
-    ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::Combo("##model", &comboIndex, labels, static_cast<int>(kProfiles.size()))) {
-        selectModel(comboIndex, true);
-    }
-    if (busy) {
-        ImGui::EndDisabled();
+    if (selectedTab == PreviewTab::Sidecar) {
+        return nullptr;
     }
 
-    ImGui::TextWrapped("模型目录");
+    const auto path = previewPathForTab(tab);
+    if (path.empty() || !pathExists(path)) {
+        return nullptr;
+    }
+
+    if (auxiliaryPreviewPath_ != path || !auxiliaryPreview_.isAllocated()) {
+        auxiliaryPreview_.clear();
+        auxiliaryPreviewPath_.clear();
+        if (!auxiliaryPreview_.load(path.string())) {
+            return nullptr;
+        }
+        auxiliaryPreviewPath_ = path;
+    }
+    return auxiliaryPreview_.isAllocated() ? &auxiliaryPreview_ : nullptr;
+}
+
+void tcApp::drawPreviewCanvas() {
+    const float margin = kPanelWidth + 30.0f;
+    const float areaW = std::max(100.0f, static_cast<float>(getWindowWidth()) - margin - 28.0f);
+    const float areaH = std::max(100.0f, static_cast<float>(getWindowHeight()) - 28.0f);
+    const float x = margin;
+    const float y = 14.0f;
+
+    setColor(0.070f, 0.060f, 0.045f, 1.0f);
+    drawRectRounded(x, y, areaW, areaH, 10.0f);
+    setColor(0.34f, 0.27f, 0.14f, 0.65f);
+    drawRectRounded(x + 1.0f, y + 1.0f, areaW - 2.0f, areaH - 2.0f, 9.0f);
+    setColor(0.045f, 0.040f, 0.032f, 1.0f);
+    drawRectRounded(x + 2.0f, y + 2.0f, areaW - 4.0f, areaH - 4.0f, 8.0f);
+
+    Image* image = previewImageForTab(previewTab_);
+    if (!image || !image->isAllocated() || image->getWidth() <= 0 || image->getHeight() <= 0) {
+        return;
+    }
+
+    const float scale = std::min((areaW - 28.0f) / image->getWidth(), (areaH - 28.0f) / image->getHeight());
+    const float drawW = image->getWidth() * scale;
+    const float drawH = image->getHeight() * scale;
+    setColor(1.0f);
+    image->draw(x + (areaW - drawW) * 0.5f, y + (areaH - drawH) * 0.5f, drawW, drawH);
+}
+
+void tcApp::drawProfileSummary(int workflowIndex, bool busy) {
+    const auto& profile = profileAt(selectedModel_);
+    const auto workflow = workflowAt(workflowIndex);
+
+    ImGui::SeparatorText("模型能力");
+    ImGui::TextWrapped("%s", profileSummary(profile.kind));
+    drawKeyValue("推荐入口", profileRecommendedEntry(profile.kind));
+    drawKeyValue("默认参数", formatDefaultParams(profile));
+    drawKeyValue("后端与路径", profileBackend(profile.kind));
     ImGui::PushStyleColor(ImGuiCol_Text, colorFromBytes(168, 180, 198));
     ImGui::TextWrapped("%s", modelDir_.string().c_str());
     ImGui::PopStyleColor();
 
-    ImGui::SeparatorText("工作流");
-    const char* workflowLabels[] = {
-        "文生图",
-        "图生图",
-        "局部重绘",
-        "ControlNet Canny",
-        "LoRA 风格",
-        "细化",
-        "放大/细化",
-    };
-    ImGui::TextUnformatted("任务类型");
-    ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::Combo("##workflow", &workflowMode_, workflowLabels, 7)) {
-        if (static_cast<WorkflowMode>(workflowMode_) == WorkflowMode::ControlNet && selectedModel_ != 3 && !busy) {
-            selectModel(3, true);
+    ImGui::TextColored(colorFromBytes(159, 142, 104), "能力");
+    ImGui::SameLine();
+    if (profile.kind == ProfileKind::SD15ControlNetCanny) {
+        drawBadge("Node/JSON", colorFromBytes(112, 211, 152));
+        drawBadge("真实 ControlNet", colorFromBytes(225, 193, 106));
+        drawBadge("C++ 原生保护中", colorFromBytes(251, 113, 133));
+    } else {
+        drawBadge("C++ 原生", colorFromBytes(225, 193, 106));
+        drawBadge("Node/JSON 脚本可用", colorFromBytes(168, 180, 198));
+        if (profile.supportsIdeogramComposer) {
+            drawBadge("Ideogram4 模板", colorFromBytes(112, 211, 152));
         }
     }
-    inputTextFullWidth("项目名", "##project_name", projectName_);
+    endBadgeLine();
 
+    ImGui::SeparatorText("当前工作流");
+    drawKeyValue("任务", workflowLabel(workflow));
+    drawKeyValue("入口", workflowBackend(workflow, profile.kind));
+    ImGui::TextWrapped("%s", workflowDescription(workflow));
+    if (!workflowSupportedByProfile(workflow, profile.kind)) {
+        ImGui::TextColored(colorFromBytes(251, 113, 133), "该模型不支持当前工作流；请切换到匹配的模型或使用 Node/JSON 示例。");
+    }
     if (busy) {
-        ImGui::BeginDisabled();
+        ImGui::TextColored(colorFromBytes(225, 193, 106), "模型或任务正在运行，切换入口已临时锁定。");
     }
-    if (ImGui::Button("初始化当前模型", ImVec2(214, 32))) {
-        initializeModel();
-    }
-    if (busy) {
-        ImGui::EndDisabled();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("取消任务", ImVec2(-1, 32))) {
-        sd_.cancel();
-    }
+}
 
-    ImGui::Checkbox("低显存模式", &lowVramMode_);
-    ImGui::SameLine();
-    ImGui::Checkbox("自动保存图片", &autoSave_);
+void tcApp::drawWorkflowInputs(int workflowIndex) {
+    const auto workflow = workflowAt(workflowIndex);
+    ImGui::SeparatorText("输入面板");
 
-    const bool composerAvailable = profileAt(selectedModel_).supportsIdeogramComposer;
-    if (!composerAvailable) {
-        ImGui::BeginDisabled();
+    if (workflow == WorkflowMode::TextToImage) {
+        ImGui::TextWrapped("文生图只需要提示词和参数；右侧预览会在生成完成后切到输出。");
     }
-    ImGui::Checkbox("使用 Ideogram4 结构化模板", &usePromptComposer_);
-    if (!composerAvailable) {
-        ImGui::EndDisabled();
-        usePromptComposer_ = false;
-    }
-
-    if (ImGui::Button("套用当前模型默认提示词", ImVec2(-1, 32))) {
-        applyModelDefaults();
-    }
-
-    ImGui::SeparatorText("提示词");
-    if (usePromptComposer_ && composerAvailable) {
-        inputTextFullWidth("主题", "##template_subject", templateSubject_);
-        inputTextFullWidth("画面文字", "##template_text", templateText_);
-        inputTextMultilineFullWidth("风格", "##template_style", templateStyle_, 68.0f);
-        inputTextFullWidth("配色（逗号分隔）", "##template_palette", templatePalette_);
-        if (ImGui::Button("应用模板", ImVec2(-1, 32))) {
-            applyPromptTemplate();
-        }
-        ImGui::Spacing();
-    }
-    inputTextMultilineFullWidth("提示词", "##prompt", prompt_, 150.0f);
-    inputTextMultilineFullWidth("反向提示词", "##negative_prompt", negativePrompt_, 82.0f);
-
-    const auto workflow = static_cast<WorkflowMode>(std::clamp(workflowMode_, 0, 6));
     if (workflow == WorkflowMode::ImageToImage || workflow == WorkflowMode::Inpaint) {
         inputTextFullWidth("输入图路径", "##init_image", initImagePath_);
         sliderFloatFullWidth("重绘强度", "##strength_img", &strength_, 0.05f, 1.0f);
@@ -1267,6 +1458,181 @@ void tcApp::drawGui() {
     if (workflow == WorkflowMode::Upscale) {
         sliderFloatFullWidth("放大倍率", "##upscale_factor", &upscaleFactor_, 1.0f, 4.0f);
     }
+}
+
+void tcApp::drawOutputInspector() {
+    const float rightX = kPanelWidth + 24.0f;
+    const float width = std::max(340.0f, static_cast<float>(getWindowWidth()) - rightX - 20.0f);
+    ImGui::SetNextWindowPos(ImVec2(rightX, 18.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(width, 255.0f), ImGuiCond_FirstUseEver);
+    ImGui::Begin("预览 / Sidecar", nullptr, ImGuiWindowFlags_NoCollapse);
+
+    ImGui::SeparatorText("预览");
+    if (ImGui::BeginTabBar("##preview_tabs")) {
+        const char* tabLabels[] = {"输出", "源图", "蒙版", "控制图", "Sidecar"};
+        for (int i = 0; i < 5; ++i) {
+            const bool selected = previewTab_ == i;
+            if (ImGui::BeginTabItem(tabLabels[i], nullptr, selected ? ImGuiTabItemFlags_SetSelected : 0)) {
+                previewTab_ = i;
+                const auto path = previewPathForTab(i);
+                if (path.empty()) {
+                    ImGui::TextWrapped("当前标签还没有可预览资产。");
+                } else {
+                    drawKeyValue("路径", path.string());
+                    if (!pathExists(path)) {
+                        ImGui::TextColored(colorFromBytes(251, 113, 133), "文件不存在，请先生成或修正输入路径。");
+                    }
+                }
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
+
+    ImGui::SeparatorText("Sidecar");
+    if (lastMetadata_.empty()) {
+        ImGui::TextWrapped("生成或任务失败后会在这里显示 JSON sidecar 路径。");
+    } else {
+        drawKeyValue("记录文件", lastMetadata_.string());
+    }
+    if (!lastOutput_.empty()) {
+        ImGui::SeparatorText("输出");
+        drawKeyValue("输出文件", lastOutput_.string());
+    }
+
+    ImGui::End();
+}
+
+void tcApp::drawGui() {
+    imguiBegin();
+
+    ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(kPanelWidth, 880), ImGuiCond_FirstUseEver);
+    ImGui::Begin("tcxStableDiffusion 多模型工作台", nullptr, ImGuiWindowFlags_NoCollapse);
+
+    ImGui::TextColored(colorFromBytes(225, 193, 106), "状态");
+    ImGui::SameLine();
+    ImGui::TextWrapped("%s", status_.c_str());
+    if (!lastError_.empty()) {
+        ImGui::TextColored(colorFromBytes(251, 113, 133), "错误");
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", lastError_.c_str());
+    }
+
+    const bool busy = sd_.isRunning() || sd_.isSettingUp();
+    ImGui::SeparatorText("模型");
+    int comboIndex = selectedModel_;
+    const char* modelLabels[] = {
+        kProfiles[0].label,
+        kProfiles[1].label,
+        kProfiles[2].label,
+        kProfiles[3].label,
+    };
+    if (busy) {
+        ImGui::BeginDisabled();
+    }
+    ImGui::TextUnformatted("模型");
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::Combo("##model", &comboIndex, modelLabels, static_cast<int>(kProfiles.size()))) {
+        selectModel(comboIndex, true);
+        previewTab_ = preferredPreviewTab(workflowAt(workflowMode_));
+    }
+    if (busy) {
+        ImGui::EndDisabled();
+    }
+
+    drawProfileSummary(workflowMode_, busy);
+
+    ImGui::SeparatorText("工作流");
+    const char* workflowLabels[] = {
+        "文生图",
+        "图生图",
+        "局部重绘",
+        "ControlNet Canny",
+        "LoRA 风格",
+        "细化",
+        "放大/细化",
+    };
+    ImGui::TextUnformatted("任务类型");
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::Combo("##workflow", &workflowMode_, workflowLabels, 7)) {
+        const auto workflow = workflowAt(workflowMode_);
+        previewTab_ = preferredPreviewTab(workflow);
+        if (workflow == WorkflowMode::ControlNet && selectedModel_ != 3 && !busy) {
+            selectModel(3, true);
+        }
+        if (workflow == WorkflowMode::LoraStack) {
+            refreshLoraFiles();
+        }
+        status_ = std::string("已切换工作流: ") + workflowLabel(workflow);
+    }
+    inputTextFullWidth("项目名", "##project_name", projectName_);
+
+    if (busy) {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Button("初始化当前模型", ImVec2(238, 32))) {
+        initializeModel();
+    }
+    if (busy) {
+        ImGui::EndDisabled();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("取消任务", ImVec2(-1, 32))) {
+        sd_.cancel();
+    }
+
+    ImGui::Checkbox("低显存模式", &lowVramMode_);
+    ImGui::SameLine();
+    ImGui::Checkbox("自动保存图片", &autoSave_);
+
+    ImGui::SeparatorText("一键示例");
+    if (ImGui::BeginTable("##workflow_examples", 2, ImGuiTableFlags_SizingStretchSame)) {
+        for (int i = 0; i < 7; ++i) {
+            ImGui::TableNextColumn();
+            if (busy) {
+                ImGui::BeginDisabled();
+            }
+            std::string label = std::string("套用") + workflowLabels[i];
+            if (ImGui::Button(label.c_str(), ImVec2(-1, 30))) {
+                applyWorkflowExample(i);
+            }
+            if (busy) {
+                ImGui::EndDisabled();
+            }
+        }
+        ImGui::EndTable();
+    }
+
+    const bool composerAvailable = profileAt(selectedModel_).supportsIdeogramComposer;
+    if (!composerAvailable) {
+        ImGui::BeginDisabled();
+    }
+    ImGui::Checkbox("使用 Ideogram4 结构化模板", &usePromptComposer_);
+    if (!composerAvailable) {
+        ImGui::EndDisabled();
+        usePromptComposer_ = false;
+    }
+
+    if (ImGui::Button("套用当前模型默认提示词", ImVec2(-1, 32))) {
+        applyModelDefaults();
+    }
+
+    ImGui::SeparatorText("提示词");
+    if (usePromptComposer_ && composerAvailable) {
+        inputTextFullWidth("主题", "##template_subject", templateSubject_);
+        inputTextFullWidth("画面文字", "##template_text", templateText_);
+        inputTextMultilineFullWidth("风格", "##template_style", templateStyle_, 68.0f);
+        inputTextFullWidth("配色（逗号分隔）", "##template_palette", templatePalette_);
+        if (ImGui::Button("应用模板", ImVec2(-1, 32))) {
+            applyPromptTemplate();
+        }
+        ImGui::Spacing();
+    }
+    inputTextMultilineFullWidth("提示词", "##prompt", prompt_, 150.0f);
+    inputTextMultilineFullWidth("反向提示词", "##negative_prompt", negativePrompt_, 82.0f);
+
+    drawWorkflowInputs(workflowMode_);
 
     ImGui::SeparatorText("生成参数");
     sliderIntFullWidth("宽度", "##width", &width_, 512, 1536);
@@ -1275,7 +1641,11 @@ void tcApp::drawGui() {
     sliderFloatFullWidth("CFG", "##cfg", &cfgScale_, 0.0f, 8.0f);
     inputIntFullWidth("种子（-1 随机）", "##seed", &seed_);
 
-    const bool canGenerate = sd_.isReady() && !sd_.isRunning();
+    const bool supported = workflowSupportedByProfile(workflowAt(workflowMode_), profileAt(selectedModel_).kind);
+    const bool canGenerate = supported && sd_.isReady() && !sd_.isRunning();
+    if (!supported) {
+        ImGui::TextColored(colorFromBytes(251, 113, 133), "当前模型/工作流组合不可直接生成。");
+    }
     if (!canGenerate) {
         ImGui::BeginDisabled();
     }
@@ -1295,25 +1665,12 @@ void tcApp::drawGui() {
         ImGui::ProgressBar(ratio, ImVec2(-1, 0));
     }
 
-    if (!lastOutput_.empty()) {
-        ImGui::Separator();
-        ImGui::TextWrapped("输出文件");
-        ImGui::PushStyleColor(ImGuiCol_Text, colorFromBytes(168, 180, 198));
-        ImGui::TextWrapped("%s", lastOutput_.string().c_str());
-        ImGui::PopStyleColor();
-    }
-    if (!lastMetadata_.empty()) {
-        ImGui::TextWrapped("记录文件");
-        ImGui::PushStyleColor(ImGuiCol_Text, colorFromBytes(168, 180, 198));
-        ImGui::TextWrapped("%s", lastMetadata_.string().c_str());
-        ImGui::PopStyleColor();
-    }
-
     if (!setupAttempted_ && !tcx::StableDiffusion::nativeAvailable()) {
         ImGui::Separator();
         ImGui::TextWrapped("尚未安装 native runtime。请先运行 tools/setup_sd.py build-native。");
     }
 
     ImGui::End();
+    drawOutputInspector();
     imguiEnd();
 }

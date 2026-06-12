@@ -399,3 +399,32 @@
 - Ran C++ preprocessor smokes without loading a model:
   - `TCXSD_SMOKE_PREPROCESS=control` generated `examples/ideogram4-basic/inputs/control_canny_generated.png` (`512x512`, 10,858 bytes).
   - `TCXSD_SMOKE_PREPROCESS=mask` generated `examples/ideogram4-basic/inputs/mask_generated.png` (`512x512`, 12,066 bytes).
+
+## 2026-06-12 Workbench Visibility Pass
+
+### Completed
+
+- Added a regression test that keeps the main C++ workbench from losing its
+  visible model/workflow/preview affordances.
+- Updated the Chinese ImGui workbench so model switching shows:
+  - capability badges,
+  - recommended backend entry (`C++ 原生` vs `Node/JSON`),
+  - default size/steps/CFG/seed summary,
+  - backend/path notes,
+  - structured unsupported-workflow hints.
+- Updated workflow switching so the UI shows the current workflow description,
+  real backend route, relevant input panel, one-click examples, and matching
+  preview tab.
+- Added a right-side preview/Sidecar inspector with output, source, mask,
+  ControlNet guide, and JSON Sidecar tabs.
+
+### Verification Notes
+
+- Static regression: `python -m unittest discover -s tests -p 'test_workbench_ui.py'`.
+- Build: `G:/TrussC/tools/bin/trusscli.exe build` in `examples/ideogram4-basic`.
+- Visual fallback: captured
+  `examples/ideogram4-basic/outputs/ui_workbench_switching_screen.png` and
+  confirmed Chinese labels, dark/earthy-gold theme, model capability section,
+  workflow examples, and preview/Sidecar panel are visible. MCP HTTP logging
+  reported startup, but Windows did not expose a listening socket during this
+  verification run, so the visual check used an OS screenshot fallback.

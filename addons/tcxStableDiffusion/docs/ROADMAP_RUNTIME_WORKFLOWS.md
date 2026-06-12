@@ -56,6 +56,9 @@ Hard constraints:
   LoRA, refine/upscale, batch, and variant workflows.
 - Update the ImGui theme to a dark charcoal, warm gray, and earthy-gold palette.
 - Keep Chinese labels readable through the existing CJK font loading path.
+- Make model/workflow switching visibly change the workbench: show capability
+  badges, backend entry, defaults, relevant inputs, and output/source/mask/
+  control/Sidecar preview state.
 - Add smoke-mode switches for every executable workflow that can be run in CI or
   local scripted verification.
 - Include smoke-mode preprocessing for ControlNet guide generation and inpaint

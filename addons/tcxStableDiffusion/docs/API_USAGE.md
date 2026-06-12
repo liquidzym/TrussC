@@ -141,7 +141,13 @@ In this workspace the priority text models have been downloaded into the shared 
 - explicit project/output/temp/cache roots through `GenerationProject`,
 - async model initialization,
 - persistent server generation for the C++ text-model profiles,
-- per-model output folders under `outputs/<model-id>`.
+- per-model output folders under `outputs/<model-id>`,
+- model capability badges, recommended backend entry, default parameter
+  summary, and structured unsupported-workflow hints,
+- one-click workflow examples that fill the real input paths for text-to-image,
+  image-to-image, inpaint, ControlNet Canny, LoRA, refine, and upscale,
+- right-side preview tabs for output, source image, mask, ControlNet guide, and
+  JSON Sidecar paths.
 
 The GUI loads a CJK-capable ImGui font at startup so Chinese labels render correctly on Windows and macOS. If labels display as `????`, first check whether one of the configured CJK system fonts is available before changing source-file encodings. The current workbench uses labels above full-width controls and a dark charcoal, warm gray, and earthy-gold theme.
 

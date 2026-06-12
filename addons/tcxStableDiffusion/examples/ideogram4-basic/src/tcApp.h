@@ -34,12 +34,20 @@ private:
     std::filesystem::path resolveLoraPath(const char* text) const;
     void generateControlImage();
     void generateInpaintMask();
+    void applyWorkflowExample(int workflowIndex);
     void submitPrompt();
     void adoptResult(tcx::StableDiffusionImage&& result);
+    std::filesystem::path previewPathForTab(int tab) const;
+    Image* previewImageForTab(int tab);
+    void drawPreviewCanvas();
     void drawGui();
+    void drawProfileSummary(int workflow, bool busy);
+    void drawWorkflowInputs(int workflow);
+    void drawOutputInspector();
 
     tcx::StableDiffusion sd_;
     Image preview_;
+    Image auxiliaryPreview_;
 
     std::array<char, 4096> prompt_{};
     std::array<char, 1024> negativePrompt_{};
@@ -57,6 +65,7 @@ private:
     std::filesystem::path modelDir_;
     std::filesystem::path lastOutput_;
     std::filesystem::path lastMetadata_;
+    std::filesystem::path auxiliaryPreviewPath_;
     std::vector<std::filesystem::path> loraFiles_;
     std::string status_ = "等待初始化";
     std::string lastError_;
@@ -71,6 +80,7 @@ private:
     float controlStrength_ = 0.9f;
     float upscaleFactor_ = 2.0f;
     int workflowMode_ = 0;
+    int previewTab_ = 0;
     int selectedLora_ = -1;
     bool lowVramMode_ = true;
     bool autoSave_ = true;
