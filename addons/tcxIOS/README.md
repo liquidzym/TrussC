@@ -83,6 +83,13 @@ scene before falling back to the foreground key window. Use
 app owns multiple scenes. Native modal delegates and registered scene presenters
 are kept in bridge-owned lifetime containers until completion or scene teardown.
 
+Photo picker results are copied into the app sandbox before the C++ completion
+fires. The picker first asks `NSItemProvider` for a file representation and, for
+still images, falls back to a data representation written into the same
+temporary sandbox folder. If PhotosUI returns a provider but no loadable image
+representation, the completion now fails with the provider type list instead of
+silently returning an empty selection.
+
 ## Info.plist
 
 Apps that enable native iOS features must provide purpose strings. The helper
@@ -174,8 +181,10 @@ The current camera path is CPU BGRA copy first. `CameraFrame` and
 mirroring, and ring-buffer capacity. `Camera::availableDevices()` reports native
 devices and available format/fps ranges, and `Camera::latestFrameView()` exposes
 the latest raw frame without an additional `std::vector` copy while keeping the
-backing storage alive. Direct `CVPixelBuffer`/Metal texture bridging remains
-future work.
+backing storage alive. The iOS implementation only applies the requested frame
+duration when the active capture format advertises that FPS range, and leaves
+AVFoundation's device default in place if the fixed FPS request is rejected.
+Direct `CVPixelBuffer`/Metal texture bridging remains future work.
 
 ## Background Downloads
 

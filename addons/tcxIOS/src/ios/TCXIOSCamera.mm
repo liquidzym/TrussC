@@ -206,6 +206,17 @@ AVCaptureDevice* cameraDeviceForConfig(const CameraConfig& config) {
                                               position:cameraPosition(config.position)];
 }
 
+bool cameraSupportsFrameRate(AVCaptureDevice* device, int framesPerSecond) {
+    if (!device || framesPerSecond <= 0) return false;
+    const double target = static_cast<double>(framesPerSecond);
+    for (AVFrameRateRange* range in device.activeFormat.videoSupportedFrameRateRanges) {
+        if (target >= range.minFrameRate && target <= range.maxFrameRate) {
+            return true;
+        }
+    }
+    return false;
+}
+
 
 void platformStartCamera(const CameraConfig& config, Completion<void> done) {
     AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
@@ -268,10 +279,14 @@ void platformStartCamera(const CameraConfig& config, Completion<void> done) {
         }
 
         if ([device lockForConfiguration:&error]) {
-            if (config.framesPerSecond > 0) {
+            if (cameraSupportsFrameRate(device, config.framesPerSecond)) {
                 CMTime frameDuration = CMTimeMake(1, config.framesPerSecond);
-                device.activeVideoMinFrameDuration = frameDuration;
-                device.activeVideoMaxFrameDuration = frameDuration;
+                @try {
+                    device.activeVideoMinFrameDuration = frameDuration;
+                    device.activeVideoMaxFrameDuration = frameDuration;
+                } @catch (NSException*) {
+                    // Keep the session usable with the device default frame duration.
+                }
             }
             [device unlockForConfiguration];
         }

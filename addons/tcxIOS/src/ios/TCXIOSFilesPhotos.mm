@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <vector>
 
 namespace {
@@ -27,10 +28,11 @@ TCXIOSImagePixelSize TCXIOSReadImagePixelSize(NSURL* url) {
     CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url, nullptr);
     if (!source) return size;
 
-    NSDictionary* properties =
-        (__bridge_transfer NSDictionary*)CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr);
+    CFDictionaryRef copiedProperties = CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr);
     CFRelease(source);
-    if (!properties) return size;
+    if (!copiedProperties) return size;
+
+    NSDictionary* properties = (__bridge NSDictionary*)copiedProperties;
 
     NSNumber* width = properties[(__bridge NSString*)kCGImagePropertyPixelWidth];
     NSNumber* height = properties[(__bridge NSString*)kCGImagePropertyPixelHeight];
@@ -45,7 +47,119 @@ TCXIOSImagePixelSize TCXIOSReadImagePixelSize(NSURL* url) {
         size.width = rotatedWidth;
     }
 
+    CFRelease(copiedProperties);
     return size;
+}
+
+NSString* TCXIOSPreferredProviderTypeIdentifier(NSItemProvider* provider,
+                                                tcx::ios::PhotoMediaType requestedTypes,
+                                                tcx::ios::PhotoMediaType& pickedMediaType) {
+    if (!provider) return nil;
+
+    const bool wantsVideo = requestedTypes == tcx::ios::PhotoMediaType::Video ||
+                            requestedTypes == tcx::ios::PhotoMediaType::ImagesAndVideos;
+    const bool wantsImage = requestedTypes == tcx::ios::PhotoMediaType::Image ||
+                            requestedTypes == tcx::ios::PhotoMediaType::ImagesAndVideos;
+
+    for (NSString* identifier in provider.registeredTypeIdentifiers) {
+        UTType* type = [UTType typeWithIdentifier:identifier];
+        if (!type) continue;
+        if (wantsImage && [type conformsToType:UTTypeImage]) {
+            pickedMediaType = tcx::ios::PhotoMediaType::Image;
+            return identifier;
+        }
+        if (wantsVideo && [type conformsToType:UTTypeMovie]) {
+            pickedMediaType = tcx::ios::PhotoMediaType::Video;
+            return identifier;
+        }
+    }
+
+    if (wantsImage && [provider hasItemConformingToTypeIdentifier:UTTypeImage.identifier]) {
+        pickedMediaType = tcx::ios::PhotoMediaType::Image;
+        return UTTypeImage.identifier;
+    }
+    if (wantsVideo && [provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier]) {
+        pickedMediaType = tcx::ios::PhotoMediaType::Video;
+        return UTTypeMovie.identifier;
+    }
+
+    return nil;
+}
+
+std::string TCXIOSProviderTypeSummary(NSItemProvider* provider) {
+    if (!provider) return "none";
+
+    std::ostringstream out;
+    bool first = true;
+    for (NSString* identifier in provider.registeredTypeIdentifiers) {
+        if (!first) out << ", ";
+        out << TCXIOSStr(identifier);
+        first = false;
+    }
+    return first ? "none" : out.str();
+}
+
+NSString* TCXIOSFileExtensionForTypeIdentifier(NSString* typeIdentifier,
+                                               tcx::ios::PhotoMediaType mediaType) {
+    UTType* type = typeIdentifier.length > 0 ? [UTType typeWithIdentifier:typeIdentifier] : nil;
+    NSString* ext = type.preferredFilenameExtension;
+    if (ext.length > 0) return ext;
+    return mediaType == tcx::ios::PhotoMediaType::Video ? @"mov" : @"jpg";
+}
+
+NSURL* TCXIOSTemporaryDataURL(NSData* data,
+                              NSString* typeIdentifier,
+                              tcx::ios::PhotoMediaType mediaType,
+                              NSString* directoryName,
+                              NSError** error) {
+    if (!data || data.length == 0) return nil;
+
+    NSString* directory = [NSTemporaryDirectory() stringByAppendingPathComponent:directoryName];
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    if (![fileManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:error]) {
+        return nil;
+    }
+
+    NSString* ext = TCXIOSFileExtensionForTypeIdentifier(typeIdentifier, mediaType);
+    NSString* filename = [[NSUUID UUID].UUIDString stringByAppendingPathExtension:ext];
+    NSURL* destinationURL = [NSURL fileURLWithPath:[directory stringByAppendingPathComponent:filename]];
+    if (![data writeToURL:destinationURL options:NSDataWritingAtomic error:error]) {
+        return nil;
+    }
+    return destinationURL;
+}
+
+tcx::ios::PickedPhoto TCXIOSPickedPhotoFromURL(NSURL* copiedURL,
+                                               NSString* fallbackTypeIdentifier,
+                                               tcx::ios::PhotoMediaType pickedMediaType,
+                                               bool limitedLibrary) {
+    TCXIOSImagePixelSize imageSize = pickedMediaType == tcx::ios::PhotoMediaType::Image
+        ? TCXIOSReadImagePixelSize(copiedURL)
+        : TCXIOSImagePixelSize{};
+    int pixelWidth = imageSize.width;
+    int pixelHeight = imageSize.height;
+    NSString* copiedTypeIdentifier = nil;
+    [copiedURL getResourceValue:&copiedTypeIdentifier forKey:NSURLTypeIdentifierKey error:nil];
+    NSNumber* fileSize = nil;
+    [copiedURL getResourceValue:&fileSize forKey:NSURLFileSizeKey error:nil];
+    double durationSeconds = 0.0;
+    if (pickedMediaType == tcx::ios::PhotoMediaType::Video) {
+        AVURLAsset* asset = [AVURLAsset URLAssetWithURL:copiedURL options:nil];
+        const double seconds = CMTimeGetSeconds(asset.duration);
+        durationSeconds = std::isfinite(seconds) && seconds > 0.0 ? seconds : 0.0;
+    }
+
+    tcx::ios::PickedPhoto photo;
+    photo.path = std::filesystem::path(TCXIOSStr(copiedURL.path));
+    photo.typeIdentifier = TCXIOSStr(copiedTypeIdentifier.length > 0 ? copiedTypeIdentifier : fallbackTypeIdentifier);
+    photo.filename = TCXIOSStr(copiedURL.lastPathComponent);
+    photo.mediaType = pickedMediaType;
+    photo.pixelWidth = pixelWidth;
+    photo.pixelHeight = pixelHeight;
+    photo.fileSize = fileSize ? static_cast<std::uint64_t>(fileSize.unsignedLongLongValue) : 0;
+    photo.durationSeconds = durationSeconds;
+    photo.limitedLibrary = limitedLibrary;
+    return photo;
 }
 
 } // namespace
@@ -202,72 +316,63 @@ TCXIOSImagePixelSize TCXIOSReadImagePixelSize(NSURL* url) {
 
     for (PHPickerResult* result in results) {
         NSItemProvider* provider = result.itemProvider;
-        const bool wantsVideo = mediaTypes_ == tcx::ios::PhotoMediaType::Video ||
-                                mediaTypes_ == tcx::ios::PhotoMediaType::ImagesAndVideos;
-        const bool wantsImage = mediaTypes_ == tcx::ios::PhotoMediaType::Image ||
-                                mediaTypes_ == tcx::ios::PhotoMediaType::ImagesAndVideos;
-        NSString* typeIdentifier = nil;
         tcx::ios::PhotoMediaType pickedMediaType = tcx::ios::PhotoMediaType::Image;
-        if (wantsImage && [provider hasItemConformingToTypeIdentifier:UTTypeImage.identifier]) {
-            typeIdentifier = UTTypeImage.identifier;
-            pickedMediaType = tcx::ios::PhotoMediaType::Image;
-        } else if (wantsVideo && [provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier]) {
-            typeIdentifier = UTTypeMovie.identifier;
-            pickedMediaType = tcx::ios::PhotoMediaType::Video;
+        NSString* typeIdentifier = TCXIOSPreferredProviderTypeIdentifier(provider, mediaTypes_, pickedMediaType);
+        if (!typeIdentifier || ![provider hasItemConformingToTypeIdentifier:typeIdentifier]) {
+            std::lock_guard<std::mutex> lock(*mutex);
+            if (firstError->code == tcx::ios::ErrorCode::None) {
+                *firstError = {
+                    tcx::ios::ErrorCode::InvalidState,
+                    "Photo picker returned an unsupported provider type: " + TCXIOSProviderTypeSummary(provider),
+                    0
+                };
+            }
+            continue;
         }
-        if (!typeIdentifier) continue;
-        if (![provider hasItemConformingToTypeIdentifier:typeIdentifier]) continue;
 
         dispatch_group_enter(group);
         [provider loadFileRepresentationForTypeIdentifier:typeIdentifier completionHandler:^(NSURL* url, NSError* error) {
-            if (!url || error) {
-                std::lock_guard<std::mutex> lock(*mutex);
-                if (firstError->code == tcx::ios::ErrorCode::None) {
-                    *firstError = TCXIOSNativeError(error, "Failed to load photo representation.");
+            if (url && !error) {
+                NSError* copyError = nil;
+                NSURL* copiedURL = TCXIOSTemporaryCopyURL(url, @"tcxIOS-photos", &copyError);
+                if (copiedURL) {
+                    std::lock_guard<std::mutex> lock(*mutex);
+                    photos->push_back(TCXIOSPickedPhotoFromURL(copiedURL, typeIdentifier, pickedMediaType, limitedLibrary_));
+                    dispatch_group_leave(group);
+                    return;
                 }
-                dispatch_group_leave(group);
-                return;
+                error = copyError;
             }
 
-            NSError* copyError = nil;
-            NSURL* copiedURL = TCXIOSTemporaryCopyURL(url, @"tcxIOS-photos", &copyError);
-            if (!copiedURL) {
-                std::lock_guard<std::mutex> lock(*mutex);
-                if (firstError->code == tcx::ios::ErrorCode::None) {
-                    *firstError = TCXIOSNativeError(copyError, "Failed to copy picked photo into the app sandbox.");
-                }
-                dispatch_group_leave(group);
-                return;
-            }
+            if (pickedMediaType == tcx::ios::PhotoMediaType::Image) {
+                [provider loadDataRepresentationForTypeIdentifier:typeIdentifier completionHandler:^(NSData* data, NSError* dataError) {
+                    NSError* writeError = nil;
+                    NSURL* copiedURL = TCXIOSTemporaryDataURL(data,
+                                                             typeIdentifier,
+                                                             pickedMediaType,
+                                                             @"tcxIOS-photos",
+                                                             &writeError);
+                    if (copiedURL) {
+                        std::lock_guard<std::mutex> lock(*mutex);
+                        photos->push_back(TCXIOSPickedPhotoFromURL(copiedURL, typeIdentifier, pickedMediaType, limitedLibrary_));
+                        dispatch_group_leave(group);
+                        return;
+                    }
 
-            TCXIOSImagePixelSize imageSize = pickedMediaType == tcx::ios::PhotoMediaType::Image
-                ? TCXIOSReadImagePixelSize(copiedURL)
-                : TCXIOSImagePixelSize{};
-            int pixelWidth = imageSize.width;
-            int pixelHeight = imageSize.height;
-            NSString* copiedTypeIdentifier = nil;
-            [copiedURL getResourceValue:&copiedTypeIdentifier forKey:NSURLTypeIdentifierKey error:nil];
-            NSNumber* fileSize = nil;
-            [copiedURL getResourceValue:&fileSize forKey:NSURLFileSizeKey error:nil];
-            double durationSeconds = 0.0;
-            if (pickedMediaType == tcx::ios::PhotoMediaType::Video) {
-                AVURLAsset* asset = [AVURLAsset URLAssetWithURL:copiedURL options:nil];
-                const double seconds = CMTimeGetSeconds(asset.duration);
-                durationSeconds = std::isfinite(seconds) && seconds > 0.0 ? seconds : 0.0;
+                    std::lock_guard<std::mutex> lock(*mutex);
+                    if (firstError->code == tcx::ios::ErrorCode::None) {
+                        *firstError = TCXIOSNativeError(dataError ?: writeError,
+                                                        "Failed to load picked photo data into the app sandbox.");
+                    }
+                    dispatch_group_leave(group);
+                }];
+                return;
             }
 
             std::lock_guard<std::mutex> lock(*mutex);
-            tcx::ios::PickedPhoto photo;
-            photo.path = std::filesystem::path(TCXIOSStr(copiedURL.path));
-            photo.typeIdentifier = TCXIOSStr(copiedTypeIdentifier.length > 0 ? copiedTypeIdentifier : typeIdentifier);
-            photo.filename = TCXIOSStr(copiedURL.lastPathComponent);
-            photo.mediaType = pickedMediaType;
-            photo.pixelWidth = pixelWidth;
-            photo.pixelHeight = pixelHeight;
-            photo.fileSize = fileSize ? static_cast<std::uint64_t>(fileSize.unsignedLongLongValue) : 0;
-            photo.durationSeconds = durationSeconds;
-            photo.limitedLibrary = limitedLibrary_;
-            photos->push_back(std::move(photo));
+            if (firstError->code == tcx::ios::ErrorCode::None) {
+                *firstError = TCXIOSNativeError(error, "Failed to load photo representation.");
+            }
             dispatch_group_leave(group);
         }];
     }
@@ -276,6 +381,14 @@ TCXIOSImagePixelSize TCXIOSReadImagePixelSize(NSURL* url) {
         TCXIOSReleaseDelegate(self);
         if (firstError->code != tcx::ios::ErrorCode::None) {
             TCXIOSFinish(std::move(completion_), tcx::ios::Result<std::vector<tcx::ios::PickedPhoto>>::failure(*firstError));
+            return;
+        }
+        if (photos->empty()) {
+            TCXIOSFinish(std::move(completion_), tcx::ios::Result<std::vector<tcx::ios::PickedPhoto>>::failure({
+                tcx::ios::ErrorCode::InvalidState,
+                "Photo picker returned no loadable image representations.",
+                0
+            }));
             return;
         }
         TCXIOSFinish(std::move(completion_), tcx::ios::Result<std::vector<tcx::ios::PickedPhoto>>::success(std::move(*photos)));
