@@ -1,0 +1,36 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "macos",
+      "displayName": "macOS",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-macos",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0"
+      }
+    },
+    {
+      "name": "linux",
+      "displayName": "Linux / Raspberry Pi",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-linux",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "macos",
+      "configurePreset": "macos",
+      "jobs": 4
+    },
+    {
+      "name": "linux",
+      "configurePreset": "linux",
+      "jobs": 1
+    }
+  ]
+}

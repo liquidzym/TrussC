@@ -162,6 +162,7 @@ examples/**/build-web.command
 examples/**/build-web.bat
 examples/**/build-web.sh
 addons/**/CMakePresets.json
+!addons/tcxNFC/examples/mayaRFID/CMakePresets.json
 addons/**/build-web.command
 addons/**/build-web.bat
 addons/**/build-web.sh
@@ -202,6 +203,8 @@ addons/**/test/
 
 # Dev tool scripts in addons (local only)
 addons/**/scripts/
+!addons/tcxNFC/examples/mayaRFID/scripts/
+!addons/tcxNFC/examples/mayaRFID/scripts/**
 
 # =============================================================================
 # Auto-generated Shader Headers (sokol-shdc output)

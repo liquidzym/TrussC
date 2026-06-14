@@ -1,0 +1,35 @@
+device:
+  device_id: "pi-reader-01"
+  reader_id: "tree-root-01"
+  location_name: "世界树树根 A 点"
+  site_id: "museum-worldtree"
+
+app:
+  mode: "headless"
+  prevent_duplicate_write_sec: 10
+
+rfid:
+  reader_type: "bks710i"
+  reader_host: "192.168.1.100"
+  reader_source_host: "" # Set to local Ethernet IP, e.g. "192.168.1.10", when Wi-Fi shares this subnet.
+  reader_port: 502
+  ndef_write_strategy: "raw_0x62"
+
+ntag:
+  chip_type: "NTAG213"
+  start_page: 4
+  max_user_bytes: 144
+  lock_after_write: false
+  protect_with_password: false
+
+url:
+  fixed_fallback_url: "https://www.baidu.com/"
+  max_url_length: 120
+
+led:
+  led_count: 24
+  spi_channel: 0
+
+storage:
+  sqlite_path: "bin/data/worldtree_rfid.db"
+  event_jsonl_path: "bin/data/logs/events.jsonl"

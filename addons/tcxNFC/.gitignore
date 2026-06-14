@@ -3,5 +3,6 @@ build-*/
 tests/build-*/
 examples/*/build-*/
 examples/*/build/
+examples/*/dist/
 bin/
 .DS_Store
