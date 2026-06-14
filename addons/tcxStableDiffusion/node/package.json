@@ -1,0 +1,22 @@
+{
+  "name": "@trussc/tcx-stable-diffusion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "tcxsd-node": "./bin/tcxsd-node.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.mjs"
+    }
+  },
+  "types": "./src/index.d.ts",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

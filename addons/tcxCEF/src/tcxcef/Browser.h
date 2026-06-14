@@ -10,9 +10,16 @@ struct BrowserSettings {
     bool showWindow = true;
     bool openDevTools = false;
     bool keepRunningWhenHidden = false;
+    const void* parentWindowHandle = nullptr;
+    int x = 0;
+    int y = 0;
     int width = 960;
     int height = 720;
 };
+
+// Call this at the very start of main(). CEF subprocesses must exit here before
+// the host app initializes its own windowing/runtime systems.
+int executeSubprocess();
 
 class Browser {
 public:
@@ -24,6 +31,7 @@ public:
 
     bool setup(const BrowserSettings& settings);
     void update();
+    void resize(int x, int y, int width, int height);
     void shutdown();
 
     bool isReady() const;

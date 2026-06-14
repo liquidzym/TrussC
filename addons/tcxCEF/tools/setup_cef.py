@@ -24,6 +24,7 @@ from pathlib import Path
 
 BASE_URL = "https://cef-builds.spotifycdn.com/"
 DEFAULT_CONFIG = "Release"
+DEFAULT_WINDOWS_RUNTIME_LIBRARY = "/MD"
 
 
 def addon_root() -> Path:
@@ -124,16 +125,42 @@ def extract_archive(archive: Path, destination: Path, force: bool) -> Path:
     return extracted[0]
 
 
-def run(command: list[str], cwd: Path) -> None:
+def wrapper_build_env(binary_platform: str, base_env: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(base_env or os.environ)
+    if not binary_platform.startswith("windows"):
+        return env
+
+    cl_flags = env.get("CL", "")
+    parts = cl_flags.split()
+    if not any(part.lower() == "/utf-8" for part in parts):
+        parts.append("/utf-8")
+    env["CL"] = " ".join(parts).strip()
+    return env
+
+
+def run(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command))
-    subprocess.run(command, cwd=cwd, check=True)
+    subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
-def build_wrapper(source_dir: Path, build_dir: Path, config: str) -> None:
+def wrapper_runtime_library(binary_platform: str, requested: str | None = None) -> str:
+    if requested:
+        return requested
+    if binary_platform.startswith("windows"):
+        return DEFAULT_WINDOWS_RUNTIME_LIBRARY
+    return ""
+
+
+def build_wrapper(binary_platform: str, source_dir: Path, build_dir: Path, config: str, runtime_library: str | None = None) -> None:
     require_tool("cmake")
     build_dir.mkdir(parents=True, exist_ok=True)
-    run(["cmake", "-S", str(source_dir), "-B", str(build_dir), f"-DCMAKE_BUILD_TYPE={config}"], cwd=source_dir)
-    run(["cmake", "--build", str(build_dir), "--target", "libcef_dll_wrapper", "--config", config, "--parallel"], cwd=source_dir)
+    env = wrapper_build_env(binary_platform)
+    configure_command = ["cmake", "-S", str(source_dir), "-B", str(build_dir), f"-DCMAKE_BUILD_TYPE={config}"]
+    runtime_flag = wrapper_runtime_library(binary_platform, runtime_library)
+    if runtime_flag:
+        configure_command.append(f"-DCEF_RUNTIME_LIBRARY_FLAG={runtime_flag}")
+    run(configure_command, cwd=source_dir, env=env)
+    run(["cmake", "--build", str(build_dir), "--target", "libcef_dll_wrapper", "--config", config, "--parallel"], cwd=source_dir, env=env)
 
 
 def first_existing(patterns: list[str], root: Path, description: str) -> Path:
@@ -230,8 +257,12 @@ def make_paths(binary_platform: str, version: str, root: Path, source_dir: Path,
     }
 
 
+def cmake_path(value: object) -> str:
+    return str(value).replace("\\", "/")
+
+
 def cmake_list(paths: list[str]) -> str:
-    return "".join(f'    "{path}"\n' for path in paths)
+    return "".join(f'    "{cmake_path(path)}"\n' for path in paths)
 
 
 def write_outputs(paths: dict[str, object], archive_url: str, current_dir: Path) -> None:
@@ -240,14 +271,14 @@ def write_outputs(paths: dict[str, object], archive_url: str, current_dir: Path)
     replacements = {
         "TCXCEF_PLATFORM": str(paths["platform"]),
         "TCXCEF_VERSION": str(paths["version"]),
-        "TCXCEF_ROOT": str(paths["root"]),
-        "TCXCEF_SOURCE_DIR": str(paths["source_dir"]),
-        "TCXCEF_INCLUDE_DIR": str(paths["include_dir"]),
-        "TCXCEF_RELEASE_DIR": str(paths["release_dir"]),
-        "TCXCEF_RESOURCE_DIR": str(paths["resource_dir"]),
-        "TCXCEF_LIBCEF_LIBRARY": str(paths["libcef_library"]),
-        "TCXCEF_CEF_FRAMEWORK_PATH": str(paths["cef_framework_path"]),
-        "TCXCEF_WRAPPER_LIBRARY": str(paths["wrapper_library"]),
+        "TCXCEF_ROOT": cmake_path(paths["root"]),
+        "TCXCEF_SOURCE_DIR": cmake_path(paths["source_dir"]),
+        "TCXCEF_INCLUDE_DIR": cmake_path(paths["include_dir"]),
+        "TCXCEF_RELEASE_DIR": cmake_path(paths["release_dir"]),
+        "TCXCEF_RESOURCE_DIR": cmake_path(paths["resource_dir"]),
+        "TCXCEF_LIBCEF_LIBRARY": cmake_path(paths["libcef_library"]),
+        "TCXCEF_CEF_FRAMEWORK_PATH": cmake_path(paths["cef_framework_path"]),
+        "TCXCEF_WRAPPER_LIBRARY": cmake_path(paths["wrapper_library"]),
         "TCXCEF_RUNTIME_FILES": cmake_list(paths["runtime_files"]),  # type: ignore[arg-type]
         "TCXCEF_RESOURCE_FILES": cmake_list(paths["resource_files"]),  # type: ignore[arg-type]
     }
@@ -266,6 +297,7 @@ def main() -> int:
     parser.add_argument("--version", default=os.environ.get("TCXCEF_CEF_VERSION"), help="CEF binary version without platform suffix")
     parser.add_argument("--platform", default=os.environ.get("TCXCEF_PLATFORM"), help="CEF binary platform override")
     parser.add_argument("--config", default=os.environ.get("TCXCEF_CONFIG", DEFAULT_CONFIG), help="CMake build config")
+    parser.add_argument("--runtime-library", default=os.environ.get("TCXCEF_RUNTIME_LIBRARY_FLAG"), help="Windows CEF wrapper runtime flag such as /MD or /MT")
     parser.add_argument("--force", action="store_true", help="Re-extract archive and rebuild paths")
     parser.add_argument("--dry-run", action="store_true", help="Resolve the CEF archive URL without downloading or building")
     args = parser.parse_args()
@@ -294,7 +326,7 @@ def main() -> int:
         print(f"Using existing archive: {archive}")
 
     source_dir = extract_archive(archive, source_parent, args.force)
-    build_wrapper(source_dir, build_dir, args.config)
+    build_wrapper(binary_platform, source_dir, build_dir, args.config, args.runtime_library)
     paths = make_paths(binary_platform, version, root, source_dir, build_dir)
     write_outputs(paths, archive_url, addon_root() / "libs" / "cef" / "current")
 

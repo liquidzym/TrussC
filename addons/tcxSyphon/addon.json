@@ -1,0 +1,9 @@
+{
+  "description": "Syphon GPU texture sharing (publish/receive frames between macOS apps)",
+  "author": "tettou771",
+  "license": "MIT",
+  "category": "graphics",
+  "keywords": ["syphon", "texture-sharing", "ipc", "gpu", "metal", "video"],
+  "dependencies": [],
+  "platforms": ["macos"]
+}

@@ -50,6 +50,7 @@ class Browser::Impl {
 public:
     bool setup(const BrowserSettings& settings);
     void update();
+    void resize(int x, int y, int width, int height);
     void shutdown();
     bool isReady() const;
     bool isAvailable() const;
@@ -108,6 +109,7 @@ namespace {
 std::mutex gCefMutex;
 bool gCefInitialized = false;
 std::atomic<bool> gKeepRunningWhenHidden{false};
+std::atomic<bool> gCefSubprocessDispatchChecked{false};
 
 #if defined(__APPLE__)
 std::unique_ptr<CefScopedLibraryLoader> gLibraryLoader;
@@ -140,9 +142,15 @@ bool ensureCefLibraryLoaded(std::string& error) {
 
 #endif
 
-#if !defined(_WIN32)
 std::string currentExecutablePath() {
-#if defined(__APPLE__)
+#if defined(_WIN32)
+    std::array<wchar_t, 4096> buffer{};
+    const DWORD size = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (size > 0 && size < buffer.size()) {
+        return std::filesystem::path(buffer.data()).string();
+    }
+    return {};
+#elif defined(__APPLE__)
     uint32_t size = PATH_MAX;
     std::vector<char> buffer(size);
     if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
@@ -165,6 +173,7 @@ std::string currentExecutablePath() {
 #endif
 }
 
+#if !defined(_WIN32)
 struct MainArgsStorage {
     MainArgsStorage() {
         executable = currentExecutablePath();
@@ -185,6 +194,22 @@ MainArgsStorage& mainArgsStorage() {
     return storage;
 }
 #endif
+
+std::filesystem::path currentExecutableDir() {
+    const auto executable = std::filesystem::path(currentExecutablePath());
+    if (!executable.empty()) {
+        return executable.parent_path();
+    }
+    return std::filesystem::current_path();
+}
+
+std::filesystem::path defaultDesktopCacheRootPath() {
+    return currentExecutableDir() / "data" / "workflows" / "cache" / "cef";
+}
+
+std::filesystem::path defaultDesktopLogPath() {
+    return currentExecutableDir() / "data" / "workflows" / "logs" / "cef-debug.log";
+}
 
 #if defined(__APPLE__)
 std::filesystem::path currentBundleContentsDir() {
@@ -227,6 +252,30 @@ std::filesystem::path defaultCacheRootPath() {
 
 } // namespace
 
+void appendDefaultCefSwitches(const CefString& processType, CefRefPtr<CefCommandLine> commandLine) {
+    commandLine->AppendSwitch("disable-background-networking");
+    commandLine->AppendSwitch("disable-client-side-phishing-detection");
+    commandLine->AppendSwitch("disable-component-update");
+    commandLine->AppendSwitch("disable-default-apps");
+    commandLine->AppendSwitch("disable-domain-reliability");
+    commandLine->AppendSwitch("disable-gpu");
+    commandLine->AppendSwitch("disable-gpu-compositing");
+    commandLine->AppendSwitch("disable-gpu-shader-disk-cache");
+    commandLine->AppendSwitch("disable-notifications");
+    commandLine->AppendSwitch("disable-sync");
+    commandLine->AppendSwitch("disable-web-resources");
+    commandLine->AppendSwitch("enable-media-stream");
+    commandLine->AppendSwitch("metrics-recording-only");
+    commandLine->AppendSwitch("no-first-run");
+    commandLine->AppendSwitchWithValue("autoplay-policy", "no-user-gesture-required");
+    if (processType.empty()) {
+#if defined(__APPLE__)
+        commandLine->AppendSwitch("use-alloy-style");
+        commandLine->AppendSwitch("use-mock-keychain");
+#endif
+    }
+}
+
 class Browser::Impl::App : public CefApp, public CefBrowserProcessHandler {
 public:
     CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {
@@ -235,29 +284,11 @@ public:
 
     void OnBeforeCommandLineProcessing(const CefString& processType,
                                        CefRefPtr<CefCommandLine> commandLine) override {
-        commandLine->AppendSwitch("disable-background-networking");
-        commandLine->AppendSwitch("disable-client-side-phishing-detection");
-        commandLine->AppendSwitch("disable-component-update");
-        commandLine->AppendSwitch("disable-default-apps");
-        commandLine->AppendSwitch("disable-domain-reliability");
-        commandLine->AppendSwitch("disable-gpu-shader-disk-cache");
-        commandLine->AppendSwitch("disable-notifications");
-        commandLine->AppendSwitch("disable-sync");
-        commandLine->AppendSwitch("disable-web-resources");
-        commandLine->AppendSwitch("enable-media-stream");
-        commandLine->AppendSwitch("metrics-recording-only");
-        commandLine->AppendSwitch("no-first-run");
-        commandLine->AppendSwitchWithValue("autoplay-policy", "no-user-gesture-required");
+        appendDefaultCefSwitches(processType, commandLine);
         if (gKeepRunningWhenHidden.load(std::memory_order_acquire)) {
             commandLine->AppendSwitch("disable-background-timer-throttling");
             commandLine->AppendSwitch("disable-backgrounding-occluded-windows");
             commandLine->AppendSwitch("disable-renderer-backgrounding");
-        }
-        if (processType.empty()) {
-#if defined(__APPLE__)
-            commandLine->AppendSwitch("use-alloy-style");
-            commandLine->AppendSwitch("use-mock-keychain");
-#endif
         }
     }
 
@@ -276,6 +307,34 @@ public:
 private:
     IMPLEMENT_REFCOUNTING(App);
 };
+
+class EarlySubprocessApp : public CefApp {
+public:
+    void OnBeforeCommandLineProcessing(const CefString& processType,
+                                       CefRefPtr<CefCommandLine> commandLine) override {
+        appendDefaultCefSwitches(processType, commandLine);
+    }
+
+private:
+    IMPLEMENT_REFCOUNTING(EarlySubprocessApp);
+};
+
+int executeSubprocess() {
+#if defined(__APPLE__)
+    return -1;
+#else
+#if defined(_WIN32)
+    CefMainArgs mainArgs(GetModuleHandle(nullptr));
+#else
+    auto& argvStorage = mainArgsStorage();
+    CefMainArgs mainArgs(argvStorage.argc, argvStorage.argv.data());
+#endif
+    CefRefPtr<CefApp> app = new EarlySubprocessApp();
+    const int exitCode = CefExecuteProcess(mainArgs, app, nullptr);
+    gCefSubprocessDispatchChecked.store(true, std::memory_order_release);
+    return exitCode;
+#endif
+}
 
 class Browser::Impl::Client : public CefClient,
                               public CefLifeSpanHandler,
@@ -305,6 +364,13 @@ public:
         CEF_REQUIRE_UI_THREAD();
         owner_->browser_ = browser;
         owner_->setReady(true);
+        if (owner_->settings_.parentWindowHandle) {
+            owner_->resize(
+                owner_->settings_.x,
+                owner_->settings_.y,
+                owner_->settings_.width,
+                owner_->settings_.height);
+        }
         if (owner_->settings_.openDevTools) {
             CefWindowInfo windowInfo;
 #if defined(_WIN32)
@@ -579,10 +645,13 @@ bool Browser::Impl::ensureCefInitialized(std::string& error) {
 
     CefRefPtr<Browser::Impl::App> app = new Browser::Impl::App();
 #if !defined(__APPLE__)
-    const int exitCode = CefExecuteProcess(mainArgs, app, nullptr);
-    if (exitCode >= 0) {
-        error = "CEF subprocess returned before browser initialization";
-        return false;
+    if (!gCefSubprocessDispatchChecked.load(std::memory_order_acquire)) {
+        const int exitCode = CefExecuteProcess(mainArgs, app, nullptr);
+        gCefSubprocessDispatchChecked.store(true, std::memory_order_release);
+        if (exitCode >= 0) {
+            error = "CEF subprocess returned before browser initialization";
+            return false;
+        }
     }
 #endif
 
@@ -607,7 +676,25 @@ bool Browser::Impl::ensureCefInitialized(std::string& error) {
     CefString(&settings.cache_path).FromString((cacheRootPath / "Default").string());
 #else
     settings.multi_threaded_message_loop = true;
-    CefString(&settings.cache_path).FromString((addonRoot() / "libs" / "cef" / "cache").string());
+    const auto executablePath = std::filesystem::path(currentExecutablePath());
+    const auto executableDir = currentExecutableDir();
+    if (!executablePath.empty()) {
+        CefString(&settings.browser_subprocess_path).FromString(executablePath.string());
+    }
+    CefString(&settings.resources_dir_path).FromString(executableDir.string());
+    CefString(&settings.locales_dir_path).FromString((executableDir / "locales").string());
+    CefString(&settings.locale).FromString("zh-CN");
+    CefString(&settings.accept_language_list).FromString("zh-CN,zh,en-US,en");
+    const auto cacheRootPath = defaultDesktopCacheRootPath();
+    std::error_code cacheError;
+    std::filesystem::create_directories(cacheRootPath, cacheError);
+    CefString(&settings.root_cache_path).FromString(cacheRootPath.string());
+    CefString(&settings.cache_path).FromString((cacheRootPath / "Default").string());
+    const auto logPath = defaultDesktopLogPath();
+    std::error_code logError;
+    std::filesystem::create_directories(logPath.parent_path(), logError);
+    CefString(&settings.log_file).FromString(logPath.string());
+    settings.log_severity = LOGSEVERITY_INFO;
 #endif
 
     if (!CefInitialize(mainArgs, settings, app, nullptr)) {
@@ -706,7 +793,18 @@ bool Browser::Impl::createBrowserOnUiThread() {
     CefWindowInfo windowInfo;
     if (settings_.showWindow) {
 #if defined(_WIN32)
-        windowInfo.SetAsPopup(nullptr, "tcxCEF");
+        if (settings_.parentWindowHandle) {
+            const CefRect bounds(
+                settings_.x,
+                settings_.y,
+                std::max(1, settings_.width),
+                std::max(1, settings_.height));
+            windowInfo.SetAsChild(
+                static_cast<HWND>(const_cast<void*>(settings_.parentWindowHandle)),
+                bounds);
+        } else {
+            windowInfo.SetAsPopup(nullptr, "tcxCEF");
+        }
 #elif defined(__APPLE__)
         (void)windowInfo;
 #else
@@ -741,6 +839,12 @@ bool Browser::Impl::createBrowserOnUiThread() {
 }
 #endif
 
+#if !TCXCEF_HAS_CEF
+int executeSubprocess() {
+    return -1;
+}
+#endif
+
 void Browser::Impl::update() {
 #if TCXCEF_HAS_CEF && defined(__APPLE__)
     if (gCefInitialized) {
@@ -750,6 +854,32 @@ void Browser::Impl::update() {
             gNextMessagePumpWorkMs.store(-1, std::memory_order_release);
         }
     }
+#endif
+}
+
+void Browser::Impl::resize(int x, int y, int width, int height) {
+    settings_.x = x;
+    settings_.y = y;
+    settings_.width = std::max(1, width);
+    settings_.height = std::max(1, height);
+
+#if TCXCEF_HAS_CEF && defined(_WIN32)
+    if (!browser_) {
+        return;
+    }
+    const HWND browserWindow = browser_->GetHost()->GetWindowHandle();
+    if (!browserWindow) {
+        return;
+    }
+    SetWindowPos(
+        browserWindow,
+        nullptr,
+        settings_.x,
+        settings_.y,
+        settings_.width,
+        settings_.height,
+        SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+    browser_->GetHost()->WasResized();
 #endif
 }
 
@@ -815,6 +945,10 @@ bool Browser::setup(const BrowserSettings& settings) {
 
 void Browser::update() {
     impl_->update();
+}
+
+void Browser::resize(int x, int y, int width, int height) {
+    impl_->resize(x, y, width, height);
 }
 
 void Browser::shutdown() {
