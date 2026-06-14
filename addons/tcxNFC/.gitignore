@@ -1,0 +1,7 @@
+build/
+build-*/
+tests/build-*/
+examples/*/build-*/
+examples/*/build/
+bin/
+.DS_Store

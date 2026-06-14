@@ -1,0 +1,22 @@
+#include "test_common.h"
+
+void test_bks710i_frames() {
+    const std::vector<uint8_t> ndefBytes {
+        0x03, 0x05, 0xD1, 0x01, 0x01, 0x55, 0x04, 0xFE
+    };
+
+    const auto registers = tcx::nfc::Bks710iModbus::buildNtagWriteRegisters(4, ndefBytes);
+    requireEqual(registers, {0x6222, 0x0000, 0x0004, 0x0305, 0xD101, 0x0155, 0x04FE}, "BKS 0x62 NTAG write registers should include command, start page, and NDEF words");
+
+    const auto request = tcx::nfc::Bks710iModbus::buildWriteMultipleRegistersRequest(1, 1, 0x0000, registers);
+    const std::vector<uint8_t> expectedRequest {
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x15, 0x01, 0x10,
+        0x00, 0x00, 0x00, 0x07, 0x0E,
+        0x62, 0x22, 0x00, 0x00, 0x00, 0x04, 0x03, 0x05,
+        0xD1, 0x01, 0x01, 0x55, 0x04, 0xFE
+    };
+    requireEqual(request, expectedRequest, "Modbus 0x10 request should match MBAP and register payload");
+
+    const auto privateRequest = tcx::nfc::PrivateProtocolFrames::buildReadIso14443aUidRequest(0x22, 0x00);
+    requireEqual(privateRequest, {0xA5, 0x5A, 0x01, 0x01, 0x00, 0x0B, 0x50, 0x00, 0x22, 0x00, 0x7E}, "private 0x50 UID request should match BKS frame");
+}

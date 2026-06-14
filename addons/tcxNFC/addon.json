@@ -1,0 +1,22 @@
+{
+  "description": "NFC/RFID activation addon for TrussC with BKS-710I frame helpers, NDEF URL writing, plugin dispatch, and cloud-token provider boundaries",
+  "version": "0.1.0",
+  "author": "showlab",
+  "license": "MIT",
+  "category": "hardware",
+  "keywords": [
+    "nfc",
+    "rfid",
+    "ntag213",
+    "ndef",
+    "bks710i",
+    "modbus",
+    "iot",
+    "cloud",
+    "plugin"
+  ],
+  "platforms": [
+    "macos"
+  ],
+  "screenshot": ""
+}
