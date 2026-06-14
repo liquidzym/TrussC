@@ -40,6 +40,7 @@ struct Settings {
     std::filesystem::path webRootOverride;
     bool showCEFWindow = true;
     bool openDevTools = false;
+    bool keepRunningWhenHidden = false;
 };
 
 namespace detail {
@@ -167,7 +168,8 @@ inline bool applySettingsJson(Settings& settings, const std::string& jsonText, s
             !detail::readBool(value, "enableGesture", settings.enableGesture, error) ||
             !detail::readPath(value, "webRootOverride", settings.webRootOverride, error) ||
             !detail::readBool(value, "showCEFWindow", settings.showCEFWindow, error) ||
-            !detail::readBool(value, "openDevTools", settings.openDevTools, error)) {
+            !detail::readBool(value, "openDevTools", settings.openDevTools, error) ||
+            !detail::readBool(value, "keepRunningWhenHidden", settings.keepRunningWhenHidden, error)) {
             return false;
         }
         detail::clampRuntimeDimensions(settings);

@@ -36,4 +36,18 @@ struct FluidSettings {
     bool allowCpuFallback = true;
 };
 
+struct FluidDisplaySettings {
+    bool bloom = false;
+    float baseGain = 1.0f;
+    float bloomIntensity = 0.80f;
+    float bloomThreshold = 0.60f;
+    float bloomSoftKnee = 0.70f;
+    float bloomPrefilterGain = 1.0f;
+    float bloomSaturation = 1.15f;
+    float bloomExposure = 0.0f;
+    float bloomBlurRadius = 1.8f;
+    float bloomResolutionScale = 0.50f;
+    int bloomIterations = 4;
+};
+
 } // namespace tcx::flow

@@ -187,6 +187,65 @@ void main() {
 }
 @end
 
+@fs fs_bloom_prefilter
+layout(binding=0) uniform texture2D sourceTex;
+layout(binding=0) uniform sampler sourceSmp;
+
+layout(binding=0) uniform common_params {
+    vec4 color;
+    vec4 resolution;
+    vec4 texel;
+    vec4 options;
+};
+
+in vec2 uv;
+out vec4 frag_color;
+
+void main() {
+    vec3 c = max(texture(sampler2D(sourceTex, sourceSmp), uv).rgb * color.rgb, vec3(0.0));
+    float threshold = max(options.x, 0.0);
+    float knee = max(threshold * max(options.y, 0.0), 0.0001);
+    float curve0 = threshold - knee;
+    float curve1 = knee * 2.0;
+    float curve2 = 0.25 / knee;
+    float br = max(c.r, max(c.g, c.b));
+    float rq = clamp(br - curve0, 0.0, curve1);
+    rq = curve2 * rq * rq;
+    float weight = max(rq, br - threshold) / max(br, 0.0001);
+    frag_color = vec4(c * weight * max(options.z, 0.0), 1.0);
+}
+@end
+
+@fs fs_bloom_composite
+layout(binding=0) uniform texture2D baseTex;
+layout(binding=0) uniform sampler baseSmp;
+layout(binding=1) uniform texture2D bloomTex;
+layout(binding=1) uniform sampler bloomSmp;
+
+layout(binding=0) uniform common_params {
+    vec4 color;
+    vec4 resolution;
+    vec4 texel;
+    vec4 options;
+};
+
+in vec2 uv;
+out vec4 frag_color;
+
+void main() {
+    vec4 base = texture(sampler2D(baseTex, baseSmp), uv) * color;
+    vec3 bloom = max(texture(sampler2D(bloomTex, bloomSmp), uv).rgb, vec3(0.0));
+    float luma = dot(bloom, vec3(0.2126, 0.7152, 0.0722));
+    bloom = mix(vec3(luma), bloom, max(options.z, 0.0));
+    vec3 rgb = base.rgb * max(options.x, 0.0) + bloom * max(options.y, 0.0);
+    float exposure = max(options.w, 0.0);
+    if (exposure > 0.0) {
+        rgb = vec3(1.0) - exp(-max(rgb, vec3(0.0)) * exposure);
+    }
+    frag_color = vec4(clamp(rgb, 0.0, 1.0), clamp(max(base.a, luma * options.y), 0.0, 1.0));
+}
+@end
+
 @program tcx_flow_copy vs fs_copy
 @program tcx_flow_clear vs fs_clear
 @program tcx_flow_multiply vs fs_multiply
@@ -195,3 +254,5 @@ void main() {
 @program tcx_flow_difference vs fs_difference
 @program tcx_flow_blur_horizontal vs fs_blur_horizontal
 @program tcx_flow_blur_vertical vs fs_blur_vertical
+@program tcx_flow_bloom_prefilter vs fs_bloom_prefilter
+@program tcx_flow_bloom_composite vs fs_bloom_composite

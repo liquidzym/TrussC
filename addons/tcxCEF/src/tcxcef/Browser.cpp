@@ -107,6 +107,7 @@ namespace {
 
 std::mutex gCefMutex;
 bool gCefInitialized = false;
+std::atomic<bool> gKeepRunningWhenHidden{false};
 
 #if defined(__APPLE__)
 std::unique_ptr<CefScopedLibraryLoader> gLibraryLoader;
@@ -247,6 +248,11 @@ public:
         commandLine->AppendSwitch("metrics-recording-only");
         commandLine->AppendSwitch("no-first-run");
         commandLine->AppendSwitchWithValue("autoplay-policy", "no-user-gesture-required");
+        if (gKeepRunningWhenHidden.load(std::memory_order_acquire)) {
+            commandLine->AppendSwitch("disable-background-timer-throttling");
+            commandLine->AppendSwitch("disable-backgrounding-occluded-windows");
+            commandLine->AppendSwitch("disable-renderer-backgrounding");
+        }
         if (processType.empty()) {
 #if defined(__APPLE__)
             commandLine->AppendSwitch("use-alloy-style");
@@ -620,6 +626,9 @@ bool Browser::Impl::setup(const BrowserSettings& settings) {
     shutdown();
     settings_ = settings;
     clearLastError();
+    if (settings_.keepRunningWhenHidden) {
+        gKeepRunningWhenHidden.store(true, std::memory_order_release);
+    }
 
     if (settings_.url.empty()) {
         setLastError("Browser URL is empty");

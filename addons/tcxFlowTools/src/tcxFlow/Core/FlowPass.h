@@ -16,6 +16,8 @@ enum class FlowPassKind {
     Difference,
     BlurHorizontal,
     BlurVertical,
+    BloomPrefilter,
+    BloomComposite,
     FluidAdvect,
     FluidSplat,
     FluidAddVelocity,

@@ -120,6 +120,13 @@ When `Settings::mirror` is true, the CEF preview and the normalized 2D landmarks
 sent back to C++ are mirrored together, so TrussC-side drawing matches the camera
 window.
 
+Set `Settings::keepRunningWhenHidden = true` for installations where the camera
+preview window may be minimized but MediaPipe results must continue flowing. This
+passes the opt-in through `tcxCEF` and switches the web runtime from a pure
+`requestAnimationFrame` loop to a timer-backed loop so Chromium does not pause
+frame processing when the preview window is hidden. The default is `false` to
+preserve previous power-saving behavior in existing examples.
+
 ### Multi-target Detection
 
 Multi-person detection is enabled by default. The C++ `Settings` object is the

@@ -741,7 +741,7 @@ async function applyConfig(nextConfig: RuntimeConfig): Promise<void> {
 
   if (!running) {
     running = true;
-    requestAnimationFrame(loop);
+    scheduleLoop();
   }
 }
 
@@ -953,6 +953,15 @@ function loop(nowMs: number): void {
     void processFrame(nowMs).finally(() => {
       frameProcessing = false;
     });
+  }
+  scheduleLoop();
+}
+
+function scheduleLoop(): void {
+  if (config.keepRunningWhenHidden) {
+    const minFrameMs = 1000 / Math.max(1, config.maxFPS);
+    window.setTimeout(() => loop(performance.now()), Math.max(1, minFrameMs * 0.5));
+    return;
   }
   requestAnimationFrame(loop);
 }

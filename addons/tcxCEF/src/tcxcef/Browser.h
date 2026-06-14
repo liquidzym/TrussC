@@ -9,6 +9,7 @@ struct BrowserSettings {
     std::string url;
     bool showWindow = true;
     bool openDevTools = false;
+    bool keepRunningWhenHidden = false;
     int width = 960;
     int height = 720;
 };

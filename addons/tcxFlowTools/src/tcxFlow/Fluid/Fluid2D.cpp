@@ -26,6 +26,10 @@ void Fluid2D::resize(int width, int height) {
     outputHeight_ = std::max(1, static_cast<int>(std::round(inputHeight_ * outputScale)));
     gpuBuffers_.release();
     debugFbo_.clear();
+    displayBaseFbo_.clear();
+    displayBloomFbo_.clear();
+    displayBlurFbo_.clear();
+    displayCompositeFbo_.clear();
     externalVelocityTexture_.clear();
     externalVelocityPixels_.clear();
     velocityReadbackPixels_.clear();
@@ -326,6 +330,20 @@ void Fluid2D::drawDensity(float x, float y, float w, float h) const {
     uploadDensityImage();
     tc::setColor(1.0f);
     densityImage_.draw(x, y, w, h);
+}
+
+void Fluid2D::drawDensityBloom(float x, float y, float w, float h, const FluidDisplaySettings& display) const {
+    if (!display.bloom) {
+        drawDensity(x, y, w, h);
+        return;
+    }
+    if (!isAllocated()) return;
+    if (lastUpdateUsedGpu_ && gpuBuffers_.isAllocated() && sg_isvalid() && renderDensityDisplay(display)) {
+        tc::setColor(1.0f);
+        displayCompositeFbo_.draw(x, y, w, h);
+        return;
+    }
+    drawDensity(x, y, w, h);
 }
 
 void Fluid2D::drawVelocity(float x, float y, float w, float h) const {
@@ -763,6 +781,10 @@ void Fluid2D::setupGpuPasses() {
     passVisualizeTemperature_.setup(FlowPassKind::VisualizeTemperature);
     passVisualizeCombined_.setup(FlowPassKind::VisualizeCombined);
     passVisualizeLic_.setup(FlowPassKind::VisualizeLic);
+    passBloomPrefilter_.setup(FlowPassKind::BloomPrefilter);
+    passBloomBlurHorizontal_.setup(FlowPassKind::BlurHorizontal);
+    passBloomBlurVertical_.setup(FlowPassKind::BlurVertical);
+    passBloomComposite_.setup(FlowPassKind::BloomComposite);
     gpuPassesReady_ = true;
 }
 
@@ -988,6 +1010,75 @@ bool Fluid2D::ensureDebugFbo() const {
         debugFbo_.allocate(outputWidth_, outputHeight_, 1, TextureFormat::RGBA8);
     }
     return debugFbo_.isAllocated();
+}
+
+bool Fluid2D::ensureDisplayFbos(const FluidDisplaySettings& display) const {
+    if (outputWidth_ <= 0 || outputHeight_ <= 0) return false;
+    const float scale = std::clamp(display.bloomResolutionScale, 0.12f, 1.0f);
+    const int bloomW = std::max(1, static_cast<int>(std::round(outputWidth_ * scale)));
+    const int bloomH = std::max(1, static_cast<int>(std::round(outputHeight_ * scale)));
+    if (!displayBaseFbo_.isAllocated() ||
+        displayBaseFbo_.getWidth() != outputWidth_ ||
+        displayBaseFbo_.getHeight() != outputHeight_) {
+        displayBaseFbo_.allocate(outputWidth_, outputHeight_, 1, TextureFormat::RGBA8);
+        displayBaseFbo_.getTexture().setFilter(tc::TextureFilter::Linear);
+        displayCompositeFbo_.allocate(outputWidth_, outputHeight_, 1, TextureFormat::RGBA8);
+        displayCompositeFbo_.getTexture().setFilter(tc::TextureFilter::Linear);
+    }
+    if (!displayBloomFbo_.isAllocated() ||
+        displayBloomFbo_.getWidth() != bloomW ||
+        displayBloomFbo_.getHeight() != bloomH) {
+        displayBloomFbo_.allocate(bloomW, bloomH, 1, TextureFormat::RGBA8);
+        displayBloomFbo_.getTexture().setFilter(tc::TextureFilter::Linear);
+        displayBlurFbo_.allocate(bloomW, bloomH, 1, TextureFormat::RGBA8);
+        displayBlurFbo_.getTexture().setFilter(tc::TextureFilter::Linear);
+    }
+    return displayBaseFbo_.isAllocated() &&
+           displayBloomFbo_.isAllocated() &&
+           displayBlurFbo_.isAllocated() &&
+           displayCompositeFbo_.isAllocated();
+}
+
+bool Fluid2D::renderDensityDisplay(const FluidDisplaySettings& display) const {
+    if (!ensureDisplayFbos(display)) return false;
+
+    passVisualizeDensity_.setTexture("tex0", gpuBuffers_.density().read().getTexture());
+    passVisualizeDensity_.setColor(tc::Color(1.0f));
+    passVisualizeDensity_.setOptions(display.baseGain, 0.0f, 1.0f, 0.0f);
+    passVisualizeDensity_.render(displayBaseFbo_);
+
+    passBloomPrefilter_.setTexture("tex0", displayBaseFbo_.getTexture());
+    passBloomPrefilter_.setColor(tc::Color(1.0f));
+    passBloomPrefilter_.setOptions(std::max(0.0f, display.bloomThreshold),
+                                   std::max(0.0f, display.bloomSoftKnee),
+                                   std::max(0.0f, display.bloomPrefilterGain),
+                                   0.0f);
+    passBloomPrefilter_.render(displayBloomFbo_);
+
+    const int iterations = std::clamp(display.bloomIterations, 1, 10);
+    const float blurRadius = std::max(0.25f, display.bloomBlurRadius);
+    for (int i = 0; i < iterations; ++i) {
+        const float radius = blurRadius * (1.0f + static_cast<float>(i) * 0.22f);
+        passBloomBlurHorizontal_.setTexture("tex0", displayBloomFbo_.getTexture());
+        passBloomBlurHorizontal_.setColor(tc::Color(1.0f));
+        passBloomBlurHorizontal_.setBlurRadius(radius);
+        passBloomBlurHorizontal_.render(displayBlurFbo_);
+
+        passBloomBlurVertical_.setTexture("tex0", displayBlurFbo_.getTexture());
+        passBloomBlurVertical_.setColor(tc::Color(1.0f));
+        passBloomBlurVertical_.setBlurRadius(radius);
+        passBloomBlurVertical_.render(displayBloomFbo_);
+    }
+
+    passBloomComposite_.setTexture("tex0", displayBaseFbo_.getTexture());
+    passBloomComposite_.setTexture("tex1", displayBloomFbo_.getTexture());
+    passBloomComposite_.setColor(tc::Color(1.0f));
+    passBloomComposite_.setOptions(std::max(0.0f, display.baseGain),
+                                   std::max(0.0f, display.bloomIntensity),
+                                   std::max(0.0f, display.bloomSaturation),
+                                   std::max(0.0f, display.bloomExposure));
+    passBloomComposite_.render(displayCompositeFbo_);
+    return true;
 }
 
 void Fluid2D::uploadDensityImage() const {

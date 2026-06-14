@@ -13,5 +13,6 @@
   "maxFaces": 1,
   "maxGestures": 4,
   "outputFaceBlendshapes": false,
-  "outputFaceTransformationMatrix": false
+  "outputFaceTransformationMatrix": false,
+  "keepRunningWhenHidden": false
 }

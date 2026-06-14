@@ -33,6 +33,8 @@ constexpr auto kCommonPasses = std::to_array<PassInfo>({
     {FlowPassKind::Difference, "difference", "shaders/common/difference.glsl", tcx_flow_difference_shader_desc},
     {FlowPassKind::BlurHorizontal, "blur_horizontal", "shaders/common/blur_horizontal.glsl", tcx_flow_blur_horizontal_shader_desc},
     {FlowPassKind::BlurVertical, "blur_vertical", "shaders/common/blur_vertical.glsl", tcx_flow_blur_vertical_shader_desc},
+    {FlowPassKind::BloomPrefilter, "bloom_prefilter", "shaders/common/bloom_prefilter.glsl", tcx_flow_bloom_prefilter_shader_desc},
+    {FlowPassKind::BloomComposite, "bloom_composite", "shaders/common/bloom_composite.glsl", tcx_flow_bloom_composite_shader_desc},
     {FlowPassKind::FluidAdvect, "fluid_advect", "shaders/fluid/advect.glsl", tcx_flow_fluid_advect_shader_desc},
     {FlowPassKind::FluidSplat, "fluid_splat", "shaders/fluid/splat.glsl", tcx_flow_fluid_splat_shader_desc},
     {FlowPassKind::FluidAddVelocity, "fluid_add_velocity", "shaders/fluid/add_velocity.glsl", tcx_flow_fluid_add_velocity_shader_desc},

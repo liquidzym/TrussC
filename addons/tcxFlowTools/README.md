@@ -22,6 +22,7 @@ Implemented now:
 - Bridge class hierarchy: `BridgeFlow`, `VelocityBridge`, `DensityBridge`, `TemperatureBridge`, `CombinedBridge`, with GPU external texture output for velocity, density, temperature, and combined bridge injection.
 - Bridge inputs support ofxFlowTools-style controls: invert, alpha-mask use, mirror-X/Y, mask source selection, soft mask thresholding, and mask gamma.
 - Visualization helpers include density/velocity/pressure/temperature views plus styled velocity field arrows, velocity dots, pressure field, and temperature field modes.
+- Optional `Fluid2D::drawDensityBloom()` display pass for fluid density. It renders the normal density visualization into an internal FBO, extracts bright regions with a soft-knee threshold, blurs them, and composites the glow back over the density image. `drawDensity()` is unchanged and bloom defaults off so existing examples keep their previous output. `FluidDisplaySettings::baseGain` is applied through the density visualizer's existing `options.x` gain slot, whose default remains `1.0`; this lets bloom users brighten the display prefilter without changing solver density or older default output.
 - `ParticleFlow` defaults to GPU state textures, GPU update pass, and GPU particle drawing; CPU particles remain only as fallback. First-pass attractor/impulse variants plus per-particle age, lifetime, mass, size spread, and birth-from-velocity controls are available through `ParticleFlowSettings`. GPU spawn initialization now uses shader-side procedural seeds instead of a same-frame CPU seed texture upload.
 - `AverageFlow` supports ROI sampling, magnitude normalization, watcher-style magnitude/velocity events, bounded history buffers, and settings serialization for ofxFlowTools average-flow parity.
 - `SplitVelocity::updateTexture()` now runs a fuller ofxFlowTools-style GPU graph: raw RGBA positive/negative velocity split, normalized split texture, decayed trail texture, combined/positive/negative/trail visualization output, and split field overlay drawing.
@@ -116,7 +117,7 @@ Phase 2 also includes generated common fullscreen shader passes:
 
 - Source: `shaders/common/common.glsl`.
 - Generated header: `shaders/common/common.glsl.h`.
-- Passes: copy, clear, multiply, threshold, luminance, difference, blur horizontal, blur vertical.
+- Passes: copy, clear, multiply, threshold, luminance, difference, blur horizontal, blur vertical, bloom prefilter, bloom composite.
 - CMake compiles addon shader sources with sokol-shdc before building `tcxFlowTools`.
 
 Phase 3 adds the fluid GPU solver path:

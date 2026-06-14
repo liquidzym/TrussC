@@ -63,3 +63,15 @@ when another signing step runs later:
 ```bash
 cmake -DTCXCEF_ADHOC_SIGN_APP_BUNDLES=OFF ...
 ```
+
+## Hidden Window Capture
+
+`BrowserSettings::keepRunningWhenHidden` is an opt-in flag for camera or sensor
+bridges that must keep producing data while the native CEF window is minimized or
+occluded. The default remains `false` so existing addons keep Chromium's normal
+background throttling behavior.
+
+When enabled before CEF initialization, `tcxCEF` appends Chromium switches that
+disable background timer throttling and renderer backgrounding. Use this only for
+runtime capture windows, not for ordinary embedded pages that should save power
+when hidden.

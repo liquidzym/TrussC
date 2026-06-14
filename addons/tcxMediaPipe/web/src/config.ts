@@ -22,7 +22,8 @@ export const defaultConfig: RuntimeConfig = {
   maxFaces: 1,
   maxGestures: 4,
   outputFaceBlendshapes: false,
-  outputFaceTransformationMatrix: false
+  outputFaceTransformationMatrix: false,
+  keepRunningWhenHidden: false
 };
 
 function normalizeLimit(value: unknown, fallback: number, multiPerson: boolean): number {
@@ -64,6 +65,7 @@ export function normalizeConfig(value: Partial<RuntimeConfig>): RuntimeConfig {
     maxGestures: normalizeLimit(value.maxGestures, defaultConfig.maxGestures, multiPerson),
     outputFaceBlendshapes: value.outputFaceBlendshapes ?? defaultConfig.outputFaceBlendshapes,
     outputFaceTransformationMatrix:
-      value.outputFaceTransformationMatrix ?? defaultConfig.outputFaceTransformationMatrix
+      value.outputFaceTransformationMatrix ?? defaultConfig.outputFaceTransformationMatrix,
+    keepRunningWhenHidden: value.keepRunningWhenHidden ?? defaultConfig.keepRunningWhenHidden
   };
 }

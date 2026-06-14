@@ -20,6 +20,7 @@ export type RuntimeConfig = {
   maxGestures: number;
   outputFaceBlendshapes: boolean;
   outputFaceTransformationMatrix: boolean;
+  keepRunningWhenHidden: boolean;
 };
 
 export type RuntimeGpuInfo = {

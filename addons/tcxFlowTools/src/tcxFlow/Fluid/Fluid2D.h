@@ -29,6 +29,7 @@ public:
     void applyVelocityField(const std::vector<tc::Vec2>& field, int fieldWidth, int fieldHeight, float scale = 1.0f);
 
     void drawDensity(float x, float y, float w, float h) const;
+    void drawDensityBloom(float x, float y, float w, float h, const FluidDisplaySettings& display) const;
     void drawVelocity(float x, float y, float w, float h) const;
     void drawPressure(float x, float y, float w, float h) const;
     void drawTemperature(float x, float y, float w, float h) const;
@@ -88,6 +89,8 @@ private:
     void renderDensityTexture(const tc::Texture& texture, float scale, const tc::Color& color, bool velocityMagnitude);
     void renderTemperatureTexture(const tc::Texture& texture, float scale, bool velocityMagnitude);
     bool ensureDebugFbo() const;
+    bool ensureDisplayFbos(const FluidDisplaySettings& display) const;
+    bool renderDensityDisplay(const FluidDisplaySettings& display) const;
     void uploadDensityImage() const;
 
     struct DensitySplat {
@@ -150,7 +153,15 @@ private:
     mutable FlowPass passVisualizeTemperature_;
     mutable FlowPass passVisualizeCombined_;
     mutable FlowPass passVisualizeLic_;
+    mutable FlowPass passBloomPrefilter_;
+    mutable FlowPass passBloomBlurHorizontal_;
+    mutable FlowPass passBloomBlurVertical_;
+    mutable FlowPass passBloomComposite_;
     mutable tc::Fbo debugFbo_;
+    mutable tc::Fbo displayBaseFbo_;
+    mutable tc::Fbo displayBloomFbo_;
+    mutable tc::Fbo displayBlurFbo_;
+    mutable tc::Fbo displayCompositeFbo_;
     tc::Texture externalVelocityTexture_;
     std::vector<float> externalVelocityPixels_;
     std::vector<float> velocityReadbackPixels_;

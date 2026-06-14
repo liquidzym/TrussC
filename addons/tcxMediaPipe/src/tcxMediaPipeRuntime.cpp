@@ -130,6 +130,7 @@ bool MediaPipe::setup(const Settings& settings) {
     browserSettings.url = assetServer_.url("/dist/index.html") + "?bridgePort=" + std::to_string(bridge_.port());
     browserSettings.showWindow = settings_.showCEFWindow;
     browserSettings.openDevTools = settings_.openDevTools;
+    browserSettings.keepRunningWhenHidden = settings_.keepRunningWhenHidden;
     browserSettings.width = settings_.inputWidth;
     browserSettings.height = settings_.inputHeight;
     if (!browser_.setup(browserSettings)) {
@@ -491,6 +492,7 @@ std::string MediaPipe::makeConfigJson() const {
     config["maxGestures"] = detectionLimit(settings_.multiPerson, settings_.maxGestures);
     config["outputFaceBlendshapes"] = settings_.outputFaceBlendshapes;
     config["outputFaceTransformationMatrix"] = settings_.outputFaceTransformationMatrix;
+    config["keepRunningWhenHidden"] = settings_.keepRunningWhenHidden;
     return config.dump();
 }
 

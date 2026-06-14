@@ -50,6 +50,9 @@ out vec4 frag_color;
 
 void main() {
     vec4 c = max(texture(sampler2D(visualDensityTex, visualDensitySmp), uv), vec4(0.0));
+    float display_gain = max(options.x, 0.0);
+    c.rgb *= display_gain;
+    c.a *= min(display_gain, 2.0);
     float energy = clamp((c.r + c.g + c.b) * 0.38 + c.a * 0.55, 0.0, 1.0);
     float alpha = clamp(pow(energy, 0.72) * 1.35, 0.0, 1.0);
     vec3 rgb = vec3(
